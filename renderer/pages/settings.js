@@ -1,0 +1,543 @@
+const branchNameEl = document.getElementById('branchName');
+const settingsForm = document.getElementById('settingsForm');
+const fieldBranchName = document.getElementById('fieldBranchName');
+const fieldBusinessType = document.getElementById('fieldBusinessType');
+const currencyForm = document.getElementById('currencyForm');
+const fieldCurrencyBase = document.getElementById('fieldCurrencyBase');
+const fieldCurrencySecondary = document.getElementById('fieldCurrencySecondary');
+const fieldExchangeRate = document.getElementById('fieldExchangeRate');
+const fieldTaxNumber = document.getElementById('fieldTaxNumber');
+const globalForm = document.getElementById('globalForm');
+const fieldCountryCode = document.getElementById('fieldCountryCode');
+const fieldLocale = document.getElementById('fieldLocale');
+const fieldTimezone = document.getElementById('fieldTimezone');
+const fieldGlobalCurrency = document.getElementById('fieldGlobalCurrency');
+const fieldMinorUnit = document.getElementById('fieldMinorUnit');
+const fieldTaxMode = document.getElementById('fieldTaxMode');
+const fieldGlobalTaxNumber = document.getElementById('fieldGlobalTaxNumber');
+const fieldFiscalizationMode = document.getElementById('fieldFiscalizationMode');
+const fieldFiscalProvider = document.getElementById('fieldFiscalProvider');
+
+const discountForm = document.getElementById('discountForm');
+const fieldMaxDiscountPercent = document.getElementById('fieldMaxDiscountPercent');
+const weighingForm = document.getElementById('weighingForm');
+const fieldWeightedPrefix = document.getElementById('fieldWeightedPrefix');
+
+const createBackupBtn = document.getElementById('createBackupBtn');
+const restoreBackupBtn = document.getElementById('restoreBackupBtn');
+const backupStatus = document.getElementById('backupStatus');
+
+const brandingForm = document.getElementById('brandingForm');
+const fieldStoreName = document.getElementById('fieldStoreName');
+const selectLogoBtn = document.getElementById('selectLogoBtn');
+const logoPreview = document.getElementById('logoPreview');
+const fieldBranchUuid = document.getElementById('fieldBranchUuid');
+const syncForm = document.getElementById('syncForm');
+const fieldSyncServerUrl = document.getElementById('fieldSyncServerUrl');
+const fieldSyncToken = document.getElementById('fieldSyncToken');
+const fieldSyncEnabled = document.getElementById('fieldSyncEnabled');
+const syncNowBtn = document.getElementById('syncNowBtn');
+const syncStatus = document.getElementById('syncStatus');
+const printingForm = document.getElementById('printingForm');
+const fieldKitchenAutoPrint = document.getElementById('fieldKitchenAutoPrint');
+const fieldKitchenPrinterName = document.getElementById('fieldKitchenPrinterName');
+const fieldReceiptAutoPrint = document.getElementById('fieldReceiptAutoPrint');
+const fieldReceiptPrinterName = document.getElementById('fieldReceiptPrinterName');
+const loadAuditBtn = document.getElementById('loadAuditBtn');
+const auditLogList = document.getElementById('auditLogList');
+const appCurrentVersion = document.getElementById('appCurrentVersion');
+const fieldAutoCheckUpdates = document.getElementById('fieldAutoCheckUpdates');
+const checkUpdateBtn = document.getElementById('checkUpdateBtn');
+const downloadUpdateBtn = document.getElementById('downloadUpdateBtn');
+const installUpdateBtn = document.getElementById('installUpdateBtn');
+const updateStatus = document.getElementById('updateStatus');
+
+const lanRoleTabs = document.getElementById('lanRoleTabs');
+const lanMainPanel = document.getElementById('lanMainPanel');
+const lanTerminalPanel = document.getElementById('lanTerminalPanel');
+const fieldLanDeviceName = document.getElementById('fieldLanDeviceName');
+const generatePairingCodeBtn = document.getElementById('generatePairingCodeBtn');
+const pairingCodeBox = document.getElementById('pairingCodeBox');
+const pairingCodeDisplay = document.getElementById('pairingCodeDisplay');
+const pairingCodeExpiry = document.getElementById('pairingCodeExpiry');
+const lanConnectedBox = document.getElementById('lanConnectedBox');
+const lanConnectedInfo = document.getElementById('lanConnectedInfo');
+const lanDisconnectBtn = document.getElementById('lanDisconnectBtn');
+const lanDiscoveryBox = document.getElementById('lanDiscoveryBox');
+const lanDevicesList = document.getElementById('lanDevicesList');
+let lanStatusPollTimer = null;
+
+let currentBranch = null;
+
+async function init() {
+  const user = await guardPage(['admin'], '../login.html');
+  if (!user) return;
+
+  currentBranch = await window.api.branches.current();
+  branchNameEl.textContent = currentBranch ? currentBranch.name : '';
+  fieldBranchUuid.value = currentBranch ? currentBranch.uuid : '';
+  fieldBranchName.value = currentBranch.name;
+  fieldBusinessType.value = currentBranch.business_type || 'general';
+  const globalProfile = await window.api.global.get();
+  fieldCountryCode.value = globalProfile.country_code || 'TR';
+  fieldLocale.value = globalProfile.locale || 'ar';
+  fieldTimezone.value = globalProfile.timezone || 'Europe/Istanbul';
+  fieldGlobalCurrency.value = globalProfile.currency_code || 'TRY';
+  fieldMinorUnit.value = globalProfile.currency_minor_unit ?? 2;
+  fieldTaxMode.value = globalProfile.tax_mode || 'exclusive';
+  fieldGlobalTaxNumber.value = globalProfile.tax_registration_number || '';
+  fieldFiscalizationMode.value = globalProfile.fiscalization_mode || 'none';
+  fieldFiscalProvider.value = globalProfile.fiscal_provider || '';
+  const currency = await window.api.currency.get();
+  fieldCurrencyBase.value = currency.base;
+  fieldCurrencySecondary.value = currency.secondary;
+  fieldExchangeRate.value = currency.rate;
+  fieldTaxNumber.value = currency.taxNumber || '';
+
+  fieldMaxDiscountPercent.value = await window.api.discount.maxCashierPercent();
+  fieldWeightedPrefix.value = await window.api.weighing.getPrefix();
+
+  const branding = await window.api.branding.get();
+  fieldStoreName.value = branding.storeName || '';
+  if (branding.logoPath) {
+    logoPreview.src = window.api.pathToFileURL(branding.logoPath);
+    logoPreview.style.display = 'inline-block';
+  }
+
+  settingsForm.addEventListener('submit', save);
+  currencyForm.addEventListener('submit', saveCurrency);
+  globalForm.addEventListener('submit', saveGlobalProfile);
+  discountForm.addEventListener('submit', saveDiscountLimit);
+  weighingForm.addEventListener('submit', saveWeighingPrefix);
+  createBackupBtn.addEventListener('click', createBackup);
+  restoreBackupBtn.addEventListener('click', restoreBackup);
+  brandingForm.addEventListener('submit', saveBranding);
+  selectLogoBtn.addEventListener('click', selectLogo);
+  const syncConfig = await window.api.sync.getConfig();
+  fieldSyncServerUrl.value = syncConfig.serverUrl || '';
+  fieldSyncToken.value = syncConfig.token || '';
+  fieldSyncEnabled.checked = !!syncConfig.enabled;
+  syncForm.addEventListener('submit', saveSyncConfig);
+  syncNowBtn.addEventListener('click', runSync);
+  const printing = await window.api.printing.getConfig();
+  await populatePrinterOptions();
+  fieldKitchenAutoPrint.checked = printing.kitchenAutoPrint;
+  fieldKitchenPrinterName.value = printing.kitchenPrinterName || '';
+  fieldReceiptAutoPrint.checked = printing.receiptAutoPrint;
+  fieldReceiptPrinterName.value = printing.receiptPrinterName || '';
+  printingForm.addEventListener('submit', savePrintingConfig);
+  loadAuditBtn.addEventListener('click', loadAuditLog);
+
+  appCurrentVersion.textContent = await window.api.updates.currentVersion();
+  fieldAutoCheckUpdates.checked = await window.api.updates.getAutoCheckEnabled();
+  fieldAutoCheckUpdates.addEventListener('change', saveAutoCheckUpdates);
+  checkUpdateBtn.addEventListener('click', checkForUpdate);
+  downloadUpdateBtn.addEventListener('click', downloadUpdate);
+  installUpdateBtn.addEventListener('click', () => window.api.updates.installNow());
+  window.api.updates.onStatus(handleUpdateStatus);
+
+  lanRoleTabs.querySelectorAll('.login-mode-tab').forEach((btn) => {
+    btn.addEventListener('click', () => setLanRole(btn.dataset.role));
+  });
+  generatePairingCodeBtn.addEventListener('click', generatePairingCode);
+  lanDisconnectBtn.addEventListener('click', disconnectLan);
+  await loadLanStatus();
+  lanStatusPollTimer = setInterval(loadLanStatus, 2000);
+}
+
+async function saveAutoCheckUpdates() {
+  const enabled = fieldAutoCheckUpdates.checked;
+  fieldAutoCheckUpdates.disabled = true;
+  try {
+    const result = await window.api.updates.setAutoCheckEnabled(enabled);
+    if (!result?.success) throw new Error(result?.message || 'تعذر حفظ الإعداد.');
+  } catch (err) {
+    fieldAutoCheckUpdates.checked = !enabled;
+    showToast('تعذر حفظ الإعداد: ' + err.message, 'error');
+  } finally {
+    fieldAutoCheckUpdates.disabled = false;
+  }
+}
+
+async function checkForUpdate() {
+  checkUpdateBtn.disabled = true;
+  updateStatus.textContent = 'جارٍ التحقق من وجود تحديث...';
+  const result = await window.api.updates.check();
+  if (!result.ok) {
+    updateStatus.textContent = result.message;
+    checkUpdateBtn.disabled = false;
+  }
+}
+
+async function downloadUpdate() {
+  downloadUpdateBtn.disabled = true;
+  updateStatus.textContent = 'جارٍ تنزيل التحديث...';
+  const result = await window.api.updates.download();
+  if (!result.ok) {
+    updateStatus.textContent = 'تعذر تنزيل التحديث: ' + result.message;
+    downloadUpdateBtn.disabled = false;
+  }
+}
+
+function handleUpdateStatus(data) {
+  switch (data.status) {
+    case 'checking':
+      updateStatus.textContent = 'جارٍ التحقق من وجود تحديث...';
+      break;
+    case 'available':
+      checkUpdateBtn.disabled = false;
+      checkUpdateBtn.classList.add('hidden');
+      downloadUpdateBtn.classList.remove('hidden');
+      updateStatus.textContent = `${t('updates.newVersion','يتوفر إصدار جديد')} (${data.version}).`;
+      break;
+    case 'not-available':
+      checkUpdateBtn.disabled = false;
+      updateStatus.textContent = 'التطبيق محدّث لآخر إصدار.';
+      break;
+    case 'downloading':
+      updateStatus.textContent = `${t('updates.downloading','جارٍ التنزيل...')} ${data.percent}%`;
+      break;
+    case 'downloaded':
+      downloadUpdateBtn.classList.add('hidden');
+      installUpdateBtn.classList.remove('hidden');
+      updateStatus.textContent = `${t('updates.downloaded','تم تنزيل الإصدار') } ${data.version}. ${t('updates.installPrompt','اضغط للتثبيت وإعادة التشغيل.')}`;
+      break;
+    case 'error':
+      checkUpdateBtn.disabled = false;
+      downloadUpdateBtn.disabled = false;
+      updateStatus.textContent = 'خطأ: ' + data.message;
+      break;
+  }
+}
+
+// يملأ قائمتي اختيار طابعة المطبخ والفواتير بالطابعات الفعلية المتصلة بالجهاز فقط
+// (طابعات PDF الوهمية مستبعدة من القائمة أصلاً من جهة main.js). إذا كانت القيمة
+// المحفوظة سابقاً لم تعد ضمن القائمة (طابعة أُزيلت مثلاً)، تُضاف كخيار إضافي موسوم
+// بوضوح حتى لا تختفي القيمة المحفوظة صامتة دون أن ينتبه المستخدم.
+async function populatePrinterOptions(savedKitchenName, savedReceiptName) {
+  let printers = [];
+  try { printers = await window.api.printing.listPrinters(); } catch (_) { printers = []; }
+  const fillSelect = (select, savedName) => {
+    while (select.options.length > 1) select.remove(1);
+    for (const p of printers) {
+      const opt = document.createElement('option');
+      opt.value = p.name;
+      opt.textContent = p.isDefault ? `${p.displayName} (الافتراضية)` : p.displayName;
+      select.appendChild(opt);
+    }
+    if (savedName && !printers.some((p) => p.name === savedName)) {
+      const opt = document.createElement('option');
+      opt.value = savedName;
+      opt.textContent = `${savedName} (غير متوفرة حالياً)`;
+      select.appendChild(opt);
+    }
+  };
+  fillSelect(fieldKitchenPrinterName, savedKitchenName);
+  fillSelect(fieldReceiptPrinterName, savedReceiptName);
+}
+
+async function savePrintingConfig(event) {
+  event.preventDefault();
+  const btn = document.getElementById('savePrintingBtn'); btn.disabled = true;
+  try {
+    await window.api.printing.saveConfig({ kitchenAutoPrint: fieldKitchenAutoPrint.checked, kitchenPrinterName: fieldKitchenPrinterName.value, receiptAutoPrint: fieldReceiptAutoPrint.checked, receiptPrinterName: fieldReceiptPrinterName.value });
+    showToast('تم حفظ إعدادات الطباعة التلقائية.');
+  } catch (err) { showToast('تعذر حفظ إعدادات الطباعة: ' + err.message, 'error'); }
+  finally { btn.disabled = false; }
+}
+
+async function loadAuditLog() {
+  loadAuditBtn.disabled = true;
+  try {
+    const logs = await window.api.audit.list();
+    // created_at مخزّن UTC؛ نحوّله لتوقيت الجهاز المحلي بدل عرضه خاماً كما هو مخزّن
+    // (نفس الملاحظة المطبّقة على صفحة سجل التدقيق الكاملة).
+    const fmt = (raw) => {
+      const d = new Date(String(raw || '').replace(' ', 'T') + 'Z');
+      return Number.isNaN(d.getTime()) ? raw : d.toLocaleString('ar-EG', { dateStyle: 'short', timeStyle: 'medium' });
+    };
+    auditLogList.textContent = logs.length ? logs.map(l => `${fmt(l.created_at)} | ${l.level.toUpperCase()} | ${l.user_name || 'النظام'} | ${l.action}${l.details ? ' | ' + l.details : ''}`).join('\n') : 'لا توجد عمليات مسجلة بعد.';
+  } catch (err) { auditLogList.textContent = 'تعذر تحميل السجل: ' + err.message; }
+  finally { loadAuditBtn.disabled = false; }
+}
+
+async function saveGlobalProfile(event) {
+  event.preventDefault();
+  const btn = document.getElementById('saveGlobalBtn'); btn.disabled = true;
+  try {
+    await window.api.global.set({
+      countryCode: fieldCountryCode.value, locale: fieldLocale.value, timezone: fieldTimezone.value,
+      currencyCode: fieldGlobalCurrency.value, currencyMinorUnit: Number(fieldMinorUnit.value),
+      taxMode: fieldTaxMode.value, taxRegistrationNumber: fieldGlobalTaxNumber.value,
+      fiscalizationMode: fieldFiscalizationMode.value, fiscalProvider: fieldFiscalProvider.value,
+    });
+    showToast('تم حفظ الإعداد الدولي.');
+  } catch (e) { showToast('تعذر الحفظ: ' + e.message, 'error'); }
+  finally { btn.disabled = false; }
+}
+
+async function saveCurrency(event) {
+  event.preventDefault();
+  const button = document.getElementById('saveCurrencyBtn');
+  button.disabled = true;
+  try {
+    await window.api.currency.set({ base: fieldCurrencyBase.value, secondary: fieldCurrencySecondary.value, rate: parseLocaleNumber(fieldExchangeRate.value), taxNumber: fieldTaxNumber.value });
+    showToast('تم حفظ إعدادات العملة والفاتورة.');
+  } catch (error) { showToast('تعذر الحفظ: ' + error.message, 'error'); }
+  finally { button.disabled = false; }
+}
+
+async function saveSyncConfig(event) {
+  event.preventDefault();
+  try {
+    await window.api.sync.saveConfig({ serverUrl: fieldSyncServerUrl.value, token: fieldSyncToken.value, enabled: fieldSyncEnabled.checked });
+    syncStatus.textContent = 'تم حفظ إعدادات المزامنة.';
+  } catch (error) { syncStatus.textContent = 'تعذر الحفظ: ' + error.message; }
+}
+async function runSync() {
+  syncNowBtn.disabled = true; syncStatus.textContent = 'جارٍ الاتصال بالسيرفر...';
+  try {
+    const result = await window.api.sync.run();
+    syncStatus.textContent = result.success ? `${t('sync.completed','اكتملت المزامنة')}: ${t('sync.pushed','أُرسل')} ${result.pushed} ${t('sync.pulled','وسُحب')} ${result.pulled} ${t('sync.records','سجل')}.` : result.message;
+  } catch (error) { syncStatus.textContent = 'تعذرت المزامنة: ' + error.message; }
+  finally { syncNowBtn.disabled = false; }
+}
+
+async function saveBranding(e) {
+  e.preventDefault();
+  const btn = document.getElementById('saveBrandingBtn');
+  btn.disabled = true;
+  btn.textContent = 'جارٍ الحفظ...';
+  try {
+    await window.api.branding.setStoreName(fieldStoreName.value.trim());
+    showToast('تم حفظ اسم المتجر.');
+  } catch (err) {
+    showToast('حدث خطأ أثناء الحفظ: ' + err.message, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'حفظ اسم المتجر';
+  }
+}
+
+async function selectLogo() {
+  selectLogoBtn.disabled = true;
+  try {
+    const result = await window.api.branding.setLogo();
+    if (result && result.success) {
+      logoPreview.src = result.url;
+      logoPreview.style.display = 'inline-block';
+    }
+  } catch (err) {
+    showToast('حدث خطأ أثناء اختيار الشعار: ' + err.message, 'error');
+  } finally {
+    selectLogoBtn.disabled = false;
+  }
+}
+
+async function saveDiscountLimit(e) {
+  e.preventDefault();
+  const btn = document.getElementById('saveDiscountBtn');
+  btn.disabled = true;
+  btn.textContent = 'جارٍ الحفظ...';
+  try {
+    await window.api.discount.setMaxCashierPercent(parseFloat(fieldMaxDiscountPercent.value) || 0);
+    showToast('تم حفظ حد الخصم.');
+  } catch (err) {
+    showToast('حدث خطأ أثناء الحفظ: ' + err.message, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'حفظ حد الخصم';
+  }
+}
+
+async function saveWeighingPrefix(e) {
+  e.preventDefault();
+  const btn = document.getElementById('saveWeighingBtn');
+  btn.disabled = true;
+  btn.textContent = 'جارٍ الحفظ...';
+  try {
+    await window.api.weighing.setPrefix(fieldWeightedPrefix.value.trim());
+    showToast('تم حفظ إعدادات البيع بالوزن.');
+  } catch (err) {
+    showToast('حدث خطأ أثناء الحفظ: ' + err.message, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'حفظ';
+  }
+}
+
+async function createBackup() {
+  createBackupBtn.disabled = true;
+  backupStatus.textContent = 'جارٍ إنشاء النسخة الاحتياطية...';
+  try {
+    const result = await window.api.backup.create();
+    if (result.canceled) {
+      backupStatus.textContent = '';
+    } else if (result.success) {
+      backupStatus.textContent = `${t('backup.created','تم إنشاء النسخة الاحتياطية')}: ${result.path}`;
+    } else {
+      backupStatus.textContent = 'تعذّر إنشاء النسخة الاحتياطية.';
+    }
+  } catch (err) {
+    backupStatus.textContent = ts('حدث خطأ: ') + err.message;
+  } finally {
+    createBackupBtn.disabled = false;
+  }
+}
+
+async function restoreBackup() {
+  restoreBackupBtn.disabled = true;
+  backupStatus.textContent = 'في انتظار اختيار الملف...';
+  try {
+    const result = await window.api.backup.restore();
+    if (result.canceled) {
+      backupStatus.textContent = '';
+    } else if (!result.success) {
+      backupStatus.textContent = 'تعذّرت الاستعادة.';
+    }
+    // في حال النجاح، سيُغلق التطبيق نفسه (تُدار العملية من main.js)
+  } catch (err) {
+    backupStatus.textContent = ts('حدث خطأ: ') + err.message;
+  } finally {
+    restoreBackupBtn.disabled = false;
+  }
+}
+
+async function save(e) {
+  e.preventDefault();
+  const btn = document.getElementById('saveSettingsBtn');
+  btn.disabled = true;
+  btn.textContent = 'جارٍ الحفظ...';
+  try {
+    await window.api.branches.update({
+      id: currentBranch.id,
+      name: fieldBranchName.value.trim(),
+      businessType: fieldBusinessType.value,
+    });
+    showToast('تم حفظ الإعدادات بنجاح.');
+  } catch (err) {
+    showToast('حدث خطأ أثناء الحفظ: ' + err.message, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'حفظ الإعدادات';
+  }
+}
+
+/* ---------------- مشاركة بين كاشيرات نفس المحل (LAN) ---------------- */
+async function loadLanStatus() {
+  let status;
+  try {
+    status = await window.api.lan.getStatus();
+  } catch {
+    return;
+  }
+
+  lanRoleTabs.querySelectorAll('.login-mode-tab').forEach((btn) => {
+    btn.classList.toggle('active', btn.dataset.role === status.role);
+  });
+  lanMainPanel.classList.toggle('hidden', status.role !== 'main');
+  lanTerminalPanel.classList.toggle('hidden', status.role !== 'terminal');
+
+  if (status.role === 'main') {
+    if (document.activeElement !== fieldLanDeviceName) fieldLanDeviceName.value = status.deviceName || '';
+    if (status.pairingCode && status.pairingExpiresAt > Date.now()) {
+      pairingCodeBox.classList.remove('hidden');
+      pairingCodeDisplay.textContent = status.pairingCode;
+      const secondsLeft = Math.max(0, Math.round((status.pairingExpiresAt - Date.now()) / 1000));
+      pairingCodeExpiry.textContent = `${ts('صالح لمدة')} ${Math.ceil(secondsLeft / 60)} ${ts('دقيقة تقريباً')}`;
+    } else {
+      pairingCodeBox.classList.add('hidden');
+    }
+  }
+
+  if (status.role === 'terminal') {
+    const connected = !!status.connectedTo;
+    lanConnectedBox.classList.toggle('hidden', !connected);
+    lanDiscoveryBox.classList.toggle('hidden', connected);
+    if (connected) {
+      lanConnectedInfo.textContent = `${t('lan.connectedToStore','متصل بمحل')}: ${status.branchName} — ${status.connectedTo}`;
+    } else {
+      renderDiscoveredDevices(status.discoveredDevices || []);
+    }
+  }
+}
+
+function renderDiscoveredDevices(devices) {
+  if (devices.length === 0) {
+    lanDevicesList.innerHTML = 'جارٍ البحث عن أجهزة رئيسية على الشبكة... تأكد أن الجهاز الرئيسي مفتوح وبنفس شبكة الواي فاي.';
+    return;
+  }
+  lanDevicesList.innerHTML = devices
+    .map(
+      (d, i) => `
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:10px;border:1px solid #e5e7eb;border-radius:8px;margin-bottom:6px">
+        <span>${escapeHtml(d.name)} (${escapeHtml(d.address)})</span>
+        <button type="button" class="btn btn-primary btn-sm" data-connect-index="${i}">اتصال</button>
+      </div>`
+    )
+    .join('');
+  lanDevicesList.querySelectorAll('[data-connect-index]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const device = devices[Number(btn.dataset.connectIndex)];
+      connectToDevice(device);
+    });
+  });
+}
+
+async function setLanRole(role) {
+  if (role === 'terminal') {
+    const current = await window.api.lan.getStatus();
+    if (current.role !== 'terminal' && !confirm(t('lan.pairConfirm','سيتحوّل هذا الجهاز إلى طرفية تابعة لمحل آخر، وتُستبدل هويته الحالية عند الاقتران. تأكيد؟'))) return;
+  }
+  try {
+    await window.api.lan.setRole(role, fieldLanDeviceName.value.trim());
+    await loadLanStatus();
+  } catch (err) {
+    showToast(ts('حدث خطأ: ') + err.message, 'error');
+  }
+}
+
+async function generatePairingCode() {
+  generatePairingCodeBtn.disabled = true;
+  try {
+    if (fieldLanDeviceName.value.trim()) {
+      await window.api.lan.setRole('main', fieldLanDeviceName.value.trim());
+    }
+    await window.api.lan.startPairingCode();
+    await loadLanStatus();
+  } catch (err) {
+    showToast(ts('حدث خطأ: ') + err.message, 'error');
+  } finally {
+    generatePairingCodeBtn.disabled = false;
+  }
+}
+
+async function connectToDevice(device) {
+  const code = await promptDialog(`${t('lan.enterPairingCode','أدخل رمز الاقتران المعروض على شاشة')} "${device.name}":`, '');
+  if (!code) return;
+  try {
+    const result = await window.api.lan.pairWithDevice(device.address, device.port, code.trim());
+    showToast(`تم الاتصال بنجاح بمحل "${result.branchName}"`);
+    await loadLanStatus();
+  } catch (err) {
+    showToast('فشل الاتصال: ' + err.message, 'error');
+  }
+}
+
+async function disconnectLan() {
+  if (!confirm(t('lan.disconnectConfirm','فصل هذا الجهاز عن مشاركة المحل؟ سيصبح يعمل ببياناته المحلية فقط من الآن.'))) return;
+  try {
+    await window.api.lan.disconnect();
+    await loadLanStatus();
+  } catch (err) {
+    showToast(ts('حدث خطأ: ') + err.message, 'error');
+  }
+}
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str == null ? '' : String(str);
+  return div.innerHTML;
+}
+
+init();

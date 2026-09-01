@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: file:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-src 'none';">
+  <title>إدارة المنتجات</title>
+  <link rel="stylesheet" href="../style.css" />
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="brand" data-i18n="app.brand">نقطة البيع</div>
+      <nav class="nav-links">
+        <a href="../index.html" data-i18n="nav.pos">الكاشير</a>
+        <a href="tables.html" data-business="restaurant" data-i18n="nav.tables">الطاولات</a>
+        <a href="shift.html" data-i18n="nav.cashSession">الصندوق</a>
+        <a href="returns.html" data-roles="admin,manager" data-i18n="nav.returns">مرتجعات</a>
+        <a href="products.html" class="active" data-roles="admin,manager" data-i18n="nav.products">المنتجات</a>
+        <a href="bundles.html" data-roles="admin,manager" data-i18n="nav.bundles">الحزم</a>
+        <a href="inventory.html" data-roles="admin,manager" data-i18n="nav.inventory">المخزون</a>
+        <a href="customers.html" data-roles="admin,manager" data-i18n="nav.customers">العملاء</a>
+        <a href="suppliers.html" data-roles="admin,manager" data-i18n="nav.suppliers">الموردون والشراء</a>
+        <a href="reports.html" data-roles="admin,manager" data-i18n="nav.reports">التقارير</a>
+        <a href="audit.html" data-roles="admin" data-i18n="nav.audit">سجل التدقيق</a>
+        <a href="payroll.html" data-roles="admin" data-i18n="nav.payroll">الرواتب</a>
+        <a href="users.html" data-roles="admin" data-i18n="nav.users">المستخدمون</a>
+        <a href="settings.html" data-roles="admin" data-i18n="nav.settings">الإعدادات</a>
+      </nav>
+      <div class="topbar-right">
+        <select id="langSwitcher" class="lang-switcher" title="اللغة / Dil / Language">
+          <option value="ar">AR</option>
+          <option value="tr">TR</option>
+          <option value="en">EN</option>
+        </select>
+        <div class="branch-name" id="branchName">—</div>
+        <div class="user-info">
+          <span id="currentUserName"></span>
+          <span id="currentUserRoleBadge" class="role-badge"></span>
+          <button id="logoutBtn" class="btn btn-secondary btn-sm" data-i18n="common.logout">خروج</button>
+        </div>
+      </div>
+    </header>
+
+    <div class="products-page">
+      <div class="page-header">
+        <h1>إدارة المنتجات</h1>
+        <div style="display:flex;gap:8px">
+          <button id="downloadTemplateBtn" class="btn btn-secondary">تحميل نموذج CSV</button>
+          <button id="importCsvBtn" class="btn btn-secondary">استيراد من CSV</button>
+          <button id="addProductBtn" class="btn btn-primary">+ منتج جديد</button>
+        </div>
+      </div>
+      <div id="importResultBox" class="empty-state" style="display:none;text-align:right;background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:14px;margin-bottom:14px"></div>
+
+      <div class="kpi-row" id="productsKpis">
+        <div class="kpi-card" data-tone="indigo">
+          <span class="kpi-icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></span>
+          <div class="kpi-body"><div class="kpi-label">عدد المنتجات</div><div class="kpi-value" id="kpiProductCount">0</div></div>
+        </div>
+        <div class="kpi-card" data-tone="slate">
+          <span class="kpi-icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2h9l3 3v17H6z"/><path d="M9 8h6M9 12h6M9 16h4"/></svg></span>
+          <div class="kpi-body"><div class="kpi-label">بدون باركود</div><div class="kpi-value" id="kpiNoBarcode">0</div></div>
+        </div>
+        <div class="kpi-card" data-tone="amber">
+          <span class="kpi-icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2 2 21h20L12 2Z"/><path d="M12 9v5M12 17h.01"/></svg></span>
+          <div class="kpi-body"><div class="kpi-label">مخزون منخفض</div><div class="kpi-value" id="kpiProductsLowStock">0</div></div>
+        </div>
+      </div>
+
+      <div class="filters-row">
+        <input id="searchInput" type="text" placeholder="ابحث بالاسم أو الباركود أو الكود..." />
+        <select id="categoryFilter">
+          <option value="">كل الفئات</option>
+        </select>
+      </div>
+
+      <table class="products-table">
+        <thead>
+          <tr>
+            <th></th>
+            <th>الاسم</th>
+            <th>الفئة</th>
+            <th>السعر</th>
+            <th>المخزون</th>
+            <th>الباركود</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="productsTableBody"></tbody>
+      </table>
+      <div id="emptyState" class="empty-state" style="display:none">لا توجد منتجات مطابقة.</div>
+    </div>
+  </div>
+
+  <!-- نافذة إضافة/تعديل منتج -->
+  <div id="productModal" class="modal-overlay hidden">
+    <div class="modal">
+      <h2 id="modalTitle">منتج جديد</h2>
+      <form id="productForm">
+        <input type="hidden" id="productId" />
+
+        <div class="form-grid">
+          <div class="form-field full">
+            <label>الصورة</label>
+            <div class="image-picker">
+              <img id="imagePreview" src="" alt="" />
+              <button type="button" id="pickImageBtn" class="btn btn-secondary btn-sm">اختر صورة...</button>
+            </div>
+          </div>
+
+          <div class="form-field full">
+            <label>اسم المنتج *</label>
+            <input id="fieldName" type="text" required />
+          </div>
+
+          <div class="form-field">
+            <label>الفئة</label>
+            <select id="fieldCategory"></select>
+          </div>
+          <div class="form-field">
+            <label>فئة جديدة (اختياري)</label>
+            <input id="fieldNewCategory" type="text" placeholder="اكتب اسم فئة لإضافتها" />
+          </div>
+
+          <div class="form-field">
+            <label>السعر *</label>
+            <input id="fieldPrice" type="number" step="0.01" min="0" required />
+          </div>
+          <div class="form-field">
+            <label>التكلفة</label>
+            <input id="fieldCost" type="number" step="0.01" min="0" />
+          </div>
+
+          <div class="form-field">
+            <label>نسبة الضريبة %</label>
+            <input id="fieldTax" type="number" step="0.01" min="0" />
+          </div>
+          <div class="form-field">
+            <label>الوحدة</label>
+            <select id="fieldUnit">
+              <option value="piece">قطعة</option>
+              <option value="kg">كيلوجرام</option>
+              <option value="liter">لتر</option>
+              <option value="box">صندوق</option>
+            </select>
+          </div>
+
+          <div class="form-field">
+            <label>الباركود</label>
+            <input id="fieldBarcode" type="text" />
+          </div>
+          <div class="form-field">
+            <label>الكود الداخلي (SKU)</label>
+            <input id="fieldSku" type="text" />
+          </div>
+
+          <div class="form-field checkbox full">
+            <input id="fieldIsWeighted" type="checkbox" />
+            <label for="fieldIsWeighted">بيع بالوزن (خضار/فواكه) — يُوزن على ميزان يطبع باركوداً، والسعر يُحسب تلقائياً عند المسح</label>
+          </div>
+          <div class="form-field full" id="pluField" hidden>
+            <label>كود الصنف (PLU) — نفس الكود المُدخَل بالميزان لهذا الصنف</label>
+            <input id="fieldPluCode" type="text" inputmode="numeric" maxlength="5" placeholder="مثال: 123" />
+            <p class="field-hint">أرقام فقط، حتى 5 خانات — يُكمَّل تلقائياً بأصفار بادئة (مثال: 123 ← 00123) ليطابق صيغة باركود الميزان بالضبط.</p>
+          </div>
+
+          <div class="form-field full">
+            <label>نوع المخزون</label>
+            <div class="login-mode-tabs" id="stockModeTabs">
+              <button type="button" data-mode="open" class="login-mode-tab">مفتوح بدون كمية (خدمة/غير محدود)</button>
+              <button type="button" data-mode="tracked" class="login-mode-tab active">بكمية محددة (يُمنع البيع لو نفدت)</button>
+            </div>
+            <input id="fieldTrackInventory" type="checkbox" checked class="hidden" />
+          </div>
+
+          <div class="form-field" id="stockField">
+            <label>الكمية الحالية</label>
+            <input id="fieldStock" type="number" step="0.01" min="0" />
+          </div>
+          <div class="form-field" id="minQtyField">
+            <label>حد التنبيه (إعادة الطلب)</label>
+            <input id="fieldMinQty" type="number" step="0.01" min="0" />
+          </div>
+        </div>
+
+        <div class="advanced-toggle" id="advancedToggle" data-business="fashion,restaurant">+ خيارات خاصة بالنشاط</div>
+        <div class="form-grid advanced-fields" id="advancedFields">
+          <div class="form-field full" data-business="fashion">
+            <label>منتج أساسي (اجعل هذا متغيّراً تابعاً له — أزياء)</label>
+            <select id="fieldParentProduct">
+              <option value="">— منتج مستقل (غير مرتبط) —</option>
+            </select>
+          </div>
+          <div class="form-field" data-business="fashion">
+            <label>المقاس (أزياء)</label>
+            <input id="fieldVariantSize" type="text" placeholder="مثال: M, L, 42" />
+          </div>
+          <div class="form-field" data-business="fashion">
+            <label>اللون (أزياء)</label>
+            <input id="fieldVariantColor" type="text" placeholder="مثال: أحمر" />
+          </div>
+          <div class="form-field checkbox full" data-business="restaurant">
+            <input id="fieldIsRecipe" type="checkbox" />
+            <label for="fieldIsRecipe">هذا صنف مُحضّر (مطعم) وله مكوّنات</label>
+          </div>
+        </div>
+
+        <div class="modal-actions">
+          <button type="button" id="cancelBtn" class="btn btn-secondary">إلغاء</button>
+          <button type="submit" id="saveBtn" class="btn btn-primary">حفظ</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="../i18n.js"></script>
+  <script src="../common.js"></script>
+  <script src="products.js"></script>
+</body>
+</html>

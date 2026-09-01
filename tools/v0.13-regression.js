@@ -1,0 +1,17 @@
+const fs=require('fs');const path=require('path');const root=path.resolve(__dirname,'..');const read=(x)=>fs.readFileSync(path.join(root,x),'utf8');const db=read('database/db.js');const schema=read('database/schema.sql');const syncServer=read('server/sync-server.js');const checks=[
+['customers own a branch',/CREATE TABLE IF NOT EXISTS customers[\s\S]*branch_id INTEGER NOT NULL REFERENCES branches\(id\)/m.test(schema)],
+['suppliers own a branch',/CREATE TABLE IF NOT EXISTS suppliers[\s\S]*branch_id INTEGER NOT NULL REFERENCES branches\(id\)/m.test(schema)],
+['legacy customer branch migration',/customers:\s*'branch_id INTEGER REFERENCES branches\(id\)'/m.test(db)&&/customers:\s*'UPDATE customers SET branch_id=COALESCE\(branch_id, \?\) WHERE branch_id IS NULL'/m.test(db)],
+['legacy supplier branch migration',/suppliers:\s*'branch_id INTEGER REFERENCES branches\(id\)'/m.test(db)&&/suppliers:\s*'UPDATE suppliers SET branch_id=COALESCE\(branch_id, \?\) WHERE branch_id IS NULL'/m.test(db)],
+['customer list scoped',/SELECT \* FROM customers WHERE branch_id=\?/m.test(db)],
+['customer update scoped',/UPDATE customers SET name=\?,phone=\?,updated_at[\s\S]*WHERE id=\? AND branch_id=\?/m.test(db)],
+['loyalty cannot be injected on create',/INSERT INTO customers \(uuid,branch_id,name,phone,loyalty_points\) VALUES \(\?,\?,\?,\?,0\)/m.test(db)],
+['loyalty cannot be edited by profile update',/UPDATE customers SET name=\?,phone=\?,updated_at/m.test(db)&&!/UPDATE customers SET name=\?,phone=\?,loyalty_points/.test(db)],
+['supplier list scoped',/SELECT \* FROM suppliers WHERE branch_id=\?/m.test(db)],
+['supplier update scoped',/UPDATE suppliers SET name=\?,phone=\?,address=\?,notes=\?,updated_at[\s\S]*WHERE id=\? AND branch_id=\?/m.test(db)],
+['purchase supplier scoped',/SELECT id FROM suppliers WHERE id=\? AND branch_id=\?/m.test(db)],
+['weighted cost uses branch inventory cost',/SELECT quantity, unit_cost FROM inventory WHERE branch_id=\? AND product_id=\?/m.test(db)],
+['branch-owned sync entities are not global',/GLOBAL_ENTITIES = new Set\(\['categories', 'products'\]\)/m.test(syncServer)],
+['customer sync carries branch uuid',/SELECT c\.\*,b\.uuid AS branch_uuid FROM customers c JOIN branches b ON b\.id=c\.branch_id WHERE c\.branch_id=\?/m.test(db)],
+['supplier sync carries branch uuid',/SELECT s\.\*,b\.uuid AS branch_uuid FROM suppliers s JOIN branches b ON b\.id=s\.branch_id WHERE s\.branch_id=\?/m.test(db)],
+];let failed=0;for(const [n,ok] of checks){if(ok)console.log('PASS: '+n);else{failed++;console.error('FAIL: '+n)}}if(failed)process.exit(1);console.log(`V0.13 REGRESSION: PASS (${checks.length} checks)`);

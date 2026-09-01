@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: file:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-src 'none';">
+  <meta charset="UTF-8" />
+  <title>الإعدادات</title>
+  <link rel="stylesheet" href="../style.css" />
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="brand" data-i18n="app.brand">نقطة البيع</div>
+      <nav class="nav-links">
+        <a href="../index.html" data-i18n="nav.pos">الكاشير</a>
+        <a href="tables.html" data-business="restaurant" data-i18n="nav.tables">الطاولات</a>
+        <a href="shift.html" data-i18n="nav.cashSession">الصندوق</a>
+        <a href="returns.html" data-roles="admin,manager" data-i18n="nav.returns">مرتجعات</a>
+        <a href="products.html" data-roles="admin,manager" data-i18n="nav.products">المنتجات</a>
+        <a href="bundles.html" data-roles="admin,manager" data-i18n="nav.bundles">الحزم</a>
+        <a href="inventory.html" data-roles="admin,manager" data-i18n="nav.inventory">المخزون</a>
+        <a href="customers.html" data-roles="admin,manager" data-i18n="nav.customers">العملاء</a>
+        <a href="suppliers.html" data-roles="admin,manager" data-i18n="nav.suppliers">الموردون والشراء</a>
+        <a href="reports.html" data-roles="admin,manager" data-i18n="nav.reports">التقارير</a>
+        <a href="audit.html" data-roles="admin" data-i18n="nav.audit">سجل التدقيق</a>
+        <a href="payroll.html" data-roles="admin" data-i18n="nav.payroll">الرواتب</a>
+        <a href="users.html" data-roles="admin" data-i18n="nav.users">المستخدمون</a>
+        <a href="settings.html" class="active" data-roles="admin" data-i18n="nav.settings">الإعدادات</a>
+      </nav>
+      <div class="topbar-right">
+        <select id="langSwitcher" class="lang-switcher" title="اللغة / Dil / Language">
+          <option value="ar">AR</option>
+          <option value="tr">TR</option>
+          <option value="en">EN</option>
+        </select>
+        <div class="branch-name" id="branchName">—</div>
+        <div class="user-info">
+          <span id="currentUserName"></span>
+          <span id="currentUserRoleBadge" class="role-badge"></span>
+          <button id="logoutBtn" class="btn btn-secondary btn-sm" data-i18n="common.logout">خروج</button>
+        </div>
+      </div>
+    </header>
+
+    <div class="products-page settings-page">
+      <div class="page-header settings-hero">
+        <div><div class="eyebrow">NEXORA POS</div><h1>الإعدادات</h1><p class="page-subtitle">تحكم مركزي في الهوية، الفوترة، المزامنة، الطباعة، التحديثات، والنسخ الاحتياطي.</p></div><div class="settings-hero-mark" aria-hidden="true">N</div>
+      </div>
+
+      <div class="report-panel settings-panel">
+        <h2>الإعداد الدولي والامتثال المحلي</h2>
+        <p class="field-hint">هذه الطبقة تضبط الدولة والمنطقة الزمنية والعملة ووضع الضريبة. الفوترة الإلكترونية تُنفّذ عبر موصل محلي بحسب الدولة، ولا تفترض Nexora قانونًا واحدًا لكل الدول.</p>
+        <form id="globalForm" class="form-grid">
+          <div class="form-field"><label>الدولة ISO-3166</label><input id="fieldCountryCode" maxlength="2" placeholder="TR" required /></div>
+          <div class="form-field"><label>اللغة/المنطقة</label><input id="fieldLocale" maxlength="16" placeholder="ar" required /></div>
+          <div class="form-field"><label>المنطقة الزمنية IANA</label><input id="fieldTimezone" placeholder="Europe/Istanbul" required /></div>
+          <div class="form-field"><label>العملة ISO-4217</label><input id="fieldGlobalCurrency" maxlength="3" placeholder="TRY" required /></div>
+          <div class="form-field"><label>الخانات العشرية للعملة</label><input id="fieldMinorUnit" type="number" min="0" max="3" step="1" required /></div>
+          <div class="form-field"><label>وضع الضريبة</label><select id="fieldTaxMode"><option value="exclusive">الضريبة مضافة على السعر</option><option value="inclusive">الضريبة مشمولة بالسعر</option></select></div>
+          <div class="form-field"><label>رقم التسجيل الضريبي</label><input id="fieldGlobalTaxNumber" /></div>
+          <div class="form-field"><label>الفوترة الإلكترونية</label><select id="fieldFiscalizationMode"><option value="none">غير مفعّلة</option><option value="adapter">عبر موصل الدولة</option></select></div>
+          <div class="form-field full"><label>معرّف موصل الفوترة الإلكترونية</label><input id="fieldFiscalProvider" placeholder="مثال: tr.gib" /></div>
+          <div class="form-field full"><button type="submit" id="saveGlobalBtn" class="btn btn-primary">حفظ الإعداد الدولي</button></div>
+        </form>
+      </div>
+
+      <div class="report-panel settings-panel">
+        <h2>العملة والفوترة</h2>
+        <form id="currencyForm" class="form-grid">
+          <div class="form-field"><label>العملة الأساسية</label><input id="fieldCurrencyBase" type="text" maxlength="8" placeholder="USD" required /></div>
+          <div class="form-field"><label>العملة الثانوية</label><input id="fieldCurrencySecondary" type="text" maxlength="8" placeholder="TRY" /></div>
+          <div class="form-field"><label>سعر الصرف (1 أساسية =)</label><input id="fieldExchangeRate" type="number" min="0.000001" step="0.000001" required /></div>
+          <div class="form-field"><label>الرقم الضريبي للمنشأة</label><input id="fieldTaxNumber" type="text" /></div>
+          <div class="form-field full"><button type="submit" id="saveCurrencyBtn" class="btn btn-primary">حفظ العملة والفوترة</button></div>
+        </form>
+      </div>
+
+      <div class="report-panel settings-panel">
+        <h2>بيانات الفرع ونوع النشاط</h2>
+        <form id="settingsForm" class="form-grid">
+          <div class="form-field full">
+            <label>اسم الفرع</label>
+            <input id="fieldBranchName" type="text" required />
+          </div>
+          <div class="form-field full">
+            <label>نوع النشاط</label>
+            <select id="fieldBusinessType">
+              <option value="general">عام (يظهر كل شيء)</option>
+              <option value="restaurant">مطعم (تُفعَّل شاشة الطاولات)</option>
+              <option value="supermarket">سوبر ماركت</option>
+              <option value="fashion">معرض أزياء</option>
+            </select>
+            <div class="field-hint">يتحكم هذا في إظهار/إخفاء شاشة "الطاولات" في القائمة العلوية.</div>
+          </div>
+          <div class="form-field full">
+            <button type="submit" id="saveSettingsBtn" class="btn btn-primary">حفظ الإعدادات</button>
+          </div>
+        </form>
+      </div>
+
+      <div class="report-panel settings-panel">
+        <h2>حد الخصم المسموح للكاشير</h2>
+        <form id="discountForm" class="form-grid">
+          <div class="form-field full">
+            <label>أقصى نسبة خصم (%) يقدر الكاشير يطبّقها بدون موافقة مدير</label>
+            <input id="fieldMaxDiscountPercent" type="number" min="0" max="100" step="0.5" required />
+            <div class="field-hint">أي خصم يتجاوز هذه النسبة يتطلب اسم مستخدم وكلمة مرور مدير أو admin عند الدفع.</div>
+          </div>
+          <div class="form-field full">
+            <button type="submit" id="saveDiscountBtn" class="btn btn-primary">حفظ حد الخصم</button>
+          </div>
+        </form>
+      </div>
+
+      <div class="report-panel settings-panel">
+        <h2>البيع بالوزن (خضار وفواكه السوبرماركت)</h2>
+        <form id="weighingForm" class="form-grid">
+          <div class="form-field full">
+            <label>بادئة باركود الميزان</label>
+            <input id="fieldWeightedPrefix" type="text" maxlength="2" placeholder="20" />
+            <div class="field-hint">
+              معظم الموازين تستخدم البادئة "20" افتراضياً. إن كان ميزانك يستخدم بادئة مختلفة
+              (راجع دليل الميزان أو اسأل الفني الذي ركّبه)، عدّلها هنا فقط — كل باركودات الوزن
+              المطبوعة من الميزان تُفهم تلقائياً بعدها بدون أي إعداد إضافي على شاشة الكاشير.
+              يجب أن تكون رقمين بالضبط (مثال: 20، 21، 02).
+            </div>
+          </div>
+          <div class="form-field full">
+            <button type="submit" id="saveWeighingBtn" class="btn btn-primary">حفظ</button>
+          </div>
+        </form>
+      </div>
+
+      <div class="report-panel settings-panel">
+        <h2>العلامة التجارية (تظهر على الفاتورة)</h2>
+        <form id="brandingForm" class="form-grid">
+          <div class="form-field full">
+            <label>اسم المتجر / الاسم التجاري</label>
+            <input id="fieldStoreName" type="text" placeholder="مثال: سوبر ماركت النور" />
+          </div>
+          <div class="form-field full">
+            <label>شعار المتجر</label>
+            <div style="display:flex; align-items:center; gap:12px;">
+              <img id="logoPreview" src="" alt="" style="max-width:80px; max-height:80px; display:none; border:1px solid #ddd; border-radius:6px;" />
+              <button type="button" id="selectLogoBtn" class="btn btn-secondary btn-sm">اختيار صورة الشعار</button>
+            </div>
+            <div class="field-hint">يظهر الشعار في أعلى الفاتورة المطبوعة.</div>
+          </div>
+          <div class="form-field full">
+            <button type="submit" id="saveBrandingBtn" class="btn btn-primary">حفظ اسم المتجر</button>
+          </div>
+        </form>
+      </div>
+
+      <div class="report-panel settings-panel">
+        <h2>النسخ الاحتياطي والاستعادة</h2>
+        <p class="field-hint">يُنشئ نسخة كاملة من قاعدة البيانات الحالية، أو يستعيد نسخة سابقة (سيُعاد تشغيل التطبيق بعد الاستعادة).</p>
+        <div class="form-field full" style="display:flex; gap:10px;">
+          <button type="button" id="createBackupBtn" class="btn btn-secondary">إنشاء نسخة احتياطية</button>
+          <button type="button" id="restoreBackupBtn" class="btn btn-secondary">استعادة نسخة احتياطية</button>
+        </div>
+        <div id="backupStatus" class="field-hint"></div>
+      </div>
+
+      <div class="report-panel settings-panel">
+        <h2>المزامنة مع السيرفر المركزي</h2>
+        <p class="field-hint">تعمل نقطة البيع دون اتصال، ثم تُرسل المنتجات والمخزون والعملاء والفواتير عند الضغط على مزامنة. استخدم خادم Nexora POS المركزي المتوافق مع العقد المرفق.</p>
+        <form id="syncForm" class="form-grid">
+          <div class="form-field full"><label>معرّف هذا الفرع (Branch UUID)</label><input id="fieldBranchUuid" type="text" readonly /><span class="field-hint">أرسل هذا المعرّف لمن يدير الخادم المركزي ليسجّل مفتاحاً لهذا الفرع عبر <code>tools/manage-branch-keys.js add --branch &lt;هذا المعرّف&gt;</code>، ثم الصق المفتاح الذي يعيده في حقل "رمز الوصول" أدناه.</span></div>
+          <div class="form-field full"><label>عنوان الخادم</label><input id="fieldSyncServerUrl" type="url" placeholder="https://pos.example.com" /></div>
+          <div class="form-field full"><label>رمز الوصول (مفتاح هذا الفرع)</label><input id="fieldSyncToken" type="password" autocomplete="off" /></div>
+          <div class="form-field checkbox full"><input id="fieldSyncEnabled" type="checkbox" /><label for="fieldSyncEnabled">تفعيل المزامنة</label></div>
+          <div class="form-field full" style="display:flex; gap:10px;"><button type="submit" id="saveSyncBtn" class="btn btn-primary">حفظ إعدادات المزامنة</button><button type="button" id="syncNowBtn" class="btn btn-secondary">مزامنة الآن</button></div>
+          <div id="syncStatus" class="field-hint"></div>
+        </form>
+      </div>
+
+      <div class="report-panel settings-panel">
+        <h2>مشاركة المخزون والمبيعات بين كاشيرات نفس المحل</h2>
+        <p class="field-hint">
+          لو عندك أكثر من شاشة كاشير بنفس المحل وبدك يتشاركوا نفس المخزون والفواتير لحظياً: حدّد
+          جهازاً واحداً "رئيسي"، وباقي الأجهزة تتصل فيه تلقائياً — بدون أي إعداد شبكة يدوي.
+        </p>
+
+        <div class="login-mode-tabs" id="lanRoleTabs">
+          <button type="button" data-role="none" class="login-mode-tab">بدون مشاركة</button>
+          <button type="button" data-role="main" class="login-mode-tab">هذا الجهاز رئيسي</button>
+          <button type="button" data-role="terminal" class="login-mode-tab">هذا الجهاز طرفية</button>
+        </div>
+
+        <!-- وضع الجهاز الرئيسي -->
+        <div id="lanMainPanel" class="hidden">
+          <div class="form-field full">
+            <label>اسم هذا الجهاز (يظهر للأجهزة الأخرى عند الاكتشاف)</label>
+            <input id="fieldLanDeviceName" type="text" placeholder="مثال: كاشير الصندوق الرئيسي" />
+          </div>
+          <button type="button" id="generatePairingCodeBtn" class="btn btn-primary">إظهار رمز اقتران لجهاز جديد</button>
+          <div id="pairingCodeBox" class="hidden" style="margin-top:12px;text-align:center;background:#eff6ff;border-radius:10px;padding:16px">
+            <div style="font-size:13px;color:#6b7280;margin-bottom:6px">افتح التطبيق بالجهاز الثاني، اختر "هذا الجهاز طرفية"، واختر هذا الجهاز من القائمة، وأدخل الرمز:</div>
+            <div id="pairingCodeDisplay" style="font-size:32px;font-weight:800;letter-spacing:8px;color:#2563eb"></div>
+            <div id="pairingCodeExpiry" class="field-hint"></div>
+          </div>
+        </div>
+
+        <!-- وضع الجهاز الطرفية -->
+        <div id="lanTerminalPanel" class="hidden">
+          <div id="lanConnectedBox" class="hidden" style="background:#f0fdf4;border-radius:10px;padding:14px;margin-bottom:12px">
+            <strong style="color:#16a34a">متصل ✓</strong>
+            <div id="lanConnectedInfo" class="field-hint"></div>
+            <button type="button" id="lanDisconnectBtn" class="btn btn-secondary btn-sm" style="margin-top:8px">فصل الاتصال</button>
+          </div>
+          <div id="lanDiscoveryBox">
+            <label>الأجهزة المكتشفة على الشبكة</label>
+            <div id="lanDevicesList" class="field-hint">جارٍ البحث عن أجهزة رئيسية على الشبكة...</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="report-panel settings-panel">
+        <h2>الطباعة التلقائية</h2>
+        <p class="field-hint">لا تظهر أي نافذة طباعة. اختر طابعة فعلية من القائمة، أو اترك "طابعة ويندوز الافتراضية" — طابعات PDF الوهمية (مثل Microsoft Print to PDF) مستبعدة تلقائياً من الطباعة التلقائية لأنها تُنتج ملف PDF بدل الطباعة الفعلية.</p>
+        <form id="printingForm" class="form-grid">
+          <div class="form-field checkbox full"><input id="fieldKitchenAutoPrint" type="checkbox" /><label for="fieldKitchenAutoPrint">إرسال طلبات الطاولات والسفري للمطبخ تلقائياً</label></div>
+          <div class="form-field full"><label>طابعة المطبخ</label><select id="fieldKitchenPrinterName"><option value="">طابعة ويندوز الافتراضية</option></select></div>
+          <div class="form-field checkbox full"><input id="fieldReceiptAutoPrint" type="checkbox" /><label for="fieldReceiptAutoPrint">طباعة الفاتورة تلقائياً بعد الدفع</label></div>
+          <div class="form-field full"><label>طابعة الفواتير</label><select id="fieldReceiptPrinterName"><option value="">طابعة ويندوز الافتراضية</option></select></div>
+          <div class="form-field full"><button type="submit" id="savePrintingBtn" class="btn btn-primary">حفظ الطباعة التلقائية</button></div>
+        </form>
+      </div>
+
+      <div class="report-panel settings-panel">
+        <h2>تحديث التطبيق</h2>
+        <p class="field-hint">الإصدار الحالي: <span id="appCurrentVersion">—</span></p>
+        <div class="form-field checkbox full">
+          <input id="fieldAutoCheckUpdates" type="checkbox" />
+          <label for="fieldAutoCheckUpdates">التحقق التلقائي من وجود تحديث عند بدء التشغيل</label>
+        </div>
+        <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-top:10px;">
+          <button id="checkUpdateBtn" type="button" class="btn btn-secondary">التحقق من وجود تحديث</button>
+          <button id="downloadUpdateBtn" type="button" class="btn btn-primary hidden">تنزيل التحديث</button>
+          <button id="installUpdateBtn" type="button" class="btn btn-primary hidden">تثبيت وإعادة التشغيل</button>
+        </div>
+        <div id="updateStatus" class="field-hint" style="margin-top:8px;"></div>
+      </div>
+
+      <div class="report-panel settings-panel developer-contact-panel premium-contact">
+        <h2 data-i18n="settings.developer.title">رقم المطور</h2>
+        <p class="field-hint" data-i18n="settings.developer.description">للدعم الفني والتواصل مع المطور:</p>
+        <div class="developer-contact-row"><span class="developer-contact-icon" aria-hidden="true">☎</span><a href="tel:+905525355755" dir="ltr" class="developer-phone">+905525355755</a></div>
+      </div>
+
+      <div class="report-panel settings-panel">
+        <h2 data-i18n="settings.audit.title">سجل التدقيق والأخطاء</h2>
+        <button id="loadAuditBtn" type="button" class="btn btn-secondary" data-i18n="settings.audit.load">عرض آخر العمليات</button>
+        <div id="auditLogList" class="field-hint" style="margin-top:10px; white-space:pre-wrap"></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="../i18n.js"></script>
+  <script src="../common.js"></script>
+  <script src="settings.js"></script>
+</body>
+</html>

@@ -1,0 +1,233 @@
+const { contextBridge, ipcRenderer } = require('electron');
+const { pathToFileURL } = require('url');
+
+// كل ما تحتاجه الواجهة (renderer) من عمليات بيانات يُعرَّف هنا فقط
+// هذا يمنع الواجهة من الوصول المباشر لـ Node.js أو نظام الملفات (أمان)
+contextBridge.exposeInMainWorld('api', {
+  system: { rendererHeartbeat: (state) => ipcRenderer.invoke('system:rendererHeartbeat', state || {}) },
+  pathToFileURL: (filePath) => pathToFileURL(String(filePath || '')).href,
+  auth: {
+    bootstrapInfo: () => ipcRenderer.invoke('auth:bootstrapInfo'),
+    login: (creds) => ipcRenderer.invoke('auth:login', creds),
+    loginWithPin: (pin) => ipcRenderer.invoke('auth:loginWithPin', pin),
+    logout: () => ipcRenderer.invoke('auth:logout'),
+    currentUser: () => ipcRenderer.invoke('auth:currentUser'),
+    changeOwnPassword: (payload) => ipcRenderer.invoke('auth:changeOwnPassword', payload),
+  },
+  users: {
+    list: () => ipcRenderer.invoke('users:list'),
+    create: (user) => ipcRenderer.invoke('users:create', user),
+    update: (user) => ipcRenderer.invoke('users:update', user),
+    delete: (userId) => ipcRenderer.invoke('users:delete', userId),
+    setPin: (userId, pin) => ipcRenderer.invoke('users:setPin', { userId, pin }),
+    clearPin: (userId) => ipcRenderer.invoke('users:clearPin', userId),
+  },
+  products: {
+    list: (filters) => ipcRenderer.invoke('products:list', filters),
+    get: (id) => ipcRenderer.invoke('products:get', id),
+    create: (product) => ipcRenderer.invoke('products:create', product),
+    update: (product) => ipcRenderer.invoke('products:update', product),
+    delete: (id) => ipcRenderer.invoke('products:delete', id),
+    variants: (parentId) => ipcRenderer.invoke('products:variants', parentId),
+    resolveWeightedBarcode: (barcode) => ipcRenderer.invoke('products:resolveWeightedBarcode', barcode),
+    resolveGs1Barcode: (barcode) => ipcRenderer.invoke('products:resolveGs1Barcode', barcode),
+    variantParents: (excludeId) => ipcRenderer.invoke('products:variantParents', excludeId),
+    importCsv: () => ipcRenderer.invoke('products:importCsv'),
+    downloadCsvTemplate: () => ipcRenderer.invoke('products:downloadCsvTemplate'),
+  },
+  bundles: {
+    list: () => ipcRenderer.invoke('bundles:list'),
+    listActive: () => ipcRenderer.invoke('bundles:listActive'),
+    create: (bundle) => ipcRenderer.invoke('bundles:create', bundle),
+    update: (bundle) => ipcRenderer.invoke('bundles:update', bundle),
+    delete: (id) => ipcRenderer.invoke('bundles:delete', id),
+  },
+  categories: {
+    list: () => ipcRenderer.invoke('categories:list'),
+    create: (category) => ipcRenderer.invoke('categories:create', category),
+  },
+  customers: {
+    list: (filters) => ipcRenderer.invoke('customers:list', filters),
+    get: (id) => ipcRenderer.invoke('customers:get', id),
+    create: (customer) => ipcRenderer.invoke('customers:create', customer),
+    update: (customer) => ipcRenderer.invoke('customers:update', customer),
+    ledger: (id) => ipcRenderer.invoke('customers:ledger', id),
+    receivePayment: (payload) => ipcRenderer.invoke('customers:receivePayment', payload),
+  },
+  suppliers: {
+    list: () => ipcRenderer.invoke('suppliers:list'),
+    create: (supplier) => ipcRenderer.invoke('suppliers:create', supplier),
+    update: (supplier) => ipcRenderer.invoke('suppliers:update', supplier),
+  },
+  purchases: {
+    list: () => ipcRenderer.invoke('purchases:list'),
+    get: (id) => ipcRenderer.invoke('purchases:get', id),
+    create: (purchase) => ipcRenderer.invoke('purchases:create', purchase),
+    receive: (id) => ipcRenderer.invoke('purchases:receive', id),
+  },
+  tables: {
+    list: () => ipcRenderer.invoke('tables:list'),
+    create: (table) => ipcRenderer.invoke('tables:create', table),
+    delete: (id) => ipcRenderer.invoke('tables:delete', id),
+    openSale: (tableId) => ipcRenderer.invoke('tables:openSale', tableId),
+    getOpenSale: (tableId) => ipcRenderer.invoke('tables:getOpenSale', tableId),
+    setItems: (saleId, items) => ipcRenderer.invoke('tables:setItems', { saleId, items }),
+    merge: (sourceTableId, targetTableId) => ipcRenderer.invoke('tables:merge', { sourceTableId, targetTableId }),
+    split: (saleId, selected, payment) => ipcRenderer.invoke('tables:split', { saleId, selected, payment }),
+    close: (saleId, payment) => ipcRenderer.invoke('tables:close', { saleId, payment }),
+    release: (tableId) => ipcRenderer.invoke('tables:release', tableId),
+  },
+  kitchen: {
+    open: (saleId) => ipcRenderer.invoke('kitchen:open', saleId),
+    print: () => ipcRenderer.invoke('kitchen:print'),
+  },
+  sales: {
+    create: (sale) => ipcRenderer.invoke('sale:create', sale),
+    list: (filters) => ipcRenderer.invoke('sales:list', filters),
+    get: (id) => ipcRenderer.invoke('sales:get', id),
+  },
+  branches: {
+    list: () => ipcRenderer.invoke('branches:list'),
+    current: () => ipcRenderer.invoke('branches:current'),
+    update: (branch) => ipcRenderer.invoke('branches:update', branch),
+  },
+  dialog: {
+    selectImage: () => ipcRenderer.invoke('dialog:selectImage'),
+  },
+  inventory: {
+    list: (filters) => ipcRenderer.invoke('inventory:list', filters),
+    adjust: (payload) => ipcRenderer.invoke('inventory:adjust', payload),
+    movements: (filters) => ipcRenderer.invoke('inventory:movements', filters),
+  },
+  reports: {
+    summary: (range) => ipcRenderer.invoke('reports:summary', range),
+    topProducts: (range) => ipcRenderer.invoke('reports:topProducts', range),
+    daily: (range) => ipcRenderer.invoke('reports:daily', range),
+    delivery: (range) => ipcRenderer.invoke('reports:delivery', range),
+    profitLoss: (range) => ipcRenderer.invoke('reports:profitLoss', range),
+    exportExcel: (range) => ipcRenderer.invoke('reports:exportExcel', range),
+    exportPdf: (range) => ipcRenderer.invoke('reports:exportPdf', range),
+    debtAging: () => ipcRenderer.invoke('reports:debtAging'),
+    invoices: (range) => ipcRenderer.invoke('reports:invoices', range),
+  },
+  receipt: {
+    open: (saleId) => ipcRenderer.invoke('receipt:open', saleId),
+    print: () => ipcRenderer.invoke('receipt:print'),
+    qr: (saleId) => ipcRenderer.invoke('receipt:qr', saleId),
+  },
+  global: {
+    get: () => ipcRenderer.invoke('global:get'),
+    set: (profile) => ipcRenderer.invoke('global:set', profile),
+  },
+  tax: {
+    list: () => ipcRenderer.invoke('tax:list'),
+    save: (profile) => ipcRenderer.invoke('tax:save', profile),
+  },
+  payments: {
+    list: (range) => ipcRenderer.invoke('payments:list', range),
+  },
+  shift: {
+    cashIn: (payload) => ipcRenderer.invoke('shift:cashIn', payload),
+    cashOut: (payload) => ipcRenderer.invoke('shift:cashOut', payload),
+    cashMovements: (shiftId) => ipcRenderer.invoke('shift:cashMovements', shiftId),
+    current: () => ipcRenderer.invoke('shift:current'),
+    open: (openingAmount) => ipcRenderer.invoke('shift:open', openingAmount),
+    summary: (shiftId) => ipcRenderer.invoke('shift:summary', shiftId),
+    close: (shiftId, actualCash, notes) => ipcRenderer.invoke('shift:close', { shiftId, actualCash, notes }),
+    list: (filters) => ipcRenderer.invoke('shift:list', filters),
+  },
+  payroll: {
+    employees: () => ipcRenderer.invoke('payroll:employees'),
+    addEmployee: (fullName, jobTitle, payType, payRate) => ipcRenderer.invoke('payroll:addEmployee', { fullName, jobTitle, payType, payRate }),
+    updateEmployee: (employeeId, fullName, jobTitle, payType, payRate) => ipcRenderer.invoke('payroll:updateEmployee', { employeeId, fullName, jobTitle, payType, payRate }),
+    setEmployeeActive: (employeeId, isActive) => ipcRenderer.invoke('payroll:setEmployeeActive', { employeeId, isActive }),
+    deleteEmployee: (employeeId) => ipcRenderer.invoke('payroll:deleteEmployee', { employeeId }),
+    month: (monthKey) => ipcRenderer.invoke('payroll:month', monthKey),
+    employee: (monthId, employeeId) => ipcRenderer.invoke('payroll:employee', { monthId, employeeId }),
+    addTransaction: (payload) => ipcRenderer.invoke('payroll:addTransaction', payload),
+    removeTransaction: (transactionId) => ipcRenderer.invoke('payroll:removeTransaction', transactionId),
+    setRegularHours: (monthId, employeeId, hours) => ipcRenderer.invoke('payroll:setRegularHours', { monthId, employeeId, hours }),
+    setStartDate: (monthId, employeeId, startDate) => ipcRenderer.invoke('payroll:setStartDate', { monthId, employeeId, startDate }),
+  },
+
+  returns: {
+    saleForReturn: (saleId) => ipcRenderer.invoke('returns:saleForReturn', saleId),
+    create: (payload) => ipcRenderer.invoke('returns:create', payload),
+    list: (filters) => ipcRenderer.invoke('returns:list', filters),
+    get: (id) => ipcRenderer.invoke('returns:get', id),
+  },
+  discount: {
+    maxCashierPercent: () => ipcRenderer.invoke('discount:maxCashierPercent'),
+    setMaxCashierPercent: (percent) => ipcRenderer.invoke('discount:setMaxCashierPercent', percent),
+    approve: (username, password) => ipcRenderer.invoke('discount:approve', { username, password }),
+    approveWithPin: (pin) => ipcRenderer.invoke('discount:approveWithPin', pin),
+  },
+  weighing: {
+    getPrefix: () => ipcRenderer.invoke('weighing:getPrefix'),
+    setPrefix: (prefix) => ipcRenderer.invoke('weighing:setPrefix', prefix),
+  },
+  backup: {
+    create: () => ipcRenderer.invoke('backup:create'),
+    restore: () => ipcRenderer.invoke('backup:restore'),
+  },
+  license: {
+    deviceFingerprint: () => ipcRenderer.invoke('license:deviceFingerprint'),
+    status: () => ipcRenderer.invoke('license:status'),
+    activate: (fileContent) => ipcRenderer.invoke('license:activate', fileContent),
+  },
+  branding: {
+    get: () => ipcRenderer.invoke('branding:get'),
+    setStoreName: (storeName) => ipcRenderer.invoke('branding:setStoreName', storeName),
+    setLogo: () => ipcRenderer.invoke('branding:setLogo'),
+  },
+  language: {
+    get: () => ipcRenderer.invoke('language:get'),
+    set: (lang) => ipcRenderer.invoke('language:set', lang),
+  },
+  theme: {
+    get: () => ipcRenderer.invoke('theme:get'),
+    set: (theme) => ipcRenderer.invoke('theme:set', theme),
+  },
+  sync: {
+    getConfig: () => ipcRenderer.invoke('sync:getConfig'),
+    saveConfig: (config) => ipcRenderer.invoke('sync:saveConfig', config),
+    run: () => ipcRenderer.invoke('sync:run'),
+  },
+  lan: {
+    getStatus: () => ipcRenderer.invoke('lan:getStatus'),
+    setRole: (role, deviceName) => ipcRenderer.invoke('lan:setRole', { role, deviceName }),
+    startPairingCode: () => ipcRenderer.invoke('lan:startPairingCode'),
+    pairWithDevice: (address, port, code) => ipcRenderer.invoke('lan:pairWithDevice', { address, port, code }),
+    disconnect: () => ipcRenderer.invoke('lan:disconnect'),
+  },
+  printing: {
+    getConfig: () => ipcRenderer.invoke('printing:getConfig'),
+    saveConfig: (config) => ipcRenderer.invoke('printing:saveConfig', config),
+    listPrinters: () => ipcRenderer.invoke('printing:listPrinters'),
+  },
+  audit: {
+    list: () => ipcRenderer.invoke('audit:list'),
+    clientEvent: (payload) => ipcRenderer.invoke('audit:clientEvent', payload),
+  },
+  setup: {
+    isRequired: () => ipcRenderer.invoke('setup:isRequired'),
+    complete: (businessType) => ipcRenderer.invoke('setup:complete', businessType),
+  },
+  currency: {
+    get: () => ipcRenderer.invoke('currency:get'),
+    set: (config) => ipcRenderer.invoke('currency:set', config),
+  },
+  updates: {
+    currentVersion: () => ipcRenderer.invoke('update:currentVersion'),
+    check: () => ipcRenderer.invoke('update:check'),
+    download: () => ipcRenderer.invoke('update:download'),
+    installNow: () => ipcRenderer.invoke('update:installNow'),
+    getAutoCheckEnabled: () => ipcRenderer.invoke('update:getAutoCheckEnabled'),
+    setAutoCheckEnabled: (enabled) => ipcRenderer.invoke('update:setAutoCheckEnabled', enabled),
+    onStatus: (callback) => {
+      const handler = (_event, data) => callback(data);
+      ipcRenderer.on('update:status', handler);
+      return () => ipcRenderer.removeListener('update:status', handler);
+    },
+  },
+});

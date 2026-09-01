@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: file:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-src 'none';">
+  <meta charset="UTF-8" />
+  <title>إدارة المستخدمين</title>
+  <link rel="stylesheet" href="../style.css" />
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="brand" data-i18n="app.brand">نقطة البيع</div>
+      <nav class="nav-links">
+        <a href="../index.html" data-i18n="nav.pos">الكاشير</a>
+        <a href="tables.html" data-business="restaurant" data-i18n="nav.tables">الطاولات</a>
+        <a href="shift.html" data-i18n="nav.cashSession">الصندوق</a>
+        <a href="returns.html" data-roles="admin,manager" data-i18n="nav.returns">مرتجعات</a>
+        <a href="products.html" data-roles="admin,manager" data-i18n="nav.products">المنتجات</a>
+        <a href="bundles.html" data-roles="admin,manager" data-i18n="nav.bundles">الحزم</a>
+        <a href="inventory.html" data-roles="admin,manager" data-i18n="nav.inventory">المخزون</a>
+        <a href="customers.html" data-roles="admin,manager" data-i18n="nav.customers">العملاء</a>
+        <a href="suppliers.html" data-roles="admin,manager" data-i18n="nav.suppliers">الموردون والشراء</a>
+        <a href="reports.html" data-roles="admin,manager" data-i18n="nav.reports">التقارير</a>
+        <a href="audit.html" data-roles="admin" data-i18n="nav.audit">سجل التدقيق</a>
+        <a href="payroll.html" data-roles="admin" data-i18n="nav.payroll">الرواتب</a>
+        <a href="users.html" class="active" data-roles="admin" data-i18n="nav.users">المستخدمون</a>
+        <a href="settings.html" data-roles="admin" data-i18n="nav.settings">الإعدادات</a>
+      </nav>
+      <div class="topbar-right">
+        <select id="langSwitcher" class="lang-switcher" title="اللغة / Dil / Language">
+          <option value="ar">AR</option>
+          <option value="tr">TR</option>
+          <option value="en">EN</option>
+        </select>
+        <div class="branch-name" id="branchName">—</div>
+        <div class="user-info">
+          <span id="currentUserName"></span>
+          <span id="currentUserRoleBadge" class="role-badge"></span>
+          <button id="logoutBtn" class="btn btn-secondary btn-sm" data-i18n="common.logout">خروج</button>
+        </div>
+      </div>
+    </header>
+
+    <div class="products-page">
+      <div class="page-header">
+        <h1>إدارة المستخدمين</h1>
+        <button id="addUserBtn" class="btn btn-primary">+ مستخدم جديد</button>
+      </div>
+
+      <table class="products-table">
+        <thead>
+          <tr>
+            <th>الاسم</th>
+            <th>اسم المستخدم</th>
+            <th>الدور</th>
+            <th>الحالة</th>
+            <th>PIN</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="usersTableBody"></tbody>
+      </table>
+      <div id="emptyState" class="empty-state" style="display:none">لا يوجد مستخدمون بعد.</div>
+    </div>
+  </div>
+
+  <!-- نافذة إضافة/تعديل مستخدم -->
+  <div id="userModal" class="modal-overlay hidden">
+    <div class="modal">
+      <h2 id="modalTitle">مستخدم جديد</h2>
+      <form id="userForm">
+        <input type="hidden" id="userId" />
+        <div class="form-grid">
+          <div class="form-field full">
+            <label>الاسم الكامل *</label>
+            <input id="fieldFullName" type="text" required />
+          </div>
+          <div class="form-field">
+            <label>اسم المستخدم *</label>
+            <input id="fieldUsername" type="text" required autocomplete="off" />
+          </div>
+          <div class="form-field">
+            <label>الدور *</label>
+            <select id="fieldRole">
+              <option value="cashier">كاشير</option>
+              <option value="manager">مدير فرع</option>
+              <option value="admin">مدير عام</option>
+            </select>
+          </div>
+          <div class="form-field full">
+            <label id="passwordLabel">كلمة المرور *</label>
+            <input id="fieldPassword" type="password" autocomplete="new-password" />
+          </div>
+          <div class="form-field checkbox full">
+            <input id="fieldIsActive" type="checkbox" checked />
+            <label for="fieldIsActive">الحساب مفعّل (يمكنه تسجيل الدخول)</label>
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button type="button" id="cancelBtn" class="btn btn-secondary">إلغاء</button>
+          <button type="submit" id="saveBtn" class="btn btn-primary">حفظ</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- نافذة تعيين/تغيير PIN -->
+  <div id="pinModal" class="modal-overlay hidden">
+    <div class="modal">
+      <h2>تعيين رقم PIN — <span id="pinModalUserName"></span></h2>
+      <p style="color:#6b7280;font-size:13px;margin-bottom:12px">
+        يُستخدم هذا الرقم للدخول السريع من شاشة تسجيل الدخول (بديل عن كلمة المرور)، ولموافقات
+        المدير السريعة (خصم/بيع آجل) من شاشة الكاشير. من 4 إلى 6 أرقام، ويجب ألا يتكرر مع موظف آخر.
+      </p>
+      <div class="form-grid">
+        <div class="form-field full">
+          <label>رقم PIN الجديد</label>
+          <input id="fieldNewPin" type="text" inputmode="numeric" maxlength="6" placeholder="مثال: 1234" />
+        </div>
+      </div>
+      <div id="pinModalError" class="payment-error hidden"></div>
+      <div class="modal-actions">
+        <button type="button" id="cancelPinBtn" class="btn btn-secondary">إلغاء</button>
+        <button type="button" id="savePinBtn" class="btn btn-primary">حفظ</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="../i18n.js"></script>
+  <script src="../common.js"></script>
+  <script src="users.js"></script>
+</body>
+</html>

@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: file:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-src 'none';">
+  <meta charset="UTF-8" />
+  <title>المرتجعات</title>
+  <link rel="stylesheet" href="../style.css" />
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="brand" data-i18n="app.brand">نقطة البيع</div>
+      <nav class="nav-links">
+        <a href="../index.html" data-i18n="nav.pos">الكاشير</a>
+        <a href="tables.html" data-business="restaurant" data-i18n="nav.tables">الطاولات</a>
+        <a href="shift.html" data-i18n="nav.cashSession">الصندوق</a>
+        <a href="returns.html" class="active" data-i18n="nav.returns">مرتجعات</a>
+        <a href="products.html" data-roles="admin,manager" data-i18n="nav.products">المنتجات</a>
+        <a href="bundles.html" data-roles="admin,manager" data-i18n="nav.bundles">الحزم</a>
+        <a href="inventory.html" data-roles="admin,manager" data-i18n="nav.inventory">المخزون</a>
+        <a href="customers.html" data-roles="admin,manager" data-i18n="nav.customers">العملاء</a>
+        <a href="suppliers.html" data-roles="admin,manager" data-i18n="nav.suppliers">الموردون والشراء</a>
+        <a href="reports.html" data-roles="admin,manager" data-i18n="nav.reports">التقارير</a>
+        <a href="audit.html" data-roles="admin" data-i18n="nav.audit">سجل التدقيق</a>
+        <a href="payroll.html" data-roles="admin" data-i18n="nav.payroll">الرواتب</a>
+        <a href="users.html" data-roles="admin" data-i18n="nav.users">المستخدمون</a>
+        <a href="settings.html" data-roles="admin" data-i18n="nav.settings">الإعدادات</a>
+      </nav>
+      <div class="topbar-right">
+        <select id="langSwitcher" class="lang-switcher" title="اللغة / Dil / Language">
+          <option value="ar">AR</option>
+          <option value="tr">TR</option>
+          <option value="en">EN</option>
+        </select>
+        <div class="branch-name" id="branchName">—</div>
+        <div class="user-info">
+          <span id="currentUserName"></span>
+          <span id="currentUserRoleBadge" class="role-badge"></span>
+          <button id="logoutBtn" class="btn btn-secondary btn-sm" data-i18n="common.logout">خروج</button>
+        </div>
+      </div>
+    </header>
+
+    <div class="products-page">
+      <div class="page-header"><h1>المرتجعات</h1></div>
+
+      <div class="report-panel settings-panel">
+        <h2>البحث عن فاتورة لإرجاعها</h2>
+        <div class="form-grid">
+          <div class="form-field full">
+            <label>رقم الفاتورة</label>
+            <div style="display:flex; gap:8px;">
+              <input id="saleIdInput" type="text" inputmode="numeric" placeholder="مثال: 2026-000128" />
+              <button id="loadSaleBtn" class="btn btn-primary">بحث</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div id="saleReturnPanel" class="report-panel hidden">
+        <h2>فاتورة رقم <span id="saleIdLabel"></span></h2>
+        <table class="products-table">
+          <thead>
+            <tr>
+              <th>الصنف</th><th>الكمية بالفاتورة</th><th>مُرجَع سابقاً</th><th>كمية الإرجاع الآن</th><th>سعر الوحدة</th>
+            </tr>
+          </thead>
+          <tbody id="returnItemsBody"></tbody>
+        </table>
+
+        <div class="form-grid" style="margin-top:16px;">
+          <div class="form-field full">
+            <label>سبب الإرجاع</label>
+            <input id="returnReasonInput" type="text" placeholder="مثال: عيب في المنتج" />
+          </div>
+          <div class="form-field full">
+            <label>طريقة استرداد المبلغ</label>
+            <select id="refundMethodSelect">
+              <option value="cash">نقداً</option>
+              <option value="card">بطاقة</option>
+              <option value="store_credit">رصيد للعميل</option>
+            </select>
+          </div>
+          <div class="form-field full">
+            <div id="refundTotalPreview" style="font-weight:800; font-size:18px;">إجمالي الاسترداد: 0.00</div>
+          </div>
+          <div class="form-field full">
+            <button id="confirmReturnBtn" class="btn btn-danger">تنفيذ المرتجع</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="../i18n.js"></script>
+  <script src="../common.js"></script>
+  <script src="returns.js"></script>
+</body>
+</html>

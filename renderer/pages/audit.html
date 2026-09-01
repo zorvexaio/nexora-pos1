@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: file:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-src 'none';">
+  <meta charset="UTF-8" />
+  <title>سجل التدقيق</title>
+  <link rel="stylesheet" href="../style.css" />
+  <style>
+    .audit-table td { vertical-align: top; }
+    .audit-level { font-size: 12px; padding: 2px 8px; border-radius: 999px; font-weight: 600; }
+    .audit-level.info { background: #eff6ff; color: #2563eb; }
+    .audit-level.warning { background: #fffbeb; color: #b45309; }
+    .audit-level.error { background: #fef2f2; color: #dc2626; }
+    .audit-details { font-size: 12px; color: #6b7280; direction: ltr; text-align: left; white-space: pre-wrap; word-break: break-word; }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="brand" data-i18n="app.brand">نقطة البيع</div>
+      <nav class="nav-links">
+        <a href="../index.html" data-i18n="nav.pos">الكاشير</a>
+        <a href="tables.html" data-business="restaurant" data-i18n="nav.tables">الطاولات</a>
+        <a href="shift.html" data-i18n="nav.cashSession">الصندوق</a>
+        <a href="returns.html" data-roles="admin,manager" data-i18n="nav.returns">مرتجعات</a>
+        <a href="products.html" data-roles="admin,manager" data-i18n="nav.products">المنتجات</a>
+        <a href="bundles.html" data-roles="admin,manager" data-i18n="nav.bundles">الحزم</a>
+        <a href="inventory.html" data-roles="admin,manager" data-i18n="nav.inventory">المخزون</a>
+        <a href="customers.html" data-roles="admin,manager" data-i18n="nav.customers">العملاء</a>
+        <a href="suppliers.html" data-roles="admin,manager" data-i18n="nav.suppliers">الموردون والشراء</a>
+        <a href="reports.html" data-roles="admin,manager" data-i18n="nav.reports">التقارير</a>
+        <a href="audit.html" class="active" data-roles="admin" data-i18n="nav.audit">سجل التدقيق</a>
+        <a href="payroll.html" data-roles="admin" data-i18n="nav.payroll">الرواتب</a>
+        <a href="users.html" data-roles="admin" data-i18n="nav.users">المستخدمون</a>
+        <a href="settings.html" data-roles="admin" data-i18n="nav.settings">الإعدادات</a>
+      </nav>
+      <div class="topbar-right">
+        <select id="langSwitcher" class="lang-switcher" title="اللغة / Dil / Language">
+          <option value="ar">AR</option>
+          <option value="tr">TR</option>
+          <option value="en">EN</option>
+        </select>
+        <div class="branch-name" id="branchName">—</div>
+        <div class="user-info">
+          <span id="currentUserName"></span>
+          <span id="currentUserRoleBadge" class="role-badge"></span>
+          <button id="logoutBtn" class="btn btn-secondary btn-sm" data-i18n="common.logout">خروج</button>
+        </div>
+      </div>
+    </header>
+
+    <div class="products-page">
+      <div class="page-header">
+        <h1>سجل التدقيق</h1>
+        <button id="refreshBtn" class="btn btn-secondary">تحديث</button>
+      </div>
+      <p style="color:#6b7280;margin-top:-8px">
+        سجل بكل العمليات الحساسة (دخول/خروج، تعديل مخزون، مرتجعات، تسديد ديون، أخطاء تشغيل) — من عملها ومتى.
+        يساعدك هذا لو صار نقص بالصندوق أو المخزون وتحتاج تعرف شو صار بالضبط.
+      </p>
+
+      <div class="filters-row">
+        <select id="userFilter">
+          <option value="">كل الموظفين</option>
+        </select>
+        <select id="levelFilter">
+          <option value="">كل المستويات</option>
+          <option value="info">عادي</option>
+          <option value="warning">تنبيه</option>
+          <option value="error">خطأ</option>
+        </select>
+        <select id="actionFilter">
+          <option value="">كل أنواع العمليات</option>
+        </select>
+        <input id="searchInput" type="text" placeholder="ابحث بالمستخدم أو النوع..." />
+      </div>
+
+      <table class="products-table audit-table">
+        <thead>
+          <tr>
+            <th>الوقت</th>
+            <th>المستخدم</th>
+            <th>العملية</th>
+            <th>المستوى</th>
+            <th>التفاصيل</th>
+          </tr>
+        </thead>
+        <tbody id="logsBody"></tbody>
+      </table>
+      <div id="emptyState" class="empty-state" style="display:none">لا توجد سجلات مطابقة</div>
+    </div>
+  </div>
+
+  <script src="../i18n.js"></script>
+  <script src="../common.js"></script>
+  <script src="audit.js"></script>
+</body>
+</html>

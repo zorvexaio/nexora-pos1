@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: file:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-src 'none';">
+  <meta charset="UTF-8" />
+  <title>طلب الطاولة</title>
+  <link rel="stylesheet" href="../style.css" />
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="brand">
+        <button id="backToTablesBtn" type="button" class="btn btn-secondary btn-sm back-to-tables" data-i18n="tableOrder.backToTables">← الطاولات</button>
+        <span id="tableTitle">طلب طاولة</span>
+      </div>
+      <div class="topbar-right">
+        <select id="langSwitcher" class="lang-switcher" title="اللغة / Dil / Language">
+          <option value="ar">AR</option>
+          <option value="tr">TR</option>
+          <option value="en">EN</option>
+        </select>
+        <div class="branch-name" id="branchName">—</div>
+        <div class="user-info">
+          <span id="currentUserName"></span>
+          <span id="currentUserRoleBadge" class="role-badge"></span>
+          <button id="logoutBtn" class="btn btn-secondary btn-sm" data-i18n="common.logout">خروج</button>
+        </div>
+      </div>
+    </header>
+
+    <div class="main">
+      <section class="products-panel">
+        <div class="search-row">
+          <input id="searchInput" type="text" data-i18n-placeholder="tableOrder.searchPlaceholder" placeholder="ابحث عن منتج أو امسح باركود..." autofocus />
+        </div>
+        <div id="productsGrid" class="products-grid"></div>
+      </section>
+
+      <aside class="cart-panel">
+        <h2><span data-i18n="tableOrder.orderPrefix">طلب</span> <span id="tableNameLabel"></span></h2>
+        <div id="cartItems" class="cart-items"></div>
+        <div class="cart-summary">
+          <div class="row"><span data-i18n="common.subtotal">الإجمالي الفرعي</span><span id="sumSubtotal">0.00</span></div>
+          <div class="row"><span data-i18n="common.tax">الضريبة</span><span id="sumTax">0.00</span></div>
+          <div class="row total"><span data-i18n="common.total">الإجمالي</span><span id="sumTotal">0.00</span></div>
+        </div>
+        <div class="table-order-actions">
+          <button id="saveOrderBtn" class="btn btn-secondary" data-i18n="tableOrder.saveOrder">حفظ الطلب</button>
+          <button id="splitBillBtn" class="btn btn-secondary" data-i18n="tableOrder.splitBill">تقسيم الفاتورة</button>
+        </div>
+        <button id="checkoutBtn" class="checkout-btn" data-i18n="tableOrder.checkout" disabled>الدفع وإغلاق الطاولة</button>
+      </aside>
+    </div>
+  </div>
+
+  <div id="splitBillModal" class="modal-overlay hidden"><div class="modal payment-modal"><h2 data-i18n="tableOrder.splitBill">تقسيم الفاتورة</h2><p class="field-hint">اختر أصناف/كميات الزبون الذي سيدفع الآن؛ الباقي يبقى مفتوحاً على الطاولة.</p><div id="splitItems" class="cart-items"></div><div class="payment-total"><span data-i18n="tableOrder.splitTotal">إجمالي الجزء</span><span id="splitTotal">0.00</span></div><div class="payment-methods"><label class="method-option"><input type="radio" name="splitPayment" value="cash" checked /><span data-i18n="common.cash">نقدي</span></label><label class="method-option"><input type="radio" name="splitPayment" value="card" /><span data-i18n="common.card">بطاقة</span></label></div><div id="splitCashFields" class="form-field"><label data-i18n="tableOrder.amountReceived">المبلغ المستلم</label><input id="splitCashReceived" type="number" min="0" step="0.01" /></div><div class="modal-actions"><button id="cancelSplitBillBtn" type="button" class="btn btn-secondary">إلغاء</button><button id="confirmSplitBillBtn" type="button" class="btn btn-primary" data-i18n="tableOrder.confirmSplit">تأكيد ودفع الجزء</button></div></div></div>
+
+  <!-- نافذة اختيار المتغيّر (مقاس/لون) -->
+  <div id="variantModal" class="modal-overlay hidden">
+    <div class="modal">
+      <h2 id="variantModalTitle" data-i18n="pos.selectVariant">اختر المتغيّر</h2>
+      <div id="variantList" class="variant-list"></div>
+      <div class="modal-actions">
+        <button type="button" id="closeVariantBtn" class="btn btn-secondary" data-i18n="common.close">إغلاق</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- نافذة ملاحظة على صنف بالسلة (مثال: بدون ثوم، دبل لحمة) -->
+  <div id="itemNoteModal" class="modal-overlay hidden">
+    <div class="modal">
+      <h2 data-i18n="pos.itemNoteTitle">ملاحظة على الصنف</h2>
+      <p id="itemNoteProductName" style="color:#6b7280; font-weight:600;"></p>
+      <textarea id="itemNoteInput" rows="3" maxlength="200" data-i18n-placeholder="pos.itemNotePlaceholder" placeholder="مثال: بدون ثوم، دبل لحمة، مقطّع صغير..." style="width:100%; padding:10px; border:1px solid #d1d5db; border-radius:8px; font-size:15px; resize:vertical;"></textarea>
+      <div class="modal-actions">
+        <button type="button" id="cancelItemNoteBtn" class="btn btn-secondary" data-i18n="common.cancel">إلغاء</button>
+        <button type="button" id="saveItemNoteBtn" class="btn btn-primary" data-i18n="common.save">حفظ</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- نافذة الدفع -->
+  <div id="paymentModal" class="modal-overlay hidden">
+    <div class="modal payment-modal">
+      <h2 data-i18n="tableOrder.checkout">الدفع وإغلاق الطاولة</h2>
+      <div class="payment-total">
+        <span data-i18n="pos.amountDue">المطلوب</span>
+        <span id="paymentTotalDisplay">0.00</span>
+      </div>
+
+      <div class="payment-methods">
+        <label class="method-option">
+          <input type="radio" name="paymentMethod" value="cash" checked />
+          <span data-i18n="common.cash">نقدي</span>
+        </label>
+        <label class="method-option">
+          <input type="radio" name="paymentMethod" value="card" />
+          <span data-i18n="common.card">بطاقة</span>
+        </label>
+        <label class="method-option">
+          <input type="radio" name="paymentMethod" value="mixed" />
+          <span data-i18n="common.mixed">مختلط</span>
+        </label>
+      </div>
+
+      <div id="cashFields" class="payment-fields">
+        <div class="form-field">
+          <label data-i18n="pos.cashReceived">المبلغ المستلم نقداً</label>
+          <input id="cashReceivedInput" type="number" step="0.01" min="0" />
+        </div>
+        <div class="payment-row"><span data-i18n="pos.changeDue">الباقي للعميل</span><span id="changeDueDisplay">0.00</span></div>
+      </div>
+
+      <div id="mixedFields" class="payment-fields hidden">
+        <div class="form-field">
+          <label data-i18n="pos.cashAmount">المبلغ نقداً</label>
+          <input id="mixedCashInput" type="number" step="0.01" min="0" />
+        </div>
+        <div class="form-field">
+          <label data-i18n="pos.cardAmount">المبلغ بالبطاقة</label>
+          <input id="mixedCardInput" type="number" step="0.01" min="0" />
+        </div>
+        <div class="payment-row" id="mixedRemainingRow"><span data-i18n="pos.remainingAmount">المتبقي لإكمال المبلغ</span><span id="mixedRemainingDisplay">0.00</span></div>
+      </div>
+
+      <div id="paymentError" class="payment-error hidden"></div>
+
+      <div class="modal-actions">
+        <button type="button" id="cancelPaymentBtn" class="btn btn-secondary" data-i18n="common.cancel">إلغاء</button>
+        <button type="button" id="confirmPaymentBtn" class="btn btn-primary" data-i18n="tableOrder.confirmClose">تأكيد وإغلاق الطاولة</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="../i18n.js"></script>
+  <script src="../common.js"></script>
+  <script src="table-order.js"></script>
+</body>
+</html>

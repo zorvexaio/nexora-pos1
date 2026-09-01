@@ -1,0 +1,22 @@
+const fs = require('fs');
+const path = require('path');
+const root = path.resolve(__dirname, '..');
+const db = fs.readFileSync(path.join(root, 'database', 'db.js'), 'utf8');
+const schema = fs.readFileSync(path.join(root, 'database', 'schema.sql'), 'utf8');
+const rendererReturns = fs.readFileSync(path.join(root, 'renderer', 'pages', 'returns.js'), 'utf8');
+const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
+let n = 0;
+function ok(name, cond){ n++; if(!cond){ console.error('FAIL:',name); process.exitCode=1; } else console.log('PASS:',name); }
+const v = pkg.version.split('.').map(Number);
+ok('release version is compatible with v0.19 baseline', v[0] > 0 || v[1] > 19 || (v[1] === 19 && v[2] >= 0));
+ok('returns support branch-scoped client request id', /idx_returns_branch_client_request/.test(db) && /client_request_id/.test(schema));
+ok('return handler is idempotent', /SELECT id, uuid, total_refunded FROM returns WHERE branch_id=\? AND client_request_id=\?/.test(db));
+ok('return validates shift ownership', /FROM shifts WHERE id=\? AND branch_id=\?/.test(db) && /جلسة الصندوق غير موجودة/.test(db));
+ok('store credit return creates payment ledger entry', /'store_credit', String\(getGlobalProfile\(\)\.currency_code\)/.test(db));
+ok('table split writes payment ledger', /action: 'table_bill_split'/.test(db) && /payment_transactions/.test(db) && /paidSaleId/.test(db));
+ok('table split propagates customer id', /source\.customer_id \|\| null/.test(db));
+ok('table close deducts store credit', /الدفع برصيد المتجر يتطلب عميل/.test(db) && /store_credit_balance/.test(db));
+ok('purchase receive no longer changes global product cost', !/updateLegacyCost\.run/.test(db) && !/UPDATE products SET cost = \?/.test(db));
+ok('return UI sends client request id', /clientRequestId/.test(rendererReturns));
+console.log(`V0.19 REGRESSION: ${n} checks`);
+if(process.exitCode) process.exit(process.exitCode);

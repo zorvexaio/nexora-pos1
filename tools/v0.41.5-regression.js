@@ -1,0 +1,13 @@
+const fs = require("fs");
+const path = require("path");
+const assert = require("assert");
+const root = path.join(__dirname, "..");
+const dbSource = fs.readFileSync(path.join(root, "database", "db.js"), "utf8");
+const licenseSource = fs.readFileSync(path.join(root, "licensing", "license.js"), "utf8");
+assert(dbSource.includes("recalcCustomerLoyaltyPointsForBranch"), "loyalty is recomputed from authoritative sales ledger");
+assert(!dbSource.includes("loyalty_points=excluded.loyalty_points"), "customer sync does not overwrite loyalty snapshot");
+assert(dbSource.includes("SUM(COALESCE(loyalty_points_awarded,0) - COALESCE(loyalty_points_reversed,0))"), "loyalty total uses awards minus reversals");
+assert(licenseSource.includes("MAX_LICENSE_INPUT_BYTES"), "license input has a hard size limit");
+assert(licenseSource.includes("typeof fileContent !== 'string'"), "license activation rejects non-string input");
+assert(licenseSource.includes("Number.isFinite(expiresMs)"), "license expiration timestamp is validated");
+console.log("V0.41.5 SECURITY/FINANCIAL REGRESSION: PASS (6/6)");

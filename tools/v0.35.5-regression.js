@@ -1,0 +1,20 @@
+const fs = require('fs');
+const path = require('path');
+const cp = require('child_process');
+const root = path.resolve(__dirname, '..');
+const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
+const main = fs.readFileSync(path.join(root, 'main.js'), 'utf8');
+const preflight = fs.readFileSync(path.join(root, 'tools', 'release-preflight.js'), 'utf8');
+const results = [];
+function pass(name, condition) { if (!condition) throw new Error(`FAIL: ${name}`); results.push(`PASS: ${name}`); }
+pass('version is compatible with v0.35.5 baseline', /^0\.(?:3[5-9]|[4-9]\d)\./.test(pkg.version));
+pass('preflight enforces Node 22.12 baseline', /nodeMinor < 12/.test(preflight) && />=22\.12\.0/.test(preflight));
+pass('renderer CSP connect-src is self only', /connect-src 'self'/.test(main) && !/connect-src 'self' https:/.test(main));
+pass('license enforcement distinguishes expiry', /result\.reason === 'expired'/.test(main));
+pass('license enforcement distinguishes clock rollback', /result\.reason === 'clock_rollback_detected'/.test(main));
+pass('license enforcement distinguishes revocation', /result\.reason === 'revoked'/.test(main));
+pass('watchdog timer is cleared before quit-enforcement path', /if \(rendererWatchdogTimer\) clearInterval\(rendererWatchdogTimer\)/.test(main));
+const check = cp.spawnSync(process.execPath, [path.join(root, 'tools', 'runtime-export-regression.js')], { cwd: root, encoding: 'utf8' });
+pass('runtime export regression remains green', check.status === 0);
+console.log(results.join('\n'));
+console.log(`V0.35.5 REGRESSION ${results.length}/${results.length} PASS`);

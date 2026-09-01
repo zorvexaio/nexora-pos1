@@ -1,0 +1,15 @@
+const fs = require('fs');
+const path = require('path');
+const root = path.resolve(__dirname, '..');
+const main = fs.readFileSync(path.join(root, 'main.js'), 'utf8');
+const login = fs.readFileSync(path.join(root, 'renderer', 'login.js'), 'utf8');
+const db = fs.readFileSync(path.join(root, 'database', 'db.js'), 'utf8');
+let passed = 0;
+const ok = (c, m) => { if (!c) { console.error('FAIL:', m); process.exitCode = 1; } else { passed++; console.log('PASS:', m); } };
+ok(main.includes("'auth:bootstrapInfo',"), 'bootstrapInfo is explicitly allowed pre-auth');
+ok(main.includes("ipcMain.handle('auth:bootstrapInfo'"), 'bootstrapInfo handler exists');
+ok(login.includes('window.api.auth.bootstrapInfo()'), 'login page requests bootstrap info');
+ok(main.includes("db.clearBootstrapAdminInfo()"), 'bootstrap secret is cleared after successful login');
+ok(/temporaryPassword/.test(db) && /crypto\.randomBytes\(18\)/.test(db), 'bootstrap temporary password is generated server-side');
+console.log(`v0.29 regression: ${passed}/5 checks passed`);
+if (process.exitCode) process.exit(1);

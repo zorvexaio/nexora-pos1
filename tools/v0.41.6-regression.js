@@ -1,0 +1,20 @@
+const fs = require('fs');
+const path = require('path');
+const assert = require('assert');
+const root = path.join(__dirname, '..');
+const main = fs.readFileSync(path.join(root, 'main.js'), 'utf8');
+const syncServer = fs.readFileSync(path.join(root, 'server', 'sync-server.js'), 'utf8');
+const license = fs.readFileSync(path.join(root, 'licensing', 'license.js'), 'utf8');
+
+assert(main.includes("bytes.subarray(0, 8).equals(Buffer.from([0x89,0x50,0x4e,0x47"), 'store logo validates PNG signature');
+assert(main.includes("pathToFileURL(destPath).href"), 'store logo returns a correctly encoded file URL');
+assert(main.includes('MAX_LOGO_BYTES = 10 * 1024 * 1024'), 'store logo has a 10MB size limit');
+assert(syncServer.includes('MAX_ENTITY_ROWS = 1000'), 'sync entity row cap exists');
+assert(syncServer.includes('MAX_NESTED_ROWS = 500'), 'sync nested row cap exists');
+assert(syncServer.includes('changes[entity] == null'), 'sync validates entity arrays');
+assert(license.includes("Array.isArray(obj)"), 'license object rejects arrays');
+assert(license.includes("/^[0-9a-fA-F-]{36}$/"), 'license id format is constrained');
+assert(license.includes("/^[A-F0-9]{4}(?:-[A-F0-9]{4}){3}$/"), 'license fingerprint format is constrained');
+assert(license.includes('obj.customerName.length > 200'), 'license customer name has a size bound');
+assert(license.includes('obj.signature.length > 512'), 'license signature has a size bound');
+console.log('V0.41.6 SECURITY HARDENING REGRESSION: PASS (11/11)');

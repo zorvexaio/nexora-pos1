@@ -1,0 +1,11 @@
+const fs=require('fs');
+const main=fs.readFileSync('main.js','utf8');
+const tls=fs.readFileSync('server/lan-tls.js','utf8');
+const sync=fs.readFileSync('server/sync-server.js','utf8');
+const fail=(m)=>{console.error('FAIL:',m);process.exitCode=1};
+const ok=(c,m)=>c?console.log('PASS:',m):fail(m);
+ok(/registerBranchKey\(branch\.uuid, db\.getSetting\('lan_device_name', 'الجهاز الرئيسي'\), secret\)/.test(main),'LAN restart reuses persisted sync secret');
+ok(/function registerBranchKey\(branchUuid, label, existingSecret = null\)/.test(sync),'sync server accepts an existing secret when restoring branch key');
+ok(/existingSecret \? String\(existingSecret\)/.test(sync),'existing secret is hashed instead of replaced by a random secret');
+ok(/8 أرقام، صالح 5 دقائق/.test(tls),'pairing code documentation matches the actual 8-digit code');
+if(!process.exitCode) console.log('LAN KEY PERSISTENCE REGRESSION: PASS');

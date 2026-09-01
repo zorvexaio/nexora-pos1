@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: file:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-src 'none';">
+  <meta charset="UTF-8" />
+  <title>الطاولات</title>
+  <link rel="stylesheet" href="../style.css" />
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="brand" data-i18n="app.brand">نقطة البيع</div>
+      <nav class="nav-links">
+        <a href="../index.html" data-i18n="nav.pos">الكاشير</a>
+        <a href="tables.html" class="active" data-business="restaurant" data-i18n="nav.tables">الطاولات</a>
+        <a href="shift.html" data-i18n="nav.cashSession">الصندوق</a>
+        <a href="returns.html" data-roles="admin,manager" data-i18n="nav.returns">مرتجعات</a>
+        <a href="products.html" data-roles="admin,manager" data-i18n="nav.products">المنتجات</a>
+        <a href="bundles.html" data-roles="admin,manager" data-i18n="nav.bundles">الحزم</a>
+        <a href="inventory.html" data-roles="admin,manager" data-i18n="nav.inventory">المخزون</a>
+        <a href="customers.html" data-roles="admin,manager" data-i18n="nav.customers">العملاء</a>
+        <a href="suppliers.html" data-roles="admin,manager" data-i18n="nav.suppliers">الموردون والشراء</a>
+        <a href="reports.html" data-roles="admin,manager" data-i18n="nav.reports">التقارير</a>
+        <a href="audit.html" data-roles="admin" data-i18n="nav.audit">سجل التدقيق</a>
+        <a href="payroll.html" data-roles="admin" data-i18n="nav.payroll">الرواتب</a>
+        <a href="users.html" data-roles="admin" data-i18n="nav.users">المستخدمون</a>
+        <a href="settings.html" data-roles="admin" data-i18n="nav.settings">الإعدادات</a>
+      </nav>
+      <div class="topbar-right">
+        <select id="langSwitcher" class="lang-switcher" title="اللغة / Dil / Language">
+          <option value="ar">AR</option>
+          <option value="tr">TR</option>
+          <option value="en">EN</option>
+        </select>
+        <div class="branch-name" id="branchName">—</div>
+        <div class="user-info">
+          <span id="currentUserName"></span>
+          <span id="currentUserRoleBadge" class="role-badge"></span>
+          <button id="logoutBtn" class="btn btn-secondary btn-sm" data-i18n="common.logout">خروج</button>
+        </div>
+      </div>
+    </header>
+
+    <div class="products-page">
+      <div class="page-header">
+        <h1>الطاولات</h1>
+        <div style="display:flex; gap:8px"><button id="mergeTablesBtn" class="btn btn-secondary hidden">دمج طاولات</button><button id="addTableBtn" class="btn btn-primary">+ طاولة جديدة</button></div>
+      </div>
+
+      <div id="tablesGrid" class="tables-grid"></div>
+      <div id="emptyState" class="empty-state" style="display:none">لا توجد طاولات بعد. أضف طاولتك الأولى.</div>
+    </div>
+  </div>
+
+  <div id="mergeTablesModal" class="modal-overlay hidden"><div class="modal"><h2>دمج طاولات</h2><p class="field-hint">سيُنقل الطلب المفتوح من الطاولة المصدر إلى الطاولة الهدف. لا يمكن التراجع عن العملية.</p><div class="form-field"><label>الطاولة المصدر (المشغولة)</label><select id="mergeSourceTable"></select></div><div class="form-field"><label>الطاولة الهدف</label><select id="mergeTargetTable"></select></div><div class="modal-actions"><button id="cancelMergeTablesBtn" type="button" class="btn btn-secondary">إلغاء</button><button id="confirmMergeTablesBtn" type="button" class="btn btn-primary">دمج</button></div></div></div>
+
+  <!-- نافذة إضافة طاولة -->
+  <div id="addTableModal" class="modal-overlay hidden">
+    <div class="modal">
+      <h2>طاولة جديدة</h2>
+      <form id="addTableForm">
+        <div class="form-grid">
+          <div class="form-field">
+            <label>اسم/رقم الطاولة *</label>
+            <input id="fieldTableName" type="text" required placeholder="مثال: طاولة 5" />
+          </div>
+          <div class="form-field">
+            <label>عدد المقاعد</label>
+            <input id="fieldTableSeats" type="number" min="1" value="4" />
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button type="button" id="cancelAddTableBtn" class="btn btn-secondary">إلغاء</button>
+          <button type="submit" class="btn btn-primary">إضافة</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="../i18n.js"></script>
+  <script src="../common.js"></script>
+  <script src="tables.js"></script>
+</body>
+</html>

@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: file:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-src 'none';">
+  <meta charset="UTF-8" />
+  <title>الموردون والشراء</title>
+  <link rel="stylesheet" href="../style.css" />
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="brand" data-i18n="app.brand">نقطة البيع</div>
+      <nav class="nav-links">
+        <a href="../index.html" data-i18n="nav.pos">الكاشير</a>
+        <a href="tables.html" data-business="restaurant" data-i18n="nav.tables">الطاولات</a>
+        <a href="shift.html" data-i18n="nav.cashSession">الصندوق</a>
+        <a href="returns.html" data-roles="admin,manager" data-i18n="nav.returns">مرتجعات</a>
+        <a href="products.html" data-roles="admin,manager" data-i18n="nav.products">المنتجات</a>
+        <a href="bundles.html" data-roles="admin,manager" data-i18n="nav.bundles">الحزم</a>
+        <a href="inventory.html" data-roles="admin,manager" data-i18n="nav.inventory">المخزون</a>
+        <a href="customers.html" data-roles="admin,manager" data-i18n="nav.customers">العملاء</a>
+        <a href="suppliers.html" class="active" data-roles="admin,manager" data-i18n="nav.suppliers">الموردون والشراء</a>
+        <a href="reports.html" data-roles="admin,manager" data-i18n="nav.reports">التقارير</a>
+        <a href="audit.html" data-roles="admin" data-i18n="nav.audit">سجل التدقيق</a>
+        <a href="payroll.html" data-roles="admin" data-i18n="nav.payroll">الرواتب</a>
+        <a href="settings.html" data-roles="admin" data-i18n="nav.settings">الإعدادات</a>
+      </nav>
+      <div class="topbar-right">
+        <select id="langSwitcher" class="lang-switcher" title="اللغة / Dil / Language">
+          <option value="ar">AR</option>
+          <option value="tr">TR</option>
+          <option value="en">EN</option>
+        </select>
+        <div class="branch-name" id="branchName">—</div>
+        <div class="user-info">
+          <span id="currentUserName"></span>
+          <span id="currentUserRoleBadge" class="role-badge"></span>
+          <button id="logoutBtn" class="btn btn-secondary btn-sm" data-i18n="common.logout">خروج</button>
+        </div>
+      </div>
+    </header>
+
+    <div class="products-page">
+      <div class="page-header">
+        <h1>الموردون وفواتير الشراء</h1>
+        <button id="addSupplierBtn" class="btn btn-secondary">+ مورد</button>
+        <button id="addPurchaseBtn" class="btn btn-primary">+ فاتورة شراء</button>
+      </div>
+
+      <div class="kpi-row" id="suppliersKpis">
+        <div class="kpi-card" data-tone="indigo">
+          <span class="kpi-icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21V7l9-4 9 4v14"/><path d="M9 21v-6h6v6"/></svg></span>
+          <div class="kpi-body"><div class="kpi-label">عدد الموردين</div><div class="kpi-value" id="kpiSupplierCount">0</div></div>
+        </div>
+        <div class="kpi-card kpi-highlight" data-tone="brand">
+          <span class="kpi-icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2 2 21h20L12 2Z"/><path d="M12 9v5M12 17h.01"/></svg></span>
+          <div class="kpi-body"><div class="kpi-label">إجمالي المستحق لهم</div><div class="kpi-value" id="kpiSupplierDue">0.00</div></div>
+        </div>
+        <div class="kpi-card" data-tone="amber">
+          <span class="kpi-icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2h9l3 3v17H6z"/><path d="M9 8h6M9 12h6M9 16h4"/></svg></span>
+          <div class="kpi-body"><div class="kpi-label">فواتير شراء غير مستلمة</div><div class="kpi-value" id="kpiDraftPurchases">0</div></div>
+        </div>
+      </div>
+
+      <div class="reports-grid">
+        <div class="report-panel">
+          <h2>الموردون</h2>
+          <table class="products-table">
+            <thead><tr><th>الاسم</th><th>الهاتف</th><th>الرصيد المستحق</th><th></th></tr></thead>
+            <tbody id="suppliersBody"></tbody>
+          </table>
+        </div>
+        <div class="report-panel">
+          <h2>فواتير الشراء</h2>
+          <table class="products-table">
+            <thead><tr><th>المورد</th><th>الإجمالي</th><th>المدفوع / المتبقي</th><th>الحالة</th><th></th></tr></thead>
+            <tbody id="purchasesBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="supplierModal" class="modal-overlay hidden">
+    <div class="modal">
+      <h2 id="supplierModalTitle">مورد جديد</h2>
+      <form id="supplierForm">
+        <input id="supplierId" type="hidden" />
+        <div class="form-grid">
+          <div class="form-field full"><label>اسم المورد *</label><input id="supplierName" required /></div>
+          <div class="form-field"><label>الهاتف</label><input id="supplierPhone" /></div>
+          <div class="form-field"><label>العنوان</label><input id="supplierAddress" /></div>
+          <div class="form-field full"><label>ملاحظات</label><input id="supplierNotes" /></div>
+        </div>
+        <div class="modal-actions">
+          <button type="button" id="cancelSupplierBtn" class="btn btn-secondary">إلغاء</button>
+          <button class="btn btn-primary">حفظ</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="purchaseModal" class="modal-overlay hidden">
+    <div class="modal">
+      <h2>فاتورة شراء جديدة</h2>
+      <form id="purchaseForm">
+        <div class="form-grid">
+          <div class="form-field full"><label>المورد</label><select id="purchaseSupplier" required></select></div>
+          <div class="form-field"><label>المنتج</label><select id="purchaseProduct"></select></div>
+          <div class="form-field"><label>الكمية</label><input id="purchaseQty" type="number" min="0.01" step="0.01" value="1" /></div>
+          <div class="form-field"><label>تكلفة الوحدة</label><input id="purchaseCost" type="number" min="0" step="0.01" value="0" /></div>
+          <div class="form-field full"><button type="button" id="addPurchaseItemBtn" class="btn btn-secondary">إضافة بند</button></div>
+        </div>
+        <table class="products-table">
+          <thead><tr><th>الصنف</th><th>الكمية</th><th>التكلفة</th><th></th></tr></thead>
+          <tbody id="purchaseItemsBody"></tbody>
+        </table>
+        <div class="form-grid">
+          <div class="form-field"><label>طريقة الدفع</label><select id="purchasePaymentMethod"><option value="credit">آجل للمورد</option><option value="cash">نقدي من الصندوق</option><option value="card">بطاقة / تحويل</option></select></div>
+          <div class="form-field"><label>مدفوع للمورد الآن</label><input id="purchasePaid" type="number" min="0" step="0.01" value="0" /></div>
+        </div>
+        <p id="purchasePaymentHint" class="field-hint">سيُستلم الشراء الآن ويُحدّث المخزون والحسابات تلقائياً.</p>
+        <div class="form-field"><label>ملاحظات</label><input id="purchaseNotes" /></div>
+        <div class="modal-actions">
+          <button type="button" id="cancelPurchaseBtn" class="btn btn-secondary">إلغاء</button>
+          <button id="savePurchaseBtn" class="btn btn-primary">حفظ واستلام المخزون</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="../i18n.js"></script>
+  <script src="../common.js"></script>
+  <script src="suppliers.js"></script>
+</body>
+</html>

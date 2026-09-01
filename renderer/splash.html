@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: file:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-src 'none';">
+  <title>Nexora POS</title>
+  <style>
+    html, body {
+      margin: 0; height: 100%; width: 100%;
+      background: linear-gradient(160deg, #0f172a, #1e293b);
+      display: flex; align-items: center; justify-content: center;
+      font-family: 'Segoe UI', Tahoma, Arial, sans-serif;
+      overflow: hidden;
+      -webkit-app-region: drag;
+    }
+    .splash-box { text-align: center; color: #fff; }
+    .splash-logo {
+      width: 92px; height: 92px; border-radius: 20px;
+      background: linear-gradient(135deg, #4338ca, #1e1b4b);
+      border: 2px solid #d4af37;
+      display: flex; align-items: center; justify-content: center;
+      margin: 0 auto 18px; box-shadow: 0 10px 30px rgba(67,56,202,0.4);
+      font-size: 40px; font-weight: 800; color: #f5d06e;
+    }
+    .splash-logo img { width: 100%; height: 100%; object-fit: cover; border-radius: 20px; }
+    .splash-title { font-size: 22px; font-weight: 700; letter-spacing: 0.5px; }
+    .splash-subtitle { font-size: 13px; color: #94a3b8; margin-top: 6px; }
+    .splash-dots { margin-top: 26px; display: flex; gap: 6px; justify-content: center; }
+    .splash-dots span {
+      width: 8px; height: 8px; border-radius: 50%; background: #3b82f6;
+      animation: bounce 1.2s infinite ease-in-out;
+    }
+    .splash-dots span:nth-child(2) { animation-delay: 0.15s; }
+    .splash-dots span:nth-child(3) { animation-delay: 0.3s; }
+    @keyframes bounce {
+      0%, 80%, 100% { transform: translateY(0); opacity: 0.4; }
+      40% { transform: translateY(-6px); opacity: 1; }
+    }
+  </style>
+</head>
+<body>
+  <div class="splash-box">
+    <div class="splash-logo" id="splashLogo">N</div>
+    <div class="splash-title" id="splashTitle" data-i18n="login.title">نظام نقاط البيع</div>
+    <div class="splash-subtitle" id="splashSubtitle" data-i18n="splash.loading">جارٍ التحميل...</div>
+    <div class="splash-dots"><span></span><span></span><span></span></div>
+  </div>
+  <script src="i18n.js"></script>
+  <script src="splash.js"></script>
+</body>
+</html>

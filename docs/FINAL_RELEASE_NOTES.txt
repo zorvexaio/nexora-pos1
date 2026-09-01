@@ -1,0 +1,5 @@
+Nexora POS v0.25.0 final verification
+1. npm run check: PASS (242 PASS tokens, no FAIL)
+2. SQLite schema: 31 tables, 48 indexes, foreign_key_check PASS
+3. v0.25 regression: 12/12 PASS
+4. Native Electron/SQLite packaging not executed in this environment.

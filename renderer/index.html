@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: file:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-src 'none';">
+  <title>Nexora POS</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="app">
+    <!-- شريط علوي -->
+    <header class="topbar">
+      <div class="brand brand-premium"><span class="brand-mark" aria-hidden="true">N</span><span data-i18n="app.brand">Nexora POS</span></div>
+      <nav class="nav-links">
+        <a href="index.html" class="active" data-i18n="nav.pos">الكاشير</a>
+        <a href="pages/tables.html" data-business="restaurant" data-i18n="nav.tables">الطاولات</a>
+        <a href="pages/shift.html" data-i18n="nav.cashSession">الصندوق</a>
+        <a href="pages/returns.html" data-roles="admin,manager" data-i18n="nav.returns">مرتجعات</a>
+        <a href="pages/products.html" data-roles="admin,manager" data-i18n="nav.products">المنتجات</a>
+        <a href="pages/bundles.html" data-roles="admin,manager" data-i18n="nav.bundles">الحزم</a>
+        <a href="pages/inventory.html" data-roles="admin,manager" data-i18n="nav.inventory">المخزون</a>
+        <a href="pages/customers.html" data-roles="admin,manager" data-i18n="nav.customers">العملاء</a>
+        <a href="pages/suppliers.html" data-roles="admin,manager" data-i18n="nav.suppliers">الموردون والشراء</a>
+        <a href="pages/reports.html" data-roles="admin,manager" data-i18n="nav.reports">التقارير</a>
+        <a href="pages/audit.html" data-roles="admin">سجل التدقيق</a>
+        <a href="pages/payroll.html" data-roles="admin" data-i18n="nav.payroll">الرواتب</a>
+        <a href="pages/users.html" data-roles="admin" data-i18n="nav.users">المستخدمون</a>
+        <a href="pages/settings.html" data-roles="admin" data-i18n="nav.settings">الإعدادات</a>
+      </nav>
+      <div class="topbar-right">
+        <select id="langSwitcher" class="lang-switcher" title="اللغة / Dil / Language">
+          <option value="ar">AR</option>
+          <option value="tr">TR</option>
+          <option value="en">EN</option>
+        </select>
+        <div class="branch-name" id="branchName">—</div>
+        <div class="user-info">
+          <span id="currentUserName"></span>
+          <span id="currentUserRoleBadge" class="role-badge"></span>
+          <button id="logoutBtn" class="btn btn-secondary btn-sm" data-i18n="common.logout">خروج</button>
+        </div>
+      </div>
+    </header>
+
+    <div class="main">
+      <!-- عمود المنتجات -->
+      <section class="products-panel">
+        <div class="search-row">
+          <svg class="search-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/><path d="M8 11h6M11 8v6"/></svg>
+          <input id="searchInput" type="text" data-i18n-placeholder="pos.searchPlaceholder" placeholder="ابحث بالاسم أو امسح الباركود..." aria-label="البحث عن منتج أو مسح الباركود" autocomplete="off" spellcheck="false" autofocus />
+          <div id="barcodeError" class="barcode-error hidden"></div>
+        </div>
+        <div id="productsGrid" class="products-grid" aria-live="polite" aria-busy="false"></div>
+      </section>
+
+      <!-- عمود السلة -->
+      <aside class="cart-panel" aria-label="السلة">
+        <div class="cart-head"><div><div class="section-kicker">NEXORA</div><h2 data-i18n="pos.cart">السلة</h2></div><span id="cartItemCount" class="cart-count">0</span></div>
+        <div id="cartItems" class="cart-items" aria-live="polite"></div>
+
+        <div class="order-type-row">
+          <label class="method-option">
+            <input type="radio" name="orderType" value="takeaway" checked />
+            <span>سفري / استلام</span>
+          </label>
+          <label class="method-option">
+            <input type="radio" name="orderType" value="delivery" />
+            <span data-i18n="pos.delivery">توصيل</span>
+          </label>
+        </div>
+        <div id="deliveryFields" class="hidden" style="margin-bottom:10px;">
+          <div class="form-field">
+            <label data-i18n="pos.deliveryFee">رسوم التوصيل</label>
+            <input id="deliveryFeeInput" type="number" step="0.01" min="0" value="0" />
+          </div>
+          <div class="form-field">
+            <label data-i18n="pos.deliveryPerson">مندوب التوصيل (اختياري)</label>
+            <input id="deliveryPersonInput" type="text" data-i18n-placeholder="pos.deliveryPersonPlaceholder" placeholder="اسم/رقم المندوب" />
+          </div>
+        </div>
+
+        <div class="form-field" style="margin-bottom:10px;">
+          <label data-i18n="pos.discount">خصم على الفاتورة</label>
+          <div style="display:flex; gap:6px;">
+            <select id="discountTypeSelect" style="flex:0 0 90px;">
+              <option value="none" data-i18n="common.none">بدون</option>
+              <option value="percent" data-i18n="pos.percent">نسبة %</option>
+              <option value="fixed" data-i18n="pos.fixedAmount">مبلغ ثابت</option>
+            </select>
+            <input id="discountValueInput" type="number" step="0.01" min="0" value="0" disabled />
+          </div>
+          <div id="discountApprovalNote" class="hidden" style="color:#b91c1c; font-size:12px; margin-top:4px;" data-i18n="pos.discountApprovalNote">
+            هذا الخصم يتجاوز الحد المسموح — سيُطلب اعتماد مدير عند الدفع.
+          </div>
+        </div>
+
+        <div class="cart-summary">
+          <div class="row"><span data-i18n="common.subtotal">الإجمالي الفرعي</span><span id="sumSubtotal">0.00</span></div>
+          <div class="row"><span data-i18n="common.tax">الضريبة</span><span id="sumTax">0.00</span></div>
+          <div class="row hidden" id="discountRow"><span data-i18n="common.discountLabel">الخصم</span><span id="sumDiscount">0.00</span></div>
+          <div class="row hidden" id="bundleDiscountRow"><span id="bundleDiscountLabel">خصم الحزم التلقائي</span><span id="sumBundleDiscount">0.00</span></div>
+          <div class="row hidden" id="deliveryRow"><span data-i18n="pos.deliveryFee">رسوم التوصيل</span><span id="sumDelivery">0.00</span></div>
+          <div class="row total"><span data-i18n="common.total">الإجمالي</span><span id="sumTotal">0.00</span></div>
+          <div class="row hidden" id="secondaryTotalRow"><span>بالعملة الثانية</span><span id="secondaryTotal">0.00</span></div>
+        </div>
+        <button id="checkoutBtn" class="checkout-btn" data-i18n="pos.checkout" disabled aria-describedby="checkoutHint">إتمام البيع</button><div id="checkoutHint" class="checkout-hint">Ctrl + Enter للدفع</div>
+      </aside>
+    </div>
+  </div>
+
+  <!-- نافذة اختيار المتغيّر (مقاس/لون) -->
+  <div id="variantModal" class="modal-overlay hidden">
+    <div class="modal">
+      <h2 id="variantModalTitle" data-i18n="pos.selectVariant">اختر المتغيّر</h2>
+      <div id="variantList" class="variant-list"></div>
+      <div class="modal-actions">
+        <button type="button" id="closeVariantBtn" class="btn btn-secondary" data-i18n="common.close">إغلاق</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- نافذة ملاحظة على صنف بالسلة (مثال: بدون ثوم، دبل لحمة) -->
+  <div id="itemNoteModal" class="modal-overlay item-note-modal hidden">
+    <div class="modal">
+      <div class="item-note-head">
+        <span class="item-note-icon" aria-hidden="true">📝</span>
+        <h2 data-i18n="pos.itemNoteTitle">ملاحظة على الصنف</h2>
+      </div>
+      <p id="itemNoteProductName" style="color:#6b7280; font-weight:600;"></p>
+
+      <div id="itemNoteSuggestions" class="item-note-suggestions" aria-label="اقتراحات سريعة"></div>
+
+      <textarea id="itemNoteInput" rows="3" maxlength="200" data-i18n-placeholder="pos.itemNotePlaceholder" placeholder="مثال: بدون ثوم، دبل لحمة، مقطّع صغير..." style="width:100%; padding:10px; border-radius:8px; font-size:15px; resize:vertical;"></textarea>
+      <div class="item-note-counter"><span id="itemNoteCounter">0</span>/200</div>
+
+      <div class="modal-actions">
+        <button type="button" id="cancelItemNoteBtn" class="btn btn-secondary" data-i18n="common.cancel">إلغاء</button>
+        <button type="button" id="saveItemNoteBtn" class="btn btn-primary" data-i18n="common.save">حفظ</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- نافذة موافقة المدير على خصم يتجاوز الحد المسموح للكاشير -->
+  <div id="approvalModal" class="modal-overlay hidden">
+    <div class="modal">
+      <h2 data-i18n="pos.approvalRequired">مطلوب اعتماد مدير</h2>
+      <p style="color:#6b7280;" data-i18n="pos.approvalText">هذا الخصم يتجاوز الحد المسموح بدون موافقة. اطلب من مدير إدخال بياناته.</p>
+
+      <div class="login-mode-tabs">
+        <button type="button" id="approvalPasswordModeBtn" class="login-mode-tab active">كلمة المرور</button>
+        <button type="button" id="approvalPinModeBtn" class="login-mode-tab">PIN</button>
+      </div>
+
+      <div id="approvalPasswordFields">
+        <div class="form-field full">
+          <label data-i18n="pos.managerUsername">اسم مستخدم المدير</label>
+          <input id="approvalUsername" type="text" />
+        </div>
+        <div class="form-field full">
+          <label data-i18n="common.password">كلمة المرور</label>
+          <input id="approvalPassword" type="password" />
+        </div>
+      </div>
+
+      <div id="approvalPinFields" class="hidden">
+        <div class="form-field full">
+          <label>PIN المدير</label>
+          <input id="approvalPin" type="text" inputmode="numeric" maxlength="6" autocomplete="off" placeholder="——" style="text-align:center;font-size:22px;letter-spacing:6px" />
+        </div>
+      </div>
+
+      <div id="approvalError" class="payment-error hidden"></div>
+      <div class="modal-actions">
+        <button type="button" id="cancelApprovalBtn" class="btn btn-secondary" data-i18n="common.cancel">إلغاء</button>
+        <button type="button" id="confirmApprovalBtn" class="btn btn-primary" data-i18n="common.approve">اعتماد</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- نافذة الدفع -->
+  <div id="paymentModal" class="modal-overlay hidden">
+    <div class="modal payment-modal">
+      <h2 data-i18n="pos.completePayment">إتمام الدفع</h2>
+
+      <div class="form-field full customer-field">
+        <label data-i18n="pos.customerOptional">العميل (اختياري — لنقاط الولاء)</label>
+        <div class="customer-picker">
+          <input id="customerSearchInput" type="text" data-i18n-placeholder="pos.searchCustomerPlaceholder" placeholder="ابحث بالاسم أو الهاتف..." autocomplete="off" />
+          <div id="customerResults" class="customer-results hidden"></div>
+        </div>
+        <div id="selectedCustomerBox" class="selected-customer hidden">
+          <span id="selectedCustomerLabel"></span>
+          <button type="button" id="clearCustomerBtn">✕</button>
+        </div>
+      </div>
+
+      <div class="payment-total">
+        <span data-i18n="pos.amountDue">المطلوب</span>
+        <span id="paymentTotalDisplay">0.00</span>
+      </div>
+
+      <div class="payment-methods">
+        <label class="method-option">
+          <input type="radio" name="paymentMethod" value="cash" checked />
+          <span data-i18n="common.cash">نقدي</span>
+        </label>
+        <label class="method-option">
+          <input type="radio" name="paymentMethod" value="card" />
+          <span data-i18n="common.card">بطاقة</span>
+        </label>
+        <label class="method-option">
+          <input type="radio" name="paymentMethod" value="mixed" />
+          <span data-i18n="common.mixed">مختلط</span>
+        </label>
+        <label class="method-option">
+          <input type="radio" name="paymentMethod" value="credit" />
+          <span>دين / آجل</span>
+        </label>
+        <label class="method-option">
+          <input type="radio" name="paymentMethod" value="store_credit" />
+          <span>رصيد متجر</span>
+        </label>
+      </div>
+
+      <div id="cashFields" class="payment-fields">
+        <div class="form-field">
+          <label data-i18n="pos.cashReceived">المبلغ المستلم نقداً</label>
+          <input id="cashReceivedInput" type="text" inputmode="decimal" autocomplete="off" />
+        </div>
+        <div class="payment-row"><span data-i18n="pos.changeDue">الباقي للعميل</span><span id="changeDueDisplay">0.00</span></div>
+      </div>
+
+      <div id="mixedFields" class="payment-fields hidden">
+        <div class="form-field">
+          <label data-i18n="pos.cashAmount">المبلغ نقداً</label>
+          <input id="mixedCashInput" type="text" inputmode="decimal" autocomplete="off" min="0" />
+        </div>
+        <div class="form-field">
+          <label data-i18n="pos.cardAmount">المبلغ بالبطاقة</label>
+          <input id="mixedCardInput" type="text" inputmode="decimal" autocomplete="off" min="0" />
+        </div>
+        <div class="payment-row" id="mixedRemainingRow"><span data-i18n="pos.remainingAmount">المتبقي لإكمال المبلغ</span><span id="mixedRemainingDisplay">0.00</span></div>
+      </div>
+
+      <div id="paymentError" class="payment-error hidden"></div>
+
+      <div class="modal-actions">
+        <button type="button" id="cancelPaymentBtn" class="btn btn-secondary" data-i18n="common.cancel">إلغاء</button>
+        <button type="button" id="confirmPaymentBtn" class="btn btn-primary" data-i18n="pos.confirmPayment">تأكيد الدفع</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="setupModal" class="modal-overlay hidden">
+    <div class="modal">
+      <h2>مرحباً بك في Nexora POS</h2>
+      <p>اختر نوع نشاطك لتخصيص الواجهة من أول استخدام.</p>
+      <div class="business-picker">
+        <button type="button" class="business-option" data-business-type="restaurant">🍽️<span>مطعم</span></button>
+        <button type="button" class="business-option" data-business-type="fashion">👕<span>أزياء</span></button>
+        <button type="button" class="business-option" data-business-type="supermarket">🛒<span>سوبرماركت</span></button>
+        <button type="button" class="business-option" data-business-type="general">🏪<span>عام</span></button>
+      </div>
+    </div>
+  </div>
+
+  <div id="passwordChangeModal" class="modal-overlay hidden">
+    <div class="modal"><h2>تغيير كلمة المرور مطلوب</h2><p>لحماية بيانات المتجر، غيّر كلمة المرور الافتراضية قبل البدء.</p>
+      <form id="passwordChangeForm"><div class="form-field"><label>كلمة المرور الحالية</label><input id="currentPasswordInput" type="password" required /></div><div class="form-field"><label>كلمة المرور الجديدة</label><input id="newPasswordInput" type="password" minlength="8" required /></div><div class="form-field"><label>تأكيد كلمة المرور الجديدة</label><input id="confirmPasswordInput" type="password" minlength="8" required /></div><div id="passwordChangeError" class="payment-error hidden"></div><div class="modal-actions"><button class="btn btn-primary">حفظ كلمة المرور</button></div></form>
+    </div>
+  </div>
+
+  <script src="i18n.js"></script>
+  <script src="common.js"></script>
+  <script src="pos.js"></script>
+<div id="globalBusyOverlay" class="global-busy-overlay hidden" aria-hidden="true"><span class="nexora-spinner"></span><span>جارٍ تنفيذ العملية...</span></div>
+</body>
+</html>

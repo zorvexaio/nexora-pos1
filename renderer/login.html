@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: file:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-src 'none';">
+  <title>Nexora POS</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body class="login-body">
+  <select id="langSwitcher" class="lang-switcher lang-switcher-floating" title="اللغة / Dil / Language">
+    <option value="ar">AR</option>
+    <option value="tr">TR</option>
+    <option value="en">EN</option>
+  </select>
+  <div class="login-card">
+    <div class="login-brand" data-i18n="login.title">نظام نقاط البيع</div>
+    <div id="bootstrapInfo" class="payment-error hidden" style="margin-bottom:12px"></div>
+
+    <div class="login-mode-tabs">
+      <button type="button" id="passwordModeBtn" class="login-mode-tab active">كلمة المرور</button>
+      <button type="button" id="pinModeBtn" class="login-mode-tab">PIN</button>
+    </div>
+
+    <form id="loginForm">
+      <div class="form-field full">
+        <label data-i18n="login.username">اسم المستخدم</label>
+        <input id="usernameInput" type="text" autofocus autocomplete="username" required />
+      </div>
+      <div class="form-field full">
+        <label data-i18n="login.password">كلمة المرور</label>
+        <input id="passwordInput" type="password" autocomplete="current-password" required />
+      </div>
+      <div id="loginError" class="payment-error hidden"></div>
+      <button type="submit" id="loginBtn" class="btn btn-primary login-btn" data-i18n="login.submit">دخول</button>
+    </form>
+
+    <div id="pinPad" class="pin-pad hidden">
+      <div id="pinDisplay" class="pin-display">— — — —</div>
+      <div id="pinError" class="payment-error hidden"></div>
+      <div class="pin-grid">
+        <button type="button" class="pin-key" data-digit="1">1</button>
+        <button type="button" class="pin-key" data-digit="2">2</button>
+        <button type="button" class="pin-key" data-digit="3">3</button>
+        <button type="button" class="pin-key" data-digit="4">4</button>
+        <button type="button" class="pin-key" data-digit="5">5</button>
+        <button type="button" class="pin-key" data-digit="6">6</button>
+        <button type="button" class="pin-key" data-digit="7">7</button>
+        <button type="button" class="pin-key" data-digit="8">8</button>
+        <button type="button" class="pin-key" data-digit="9">9</button>
+        <button type="button" id="pinClearBtn" class="pin-key pin-key-secondary">مسح</button>
+        <button type="button" class="pin-key" data-digit="0">0</button>
+        <button type="button" id="pinBackspaceBtn" class="pin-key pin-key-secondary">⌫</button>
+      </div>
+    </div>
+
+    <div class="login-hint" data-i18n="login.hint">في أول تشغيل سيظهر رمز دخول مؤقت، ويجب تغييره مباشرة بعد الدخول.</div>
+  </div>
+
+  <script src="i18n.js"></script>
+  <script src="login.js"></script>
+</body>
+</html>

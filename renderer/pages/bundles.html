@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: file:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-src 'none';">
+  <title>الحزم والخصومات التجميعية</title>
+  <link rel="stylesheet" href="../style.css" />
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="brand" data-i18n="app.brand">نقطة البيع</div>
+      <nav class="nav-links">
+        <a href="../index.html" data-i18n="nav.pos">الكاشير</a>
+        <a href="tables.html" data-business="restaurant" data-i18n="nav.tables">الطاولات</a>
+        <a href="shift.html" data-i18n="nav.cashSession">الصندوق</a>
+        <a href="returns.html" data-roles="admin,manager" data-i18n="nav.returns">مرتجعات</a>
+        <a href="products.html" data-roles="admin,manager" data-i18n="nav.products">المنتجات</a>
+        <a href="bundles.html" class="active" data-roles="admin,manager" data-i18n="nav.bundles">الحزم</a>
+        <a href="inventory.html" data-roles="admin,manager" data-i18n="nav.inventory">المخزون</a>
+        <a href="customers.html" data-roles="admin,manager" data-i18n="nav.customers">العملاء</a>
+        <a href="suppliers.html" data-roles="admin,manager" data-i18n="nav.suppliers">الموردون والشراء</a>
+        <a href="reports.html" data-roles="admin,manager" data-i18n="nav.reports">التقارير</a>
+        <a href="audit.html" data-roles="admin" data-i18n="nav.audit">سجل التدقيق</a>
+        <a href="payroll.html" data-roles="admin" data-i18n="nav.payroll">الرواتب</a>
+        <a href="users.html" data-roles="admin" data-i18n="nav.users">المستخدمون</a>
+        <a href="settings.html" data-roles="admin" data-i18n="nav.settings">الإعدادات</a>
+      </nav>
+      <div class="topbar-right">
+        <select id="langSwitcher" class="lang-switcher" title="اللغة / Dil / Language">
+          <option value="ar">AR</option>
+          <option value="tr">TR</option>
+          <option value="en">EN</option>
+        </select>
+        <div class="branch-name" id="branchName">—</div>
+        <div class="user-info">
+          <span id="currentUserName"></span>
+          <span id="currentUserRoleBadge" class="role-badge"></span>
+          <button id="logoutBtn" class="btn btn-secondary btn-sm" data-i18n="common.logout">خروج</button>
+        </div>
+      </div>
+    </header>
+
+    <div class="products-page">
+      <div class="page-header">
+        <h1>الحزم والخصومات التجميعية</h1>
+        <button id="addBundleBtn" class="btn btn-primary">+ حزمة جديدة</button>
+      </div>
+      <div class="empty-state" style="font-size:12px;margin-bottom:8px;">
+        الحزمة: مجموعة منتجات محددة، إذا توفّرت كلها بسلة الكاشير بالكمية المطلوبة، يُطبَّق الخصم تلقائياً بدون أي تدخّل من الكاشير.
+      </div>
+
+      <table class="products-table">
+        <thead>
+          <tr>
+            <th>الاسم</th>
+            <th>المنتجات</th>
+            <th>الخصم</th>
+            <th>الحالة</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="bundlesTableBody"></tbody>
+      </table>
+      <div id="emptyState" class="empty-state" style="display:none">لا توجد حزم بعد.</div>
+    </div>
+  </div>
+
+  <!-- نافذة إضافة/تعديل حزمة -->
+  <div id="bundleModal" class="modal-overlay hidden">
+    <div class="modal">
+      <h2 id="modalTitle">حزمة جديدة</h2>
+      <form id="bundleForm">
+        <input type="hidden" id="bundleId" />
+
+        <div class="form-grid">
+          <div class="form-field full">
+            <label>اسم الحزمة *</label>
+            <input id="fieldName" type="text" required placeholder="مثال: عرض الغداء" />
+          </div>
+
+          <div class="form-field">
+            <label>نوع الخصم</label>
+            <select id="fieldDiscountType">
+              <option value="percent">نسبة % على إجمالي منتجات الحزمة</option>
+              <option value="fixed_price">سعر ثابت للحزمة كاملة</option>
+            </select>
+          </div>
+          <div class="form-field">
+            <label id="discountValueLabel">قيمة الخصم %</label>
+            <input id="fieldDiscountValue" type="number" step="0.01" min="0" required />
+          </div>
+
+          <div class="form-field checkbox full">
+            <input id="fieldIsActive" type="checkbox" checked />
+            <label for="fieldIsActive">حزمة فعّالة (تُطبَّق تلقائياً بالكاشير)</label>
+          </div>
+        </div>
+
+        <h3 style="margin:14px 0 6px;">منتجات الحزمة</h3>
+        <div class="form-grid">
+          <div class="form-field">
+            <label>المنتج</label>
+            <select id="itemProductSelect"></select>
+          </div>
+          <div class="form-field">
+            <label>الكمية</label>
+            <input id="itemQuantityInput" type="number" step="0.01" min="0.01" value="1" />
+          </div>
+        </div>
+        <button type="button" id="addItemBtn" class="btn btn-secondary btn-sm">+ إضافة للحزمة</button>
+
+        <table class="products-table" style="margin-top:10px;">
+          <thead>
+            <tr><th>المنتج</th><th>الكمية</th><th></th></tr>
+          </thead>
+          <tbody id="bundleItemsBody"></tbody>
+        </table>
+        <div id="bundleItemsEmpty" class="empty-state" style="font-size:12px;">لم تُضف أي منتجات للحزمة بعد.</div>
+
+        <div class="modal-actions">
+          <button type="button" id="cancelBtn" class="btn btn-secondary">إلغاء</button>
+          <button type="submit" id="saveBtn" class="btn btn-primary">حفظ</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="../i18n.js"></script>
+  <script src="../common.js"></script>
+  <script src="bundles.js"></script>
+</body>
+</html>

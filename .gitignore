@@ -1,0 +1,9 @@
+node_modules/
+dist/
+release-output/
+tools/private-key.pem
+tools/public-key.pem
+*.lic
+*.db
+*.db-*
+.env
