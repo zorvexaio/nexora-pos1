@@ -2,7 +2,7 @@ param()
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
-$Root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
+$Root = Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path))
 Set-Location $Root
 
 Write-Host "Nexora POS Windows Release Builder" -ForegroundColor Cyan

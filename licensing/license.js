@@ -28,10 +28,8 @@ const { execFileSync } = require('child_process');
 // طالما هالمفتاح لا يزال بقيمته الافتراضية (فاضي)، كل عملية تحقق ترخيص سترفض بصمت
 // (malformed_license) حتى لا يعمل التطبيق بمفتاح placeholder بالخطأ.
 // ------------------------------------------------------------------
-const PUBLIC_KEY_PEM = "-----BEGIN PUBLIC KEY-----\MCowBQYDK2VwAyEA3yhTh9PCgRfdl43H+pgxKZwDBImduwTd9XWQmGzpGtg=\n-----END PUBLIC KEY-----\n";
+const PUBLIC_KEY_PEM = "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEA3yhTh9PCgRfdl43H+pgxKZwDBImduwTd9XWQmGzpGtg=\n-----END PUBLIC KEY-----\n";
 
-// رابط قائمة الإبطال المُوقَّعة (نفس الملف الناتج من: node tools/generate-license.js revoke ...)
-// اتركه فاضياً لتعطيل محاولة التحديث عن بعد والاكتفاء بأي نسخة محلية محفوظة سابقاً.
 const REVOCATION_LIST_URL = '';
 
 const LICENSE_FILE_NAME = 'license.lic';
@@ -364,3 +362,5 @@ module.exports = {
   activateLicense,
   refreshRevocationList,
 };
+
+
