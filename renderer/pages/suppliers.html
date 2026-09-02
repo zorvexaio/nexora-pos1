@@ -106,9 +106,26 @@
       <form id="purchaseForm">
         <div class="form-grid">
           <div class="form-field full"><label>المورد</label><select id="purchaseSupplier" required></select></div>
-          <div class="form-field"><label>المنتج</label><select id="purchaseProduct"></select></div>
+          <div class="form-field">
+            <label>المنتج</label>
+            <div style="display:flex; gap:6px;">
+              <select id="purchaseProduct" style="flex:1;"></select>
+              <button type="button" id="quickAddProductBtn" class="btn btn-secondary" title="منتج جديد غير موجود بالقائمة">+ جديد</button>
+            </div>
+          </div>
           <div class="form-field"><label>الكمية</label><input id="purchaseQty" type="number" min="0.01" step="0.01" value="1" /></div>
           <div class="form-field"><label>تكلفة الوحدة</label><input id="purchaseCost" type="number" min="0" step="0.01" value="0" /></div>
+          <div class="form-field full hidden" id="quickAddProductRow">
+            <div class="form-grid">
+              <div class="form-field"><label>اسم المنتج الجديد</label><input id="quickAddProductName" placeholder="مثلاً: علبة عصير 1 لتر" /></div>
+              <div class="form-field"><label>سعر البيع (اختياري)</label><input id="quickAddProductPrice" type="number" min="0" step="0.01" value="0" /></div>
+              <div class="form-field full" style="display:flex; gap:8px;">
+                <button type="button" id="quickAddProductSaveBtn" class="btn btn-primary">إضافة المنتج</button>
+                <button type="button" id="quickAddProductCancelBtn" class="btn btn-secondary">إلغاء</button>
+              </div>
+              <p id="quickAddProductError" class="payment-error hidden full"></p>
+            </div>
+          </div>
           <div class="form-field full"><button type="button" id="addPurchaseItemBtn" class="btn btn-secondary">إضافة بند</button></div>
         </div>
         <table class="products-table">

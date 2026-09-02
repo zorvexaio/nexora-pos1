@@ -36,15 +36,9 @@ async function init() {
 }
 
 copyFingerprintBtn.addEventListener('click', async () => {
-  try {
-    await window.api.system.copyToClipboard(fingerprintInput.value);
-    copyFingerprintBtn.textContent = t('license.copied');
-  } catch (err) {
-    // احتياط: نحدد النص يدوياً ليتمكن المستخدم من نسخه بـ Ctrl+C إن فشل النسخ التلقائي
-    fingerprintInput.select();
-  } finally {
-    setTimeout(() => (copyFingerprintBtn.textContent = t('license.copyBtn')), 1500);
-  }
+  await navigator.clipboard.writeText(fingerprintInput.value);
+  copyFingerprintBtn.textContent = t('license.copied');
+  setTimeout(() => (copyFingerprintBtn.textContent = t('license.copyBtn')), 1500);
 });
 
 licenseForm.addEventListener('submit', async (e) => {

@@ -4,10 +4,7 @@ const { pathToFileURL } = require('url');
 // كل ما تحتاجه الواجهة (renderer) من عمليات بيانات يُعرَّف هنا فقط
 // هذا يمنع الواجهة من الوصول المباشر لـ Node.js أو نظام الملفات (أمان)
 contextBridge.exposeInMainWorld('api', {
-  system: {
-    rendererHeartbeat: (state) => ipcRenderer.invoke('system:rendererHeartbeat', state || {}),
-    copyToClipboard: (text) => ipcRenderer.invoke('system:copyToClipboard', text),
-  },
+  system: { rendererHeartbeat: (state) => ipcRenderer.invoke('system:rendererHeartbeat', state || {}) },
   pathToFileURL: (filePath) => pathToFileURL(String(filePath || '')).href,
   auth: {
     bootstrapInfo: () => ipcRenderer.invoke('auth:bootstrapInfo'),

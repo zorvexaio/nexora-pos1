@@ -7,6 +7,36 @@ async function init() {
   $('supplierForm').addEventListener('submit', saveSupplier); $('addPurchaseBtn').addEventListener('click', openPurchase); $('cancelPurchaseBtn').addEventListener('click', () => $('purchaseModal').classList.add('hidden'));
   $('addPurchaseItemBtn').addEventListener('click', addPurchaseItem); $('purchaseForm').addEventListener('submit', savePurchase); await refresh();
   $('purchasePaymentMethod').addEventListener('change', updatePurchasePaymentFields);
+  $('quickAddProductBtn').addEventListener('click', () => {
+    $('quickAddProductError').classList.add('hidden');
+    $('quickAddProductName').value = ''; $('quickAddProductPrice').value = '0';
+    $('quickAddProductRow').classList.remove('hidden');
+    $('quickAddProductName').focus();
+  });
+  $('quickAddProductCancelBtn').addEventListener('click', () => $('quickAddProductRow').classList.add('hidden'));
+  $('quickAddProductSaveBtn').addEventListener('click', async () => {
+    const name = $('quickAddProductName').value.trim();
+    const errorEl = $('quickAddProductError');
+    errorEl.classList.add('hidden');
+    if (!name) { errorEl.textContent = 'اكتب اسم المنتج.'; errorEl.classList.remove('hidden'); return; }
+    const price = parseLocaleNumber($('quickAddProductPrice').value) || 0;
+    const btn = $('quickAddProductSaveBtn');
+    btn.disabled = true;
+    try {
+      // منتج بسيط يُنشأ من داخل شاشة الشراء مباشرة (بدون فئة/باركود) — يقدر المدير
+      // يكمّل بياناته لاحقاً من شاشة "المنتجات" (فئة، باركود، حد أدنى...الخ).
+      const created = await window.api.products.create({ name, price, cost: 0 });
+      products = await window.api.products.list({});
+      $('purchaseProduct').innerHTML = products.map((p) => `<option value="${p.id}">${esc(p.name)}</option>`).join('');
+      $('purchaseProduct').value = String(created.id);
+      $('quickAddProductRow').classList.add('hidden');
+    } catch (error) {
+      errorEl.textContent = ts('تعذّر إنشاء المنتج: ') + error.message;
+      errorEl.classList.remove('hidden');
+    } finally {
+      btn.disabled = false;
+    }
+  });
 }
 async function refresh() { [suppliers, products] = await Promise.all([window.api.suppliers.list(), window.api.products.list({})]); const purchases = await window.api.purchases.list(); renderSuppliers(); renderPurchases(purchases); renderSupplierKpis(purchases); }
 function renderSupplierKpis(purchases) {
@@ -22,7 +52,7 @@ function renderSuppliers() { $('suppliersBody').innerHTML = suppliers.map((s) =>
 function renderPurchases(items) { $('purchasesBody').innerHTML = items.map((p) => { const isOwnBranch = !currentBranch || p.branch_id === currentBranch.id; const branchTag = !isOwnBranch ? ` <span class="role-badge">${esc(p.branch_name || '')}</span>` : ''; const statusBadge = p.status === 'received' ? '<span class="status-badge tone-success">مستلمة</span>' : '<span class="status-badge tone-warning">مسودة</span>'; const paid = Number(p.paid_amount || 0); const due = Math.max(0, Number(p.total || 0) - paid); return `<tr><td>${esc(p.supplier_name)}${branchTag}</td><td>${Number(p.total).toFixed(2)}</td><td>${paid.toFixed(2)} / ${due.toFixed(2)}</td><td>${statusBadge}</td><td>${p.status === 'draft' && isOwnBranch ? `<button class="btn btn-primary btn-sm" data-id="${p.id}">استلام</button>` : ''}</td></tr>`; }).join(''); $('purchasesBody').querySelectorAll('button').forEach((b) => b.addEventListener('click', async () => { if (confirm(ts('سيُضاف المخزون وتُحدّث التكلفة والحسابات. متابعة؟'))) { try { await window.api.purchases.receive(Number(b.dataset.id)); await refresh(); } catch (error) { alert(ts('تعذّر الاستلام: ') + error.message); } } })); }
 function openSupplier(s = null) { editingSupplier = s; $('supplierForm').reset(); $('supplierModalTitle').textContent = s ? 'تعديل مورد' : 'مورد جديد'; if (s) { $('supplierName').value=s.name; $('supplierPhone').value=s.phone||''; $('supplierAddress').value=s.address||''; $('supplierNotes').value=s.notes||''; } $('supplierModal').classList.remove('hidden'); }
 async function saveSupplier(e) { e.preventDefault(); const data={name:$('supplierName').value.trim(),phone:$('supplierPhone').value.trim(),address:$('supplierAddress').value.trim(),notes:$('supplierNotes').value.trim()}; if(editingSupplier) await window.api.suppliers.update({...data,id:editingSupplier.id}); else await window.api.suppliers.create(data); $('supplierModal').classList.add('hidden'); await refresh(); }
-function openPurchase() { purchaseItems=[]; $('purchaseForm').reset(); $('purchaseSupplier').innerHTML=suppliers.map((s)=>`<option value="${s.id}">${esc(s.name)}</option>`).join(''); $('purchaseProduct').innerHTML=products.map((p)=>`<option value="${p.id}">${esc(p.name)}</option>`).join(''); $('purchasePaymentMethod').value='credit'; $('purchasePaid').value='0'; updatePurchasePaymentFields(); renderPurchaseItems(); $('purchaseModal').classList.remove('hidden'); }
+function openPurchase() { purchaseItems=[]; $('purchaseForm').reset(); $('quickAddProductRow').classList.add('hidden'); $('purchaseSupplier').innerHTML=suppliers.map((s)=>`<option value="${s.id}">${esc(s.name)}</option>`).join(''); $('purchaseProduct').innerHTML=products.map((p)=>`<option value="${p.id}">${esc(p.name)}</option>`).join(''); $('purchasePaymentMethod').value='credit'; $('purchasePaid').value='0'; updatePurchasePaymentFields(); renderPurchaseItems(); $('purchaseModal').classList.remove('hidden'); }
 function updatePurchasePaymentFields() { const isCredit = $('purchasePaymentMethod').value === 'credit'; $('purchasePaid').disabled = isCredit; if (isCredit) $('purchasePaid').value = '0'; $('purchasePaymentHint').textContent = isCredit ? 'سيُستلم المخزون الآن ويُسجّل المبلغ كذمة على المورد.' : 'سيُستلم المخزون الآن، وتُسجّل الدفعة والحركة المالية تلقائياً.'; }
 function addPurchaseItem() { const product=products.find((p)=>p.id===Number($('purchaseProduct').value)); const quantity=parseLocaleNumber($('purchaseQty').value); const unitCost=parseLocaleNumber($('purchaseCost').value); if(!product || !(quantity>0) || !(unitCost>=0)) return alert(ts('أدخل بند شراء صحيحاً.')); purchaseItems.push({productId:product.id,name:product.name,quantity,unitCost}); renderPurchaseItems(); }
 function renderPurchaseItems(){ $('purchaseItemsBody').innerHTML=purchaseItems.map((i,n)=>`<tr><td>${esc(i.name)}</td><td>${i.quantity}</td><td>${i.unitCost.toFixed(2)}</td><td><button type="button" class="btn btn-secondary btn-sm" data-index="${n}">حذف</button></td></tr>`).join(''); $('purchaseItemsBody').querySelectorAll('button').forEach((b)=>b.addEventListener('click',()=>{purchaseItems.splice(Number(b.dataset.index),1);renderPurchaseItems();})); }

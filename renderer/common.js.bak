@@ -1,19 +1,6 @@
 // common.js — يُحمَّل قبل سكربت كل صفحة (index.html وصفحات pages/)
 // يوفر: التحقق من الصلاحية قبل عرض الصفحة، وتعبئة شريط المستخدم وزر الخروج
 
-// تعقيم أي نص قبل حقنه بـ innerHTML (يمنع XSS من بيانات مخزّنة كأسماء عملاء/منتجات).
-// دوال هذا الملف (showToast وrenderEmptyState وrenderLoadingState) تستخدمها مباشرة،
-// لذلك لازم تكون معرّفة هنا نفسه بدل الاعتماد على أن كل صفحة تعرّف نسختها الخاصة —
-// شاشات مثل المشتريات والرواتب وجلسة الصندوق لم تكن تعرّفها محلياً، فكان أي استدعاء
-// لـ showToast فيها يفشل بخطأ "escapeHtml is not defined" (راجع سجل التدقيق: أخطاء
-// renderer_rejection المتكررة). لو صفحة مُعيّنة عندها نسختها الخاصة، إعادة التعريف
-// هنا غير ضارة — تعريفات الدوال بنفس النطاق لا تتعارض بجافاسكربت.
-function escapeHtml(str) {
-  const div = document.createElement('div');
-  div.textContent = str == null ? '' : String(str);
-  return div.innerHTML;
-}
-
 function roleLabels() {
   return { admin: t('role.admin'), manager: t('role.manager'), cashier: t('role.cashier') };
 }

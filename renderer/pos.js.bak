@@ -800,14 +800,14 @@ customerSearchInput.addEventListener(
     try {
       const results = await window.api.customers.list({ search: term, limit: 40 });
       if (seq !== customerSearchRequestSeq || customerSearchInput.value.trim() !== term) return;
-      renderCustomerResults(results, term);
+      renderCustomerResults(results);
     } catch (err) {
       if (seq === customerSearchRequestSeq) console.error('Customer search failed', err);
     }
   }, 250)
 );
 
-function renderCustomerResults(results, term = '') {
+function renderCustomerResults(results) {
   if (results.length === 0) {
     customerResults.innerHTML = `<div class="customer-result-empty">${t('pos.noCustomerResults')}</div>`;
   } else {
@@ -825,24 +825,6 @@ function renderCustomerResults(results, term = '') {
         selectCustomer(c);
       });
     });
-  }
-  // لا يوجد عميل بهذا الاسم بالنظام؟ أنشئه فورًا من نفس مربع البحث بدل الرجوع لشاشة
-  // العملاء يدويًا — هذا هو المسار الوحيد لإنشاء عميل جديد أثناء عملية بيع آجل جارية.
-  if (term) {
-    const quickAddRow = document.createElement('div');
-    quickAddRow.className = 'customer-result customer-result-add';
-    quickAddRow.textContent = `+ ${t('pos.createCustomerPrefix', 'إنشاء عميل جديد باسم')} "${term}"`;
-    quickAddRow.addEventListener('click', async () => {
-      quickAddRow.textContent = t('common.loading', 'جارٍ التحميل...');
-      try {
-        const created = await window.api.customers.create({ name: term });
-        selectCustomer({ id: created.id, name: term, loyalty_points: 0 });
-      } catch (err) {
-        renderCustomerResults(results, term);
-        showToast('error', t('pos.createCustomerFailed', 'تعذّر إنشاء العميل') + ': ' + err.message);
-      }
-    });
-    customerResults.appendChild(quickAddRow);
   }
   customerResults.classList.remove('hidden');
 }
