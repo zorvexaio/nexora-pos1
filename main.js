@@ -450,6 +450,7 @@ function createLoginWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      backgroundThrottling: false,
     },
   });
   loginWindow.setMenuBarVisibility(false);
@@ -470,6 +471,11 @@ function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      // مهم: بدون هذا، Chromium يخنق (throttle) مؤقتات الصفحة (setInterval) بشدة
+      // عند تصغير النافذة أو تنشيط نافذة تانية فوقها (أحياناً لمرة كل ~60 ثانية).
+      // كان هذا يُظهر تحذيرات "تجمّد" كاذبة في سجل التدقيق (renderer_stall /
+      // renderer_watchdog_stall) رغم أن التطبيق شغّال طبيعي في الخلفية.
+      backgroundThrottling: false,
     },
   });
 
