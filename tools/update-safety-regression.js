@@ -9,7 +9,7 @@ const schema = fs.readFileSync('database/schema.sql', 'utf8');
 
 const publish = Array.isArray(pkg.build?.publish) ? pkg.build.publish[0] : null;
 assert.deepStrictEqual(publish, {
-  provider: 'github', owner: 'zorvexaio', repo: 'nexora-pos', releaseType: 'release',
+  provider: 'github', owner: 'zorvexaio', repo: 'nexora-pos1', releaseType: 'release',
 }, 'The production update feed must be the Nexora GitHub Release feed.');
 assert.strictEqual(pkg.build?.asar, true, 'The packaged app must remain asar-protected.');
 assert.match(main, /autoUpdater\.autoDownload\s*=\s*false/, 'Updates must never download without approval.');
