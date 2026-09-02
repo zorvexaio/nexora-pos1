@@ -13,8 +13,20 @@ const { getOrCreateServerCert } = require('./server/lan-tls');
 const { pinnedRequest } = require('./server/pinned-request');
 const PACKAGE_CONFIG = JSON.parse(fs.readFileSync(path.join(__dirname, 'package.json'), 'utf8'));
 
+// ملاحظة مهمة: electron-builder يحذف قسم "build" بالكامل (وبالتالي "publish")
+// من package.json المُعبّأ داخل app.asar وقت البناء — فحص PACKAGE_CONFIG.build?.publish
+// كان يرجع false دائماً في أي نسخة مُجهّزة فعلياً، بصرف النظر عن صحة إعدادات النشر
+// في مصدر المشروع. البديل الصحيح: التحقق من وجود app-update.yml، وهو ملف يولّده
+// electron-builder تلقائياً بجانب التطبيق (غير متأثر بحذف قسم build) ويحتوي فعلياً
+// على بيانات مزوّد التحديث (provider/owner/repo) — وهو نفس الملف الذي يعتمد عليه
+// electron-updater داخلياً.
 function isUpdateProviderConfigured() {
-  return Boolean(PACKAGE_CONFIG.build?.publish);
+  try {
+    const updateYmlPath = path.join(process.resourcesPath, 'app-update.yml');
+    return fs.existsSync(updateYmlPath);
+  } catch (_) {
+    return false;
+  }
 }
 
 // منع تشغيل أكثر من نسخة من البرنامج في الوقت نفسه؛ يمنع تعارض الكتابة على قاعدة البيانات
