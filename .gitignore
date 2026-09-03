@@ -1,9 +1,32 @@
+# تبعيات — تُعاد بـ npm install، لا داعي لرفعها (حجمها كبير جداً)
 node_modules/
+
+# نواتج البناء (نسخ التثبيت النهائية)
 dist/
-release-output/
-tools/private-key.pem
-tools/public-key.pem
-*.lic
+build-output/
+release/
+
+# قاعدة البيانات ومفاتيح التشفير — بيانات حقيقية لعملاء، ما بترفع أبداً
 *.db
-*.db-*
+*.db.key
+*.sqlite
+
+# شهادات TLS محلية وأسرار البيئة
+*.pem
 .env
+.env.local
+server/.env
+
+# ملفات تراخيص العملاء الفعلية (الأداة generate-license.js تبقى، النواتج لا)
+*.license
+*.lic
+
+# قائمة إبطال التراخيص الموقّعة (تُوزَّع للعملاء عبر رابط استضافة، لا تُرفع هنا)
+*-crl.json
+pos-crl.json
+
+# ملفات نظام التشغيل والمحررات
+.DS_Store
+Thumbs.db
+.vscode/
+*.log
