@@ -217,6 +217,7 @@ const PUBLIC_IPC_CHANNELS = new Set([
   'license:deviceFingerprint',
   'license:status',
   'license:activate',
+  'system:copyToClipboard', // تُستخدم لنسخ بصمة الجهاز من شاشة تفعيل الترخيص، قبل تسجيل الدخول
   'update:currentVersion',
   'setup:isRequired',
   'language:get',
@@ -264,11 +265,20 @@ async function resolvePrintDevice(win, configuredName) {
   let printers = [];
   try { printers = await win.webContents.getPrintersAsync(); } catch (_) { printers = []; }
   if (configuredName) {
-    const match = printers.find((p) => p.name === configuredName || p.displayName === configuredName);
-    if (match && isVirtualPdfPrinter(match.name || match.displayName)) {
+    const norm = (s) => String(s || '').trim().toLowerCase();
+    const match = printers.find((p) => p.name === configuredName || p.displayName === configuredName)
+      || printers.find((p) => norm(p.name) === norm(configuredName) || norm(p.displayName) === norm(configuredName));
+    if (!match) {
+      // طابعة الشبكة/الواي فاي تختفي أحياناً من قائمة ويندوز مؤقتاً (انقطاع اتصال، إعادة
+      // تشغيل الطابعة، أو تغيّر اسمها لو كانت مضافة عبر اكتشاف تلقائي WSD بدل منفذ
+      // TCP/IP ثابت). سابقاً كنا نمرر الاسم المحفوظ للطباعة حتى لو لم يعد موجوداً بالقائمة
+      // الحالية، فتفشل المهمة بصمت برسالة غامضة من ويندوز. الآن نوقفها برسالة واضحة.
+      return { blocked: true, reason: `الطابعة المحددة في الإعدادات (${configuredName}) غير ظاهرة حالياً ضمن طابعات الجهاز. تأكد أن الطابعة مشغّلة ومتصلة بشبكة الواي فاي (أعد تشغيلها إن لزم)، ثم تحقق من الإعدادات ← الطباعة التلقائية. لتفادي تكرار المشكلة يفضّل تثبيت الطابعة عبر عنوان IP ثابت (منفذ Standard TCP/IP) بدل الاكتشاف التلقائي.` };
+    }
+    if (isVirtualPdfPrinter(match.name || match.displayName)) {
       return { blocked: true, reason: `الطابعة المحددة في الإعدادات (${configuredName}) هي طابعة PDF افتراضية وليست طابعة فعلية. الرجاء اختيار طابعة حقيقية من الإعدادات ← الطباعة التلقائية.` };
     }
-    return { deviceName: configuredName };
+    return { deviceName: match.name };
   }
   const def = printers.find((p) => p.isDefault) || null;
   if (!def) return { blocked: true, reason: 'لم يتم العثور على أي طابعة متصلة بالجهاز.' };
