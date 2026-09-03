@@ -207,6 +207,7 @@ contextBridge.exposeInMainWorld('api', {
     getConfig: () => ipcRenderer.invoke('printing:getConfig'),
     saveConfig: (config) => ipcRenderer.invoke('printing:saveConfig', config),
     listPrinters: () => ipcRenderer.invoke('printing:listPrinters'),
+    testNetworkPrinter: (opts) => ipcRenderer.invoke('printing:testNetworkPrinter', opts),
   },
   audit: {
     list: () => ipcRenderer.invoke('audit:list'),

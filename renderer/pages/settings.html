@@ -220,9 +220,29 @@
         <p class="field-hint">لا تظهر أي نافذة طباعة. اختر طابعة فعلية من القائمة، أو اترك "طابعة ويندوز الافتراضية" — طابعات PDF الوهمية (مثل Microsoft Print to PDF) مستبعدة تلقائياً من الطباعة التلقائية لأنها تُنتج ملف PDF بدل الطباعة الفعلية.</p>
         <form id="printingForm" class="form-grid">
           <div class="form-field checkbox full"><input id="fieldKitchenAutoPrint" type="checkbox" /><label for="fieldKitchenAutoPrint">إرسال طلبات الطاولات والسفري للمطبخ تلقائياً</label></div>
-          <div class="form-field full"><label>طابعة المطبخ</label><select id="fieldKitchenPrinterName"><option value="">طابعة ويندوز الافتراضية</option></select></div>
+          <div class="form-field full"><label>طريقة الاتصال بطابعة المطبخ</label>
+            <select id="fieldKitchenPrinterMode">
+              <option value="system">طابعة مثبّتة في ويندوز (الطريقة التقليدية)</option>
+              <option value="network">طابعة شبكة مباشرة عبر IP (بدون تثبيت في ويندوز)</option>
+            </select>
+          </div>
+          <div class="form-field full kitchen-system-only"><label>طابعة المطبخ</label><select id="fieldKitchenPrinterName"><option value="">طابعة ويندوز الافتراضية</option></select></div>
+          <div class="form-field kitchen-network-only"><label>عنوان IP طابعة المطبخ</label><input id="fieldKitchenPrinterIp" type="text" placeholder="مثال: 192.168.1.50" /></div>
+          <div class="form-field kitchen-network-only"><label>المنفذ (Port)</label><input id="fieldKitchenPrinterPort" type="text" placeholder="9100" /></div>
+          <div class="form-field full kitchen-network-only"><button type="button" id="testKitchenNetworkPrinterBtn" class="btn btn-secondary">اختبار طباعة</button></div>
+
           <div class="form-field checkbox full"><input id="fieldReceiptAutoPrint" type="checkbox" /><label for="fieldReceiptAutoPrint">طباعة الفاتورة تلقائياً بعد الدفع</label></div>
-          <div class="form-field full"><label>طابعة الفواتير</label><select id="fieldReceiptPrinterName"><option value="">طابعة ويندوز الافتراضية</option></select></div>
+          <div class="form-field full"><label>طريقة الاتصال بطابعة الفواتير</label>
+            <select id="fieldReceiptPrinterMode">
+              <option value="system">طابعة مثبّتة في ويندوز (الطريقة التقليدية)</option>
+              <option value="network">طابعة شبكة مباشرة عبر IP (بدون تثبيت في ويندوز)</option>
+            </select>
+          </div>
+          <div class="form-field full receipt-system-only"><label>طابعة الفواتير</label><select id="fieldReceiptPrinterName"><option value="">طابعة ويندوز الافتراضية</option></select></div>
+          <div class="form-field receipt-network-only"><label>عنوان IP طابعة الفواتير</label><input id="fieldReceiptPrinterIp" type="text" placeholder="مثال: 192.168.1.51" /></div>
+          <div class="form-field receipt-network-only"><label>المنفذ (Port)</label><input id="fieldReceiptPrinterPort" type="text" placeholder="9100" /></div>
+          <div class="form-field full receipt-network-only"><button type="button" id="testReceiptNetworkPrinterBtn" class="btn btn-secondary">اختبار طباعة</button></div>
+
           <div class="form-field full"><button type="submit" id="savePrintingBtn" class="btn btn-primary">حفظ الطباعة التلقائية</button></div>
         </form>
       </div>

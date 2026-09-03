@@ -11,6 +11,7 @@ const { createSyncServer } = require('./server/sync-server');
 const { startBeacon, startListener, getLocalIPv4Addresses } = require('./server/lan-discovery');
 const { getOrCreateServerCert } = require('./server/lan-tls');
 const { pinnedRequest } = require('./server/pinned-request');
+const { captureWindowAndPrintNetwork } = require('./lib/network-print');
 const PACKAGE_CONFIG = JSON.parse(fs.readFileSync(path.join(__dirname, 'package.json'), 'utf8'));
 
 // ملاحظة مهمة: electron-builder يحذف قسم "build" بالكامل (وبالتالي "publish")
@@ -217,7 +218,6 @@ const PUBLIC_IPC_CHANNELS = new Set([
   'license:deviceFingerprint',
   'license:status',
   'license:activate',
-  'system:copyToClipboard', // تُستخدم لنسخ بصمة الجهاز من شاشة تفعيل الترخيص، قبل تسجيل الدخول
   'update:currentVersion',
   'setup:isRequired',
   'language:get',
@@ -265,20 +265,11 @@ async function resolvePrintDevice(win, configuredName) {
   let printers = [];
   try { printers = await win.webContents.getPrintersAsync(); } catch (_) { printers = []; }
   if (configuredName) {
-    const norm = (s) => String(s || '').trim().toLowerCase();
-    const match = printers.find((p) => p.name === configuredName || p.displayName === configuredName)
-      || printers.find((p) => norm(p.name) === norm(configuredName) || norm(p.displayName) === norm(configuredName));
-    if (!match) {
-      // طابعة الشبكة/الواي فاي تختفي أحياناً من قائمة ويندوز مؤقتاً (انقطاع اتصال، إعادة
-      // تشغيل الطابعة، أو تغيّر اسمها لو كانت مضافة عبر اكتشاف تلقائي WSD بدل منفذ
-      // TCP/IP ثابت). سابقاً كنا نمرر الاسم المحفوظ للطباعة حتى لو لم يعد موجوداً بالقائمة
-      // الحالية، فتفشل المهمة بصمت برسالة غامضة من ويندوز. الآن نوقفها برسالة واضحة.
-      return { blocked: true, reason: `الطابعة المحددة في الإعدادات (${configuredName}) غير ظاهرة حالياً ضمن طابعات الجهاز. تأكد أن الطابعة مشغّلة ومتصلة بشبكة الواي فاي (أعد تشغيلها إن لزم)، ثم تحقق من الإعدادات ← الطباعة التلقائية. لتفادي تكرار المشكلة يفضّل تثبيت الطابعة عبر عنوان IP ثابت (منفذ Standard TCP/IP) بدل الاكتشاف التلقائي.` };
-    }
-    if (isVirtualPdfPrinter(match.name || match.displayName)) {
+    const match = printers.find((p) => p.name === configuredName || p.displayName === configuredName);
+    if (match && isVirtualPdfPrinter(match.name || match.displayName)) {
       return { blocked: true, reason: `الطابعة المحددة في الإعدادات (${configuredName}) هي طابعة PDF افتراضية وليست طابعة فعلية. الرجاء اختيار طابعة حقيقية من الإعدادات ← الطباعة التلقائية.` };
     }
-    return { deviceName: match.name };
+    return { deviceName: configuredName };
   }
   const def = printers.find((p) => p.isDefault) || null;
   if (!def) return { blocked: true, reason: 'لم يتم العثور على أي طابعة متصلة بالجهاز.' };
@@ -288,11 +279,78 @@ async function resolvePrintDevice(win, configuredName) {
   return { deviceName: def.name };
 }
 
+// مسار الطباعة عبر الشبكة مباشرة (ESC/POS raw، بدون طابعة ويندوز مثبَّتة إطلاقاً):
+// نحمّل نفس صفحة الإيصال/تذكرة المطبخ في نافذة مخفية، ننتظر اكتمال رسمها،
+// نلتقطها كصورة، ونرسلها لعنوان IP الطابعة مباشرة عبر TCP.
+function printAutomaticallyOverNetwork(fileName, saleId, modePrefix, label) {
+  const ip = db.getSetting(`${modePrefix}_printer_ip`, '').trim();
+  const port = db.getSetting(`${modePrefix}_printer_port`, '9100').trim() || '9100';
+  const dotsWidth = Number(db.getSetting(`${modePrefix}_printer_dots_width`, '576')) || 576;
+  return new Promise((resolve) => {
+    if (!ip) {
+      const reason = 'لم يتم إدخال عنوان IP لطابعة الشبكة في الإعدادات.';
+      db.logAudit({ userId: currentUser?.id, action: 'automatic_print_skipped_no_real_printer', entityType: 'sale', entityId: saleId, level: 'warning', details: { label, reason } });
+      resolve({ success: false, blocked: true, reason });
+      return;
+    }
+    const win = new BrowserWindow({ show: false, width: 320, height: 600, webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true } });
+    let settled = false;
+    const finish = (result) => {
+      if (settled) return;
+      settled = true;
+      if (!win.isDestroyed()) win.destroy();
+      resolve(result);
+    };
+    win.webContents.once('did-fail-load', (_event, errorCode, errorDescription) => {
+      const reason = `تعذر تحميل مستند الطباعة (${errorCode}): ${errorDescription || 'unknown'}`;
+      db.logAudit({ userId: currentUser?.id, action: 'automatic_print_failed', entityType: 'sale', entityId: saleId, level: 'error', details: { label, reason } });
+      finish({ success: false, reason });
+    });
+    win.webContents.once('did-finish-load', () => {
+      let attempts = 0;
+      const printWhenReady = () => win.webContents.executeJavaScript(`document.body && document.body.dataset.printReady === '1'`).then(async (ready) => {
+        if (!ready && attempts++ < 80) return setTimeout(printWhenReady, 50);
+        if (!ready) {
+          const reason = 'انتهت مهلة تجهيز مستند الطباعة.';
+          db.logAudit({ userId: currentUser?.id, action: 'automatic_print_failed', entityType: 'sale', entityId: saleId, level: 'error', details: { label, reason } });
+          finish({ success: false, reason });
+          return;
+        }
+        try {
+          await captureWindowAndPrintNetwork(win, { ip, port, dotsWidth });
+          db.logAudit({ userId: currentUser?.id, action: 'automatic_printed', entityType: 'sale', entityId: saleId, details: { label, network: `${ip}:${port}` } });
+          finish({ success: true });
+        } catch (error) {
+          db.logAudit({ userId: currentUser?.id, action: 'automatic_print_failed', entityType: 'sale', entityId: saleId, level: 'error', details: { label, reason: error.message } });
+          finish({ success: false, reason: error.message });
+        }
+      }).catch((error) => {
+        db.logAudit({ userId: currentUser?.id, action: 'automatic_print_failed', entityType: 'sale', entityId: saleId, level: 'error', details: { label, reason: error.message } });
+        finish({ success: false, reason: error.message });
+      });
+      printWhenReady();
+    });
+    win.loadFile(path.join(__dirname, 'renderer', fileName), { query: { saleId: String(saleId), auto: '1' } }).catch((error) => {
+      const reason = error?.message || 'تعذر فتح مستند الطباعة.';
+      db.logAudit({ userId: currentUser?.id, action: 'automatic_print_failed', entityType: 'sale', entityId: saleId, level: 'error', details: { label, reason } });
+      finish({ success: false, reason });
+    });
+  });
+}
+
 // لا تظهر نافذة ولا مربع طباعة: إن كانت الطباعة مفعّلة نرسلها مباشرة إلى الطابعة الافتراضية
 // أو إلى الاسم المحدد في الإعدادات. فشل الطابعة يسجَّل ولا يوقف البيع.
-function printAutomatically(fileName, saleId, enabledSetting, printerSettingName, label, enabledOverride = null) {
+//
+// modePrefix: 'receipt' أو 'kitchen' — يحدد أي إعدادات وضع الشبكة نقرأ
+// (${modePrefix}_printer_mode / _ip / _port). القيمة الافتراضية للوضع هي
+// 'system' (طابعة ويندوز، السلوك الأصلي) حفاظاً على التوافق مع الإعدادات القديمة.
+function printAutomatically(fileName, saleId, enabledSetting, printerSettingName, label, enabledOverride = null, modePrefix = null) {
   if (enabledOverride === null ? !printerSetting(enabledSetting) : !enabledOverride) return Promise.resolve({ skipped: true });
   const deviceName = db.getSetting(printerSettingName, '').trim();
+  const mode = modePrefix ? db.getSetting(`${modePrefix}_printer_mode`, 'system') : 'system';
+  if (mode === 'network') {
+    return printAutomaticallyOverNetwork(fileName, saleId, modePrefix, label);
+  }
   return new Promise((resolve) => {
     const win = new BrowserWindow({ show: false, webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true } });
     let settled = false;
@@ -345,10 +403,10 @@ function printAutomatically(fileName, saleId, enabledSetting, printerSettingName
   });
 }
 
-function autoPrintReceipt(saleId) { return printAutomatically('receipt.html', saleId, 'receipt_auto_print', 'receipt_printer_name', 'receipt'); }
+function autoPrintReceipt(saleId) { return printAutomatically('receipt.html', saleId, 'receipt_auto_print', 'receipt_printer_name', 'receipt', null, 'receipt'); }
 function autoSendKitchen(saleId) {
   const enabled = db.getSetting('kitchen_auto_print', '1') === '1';
-  return printAutomatically('kitchen-ticket.html', saleId, 'kitchen_auto_print', 'kitchen_printer_name', 'kitchen', enabled);
+  return printAutomatically('kitchen-ticket.html', saleId, 'kitchen_auto_print', 'kitchen_printer_name', 'kitchen', enabled, 'kitchen');
 }
 
 function startBackgroundSync() {
@@ -1564,6 +1622,15 @@ ipcMain.handle('currency:set', (_event, config) => {
 ipcMain.handle('printing:getConfig', () => { requireAccountReady(); return ({
   kitchenAutoPrint: db.getSetting('kitchen_auto_print', '1') === '1', kitchenPrinterName: db.getSetting('kitchen_printer_name', ''),
   receiptAutoPrint: printerSetting('receipt_auto_print'), receiptPrinterName: db.getSetting('receipt_printer_name', ''),
+  // إعدادات الطباعة الشبكية المباشرة (ESC/POS عبر IP) — تُستخدم فقط عند mode = 'network'
+  kitchenPrinterMode: db.getSetting('kitchen_printer_mode', 'system'),
+  kitchenPrinterIp: db.getSetting('kitchen_printer_ip', ''),
+  kitchenPrinterPort: db.getSetting('kitchen_printer_port', '9100'),
+  kitchenPrinterDotsWidth: db.getSetting('kitchen_printer_dots_width', '576'),
+  receiptPrinterMode: db.getSetting('receipt_printer_mode', 'system'),
+  receiptPrinterIp: db.getSetting('receipt_printer_ip', ''),
+  receiptPrinterPort: db.getSetting('receipt_printer_port', '9100'),
+  receiptPrinterDotsWidth: db.getSetting('receipt_printer_dots_width', '576'),
 });
 });
 ipcMain.handle('printing:listPrinters', async () => {
@@ -1586,8 +1653,40 @@ ipcMain.handle('printing:saveConfig', (_event, config) => {
   db.setSetting('kitchen_printer_name', String(config.kitchenPrinterName || '').trim());
   db.setSetting('receipt_auto_print', config.receiptAutoPrint ? '1' : '0');
   db.setSetting('receipt_printer_name', String(config.receiptPrinterName || '').trim());
+  const validModes = ['system', 'network'];
+  const kitchenMode = validModes.includes(config.kitchenPrinterMode) ? config.kitchenPrinterMode : 'system';
+  const receiptMode = validModes.includes(config.receiptPrinterMode) ? config.receiptPrinterMode : 'system';
+  db.setSetting('kitchen_printer_mode', kitchenMode);
+  db.setSetting('kitchen_printer_ip', String(config.kitchenPrinterIp || '').trim());
+  db.setSetting('kitchen_printer_port', String(config.kitchenPrinterPort || '9100').trim() || '9100');
+  db.setSetting('kitchen_printer_dots_width', String(Number(config.kitchenPrinterDotsWidth) || 576));
+  db.setSetting('receipt_printer_mode', receiptMode);
+  db.setSetting('receipt_printer_ip', String(config.receiptPrinterIp || '').trim());
+  db.setSetting('receipt_printer_port', String(config.receiptPrinterPort || '9100').trim() || '9100');
+  db.setSetting('receipt_printer_dots_width', String(Number(config.receiptPrinterDotsWidth) || 576));
   db.logAudit({ userId: currentUser.id, action: 'printing_config_updated', entityType: 'settings' });
   return { success: true };
+});
+// اختبار سريع لطابعة شبكة: يطبع إيصال اختبار بسيط (نص + خط) للتأكد من صحة IP/المنفذ
+// قبل ما يعتمد عليها المستخدم في البيع الفعلي.
+ipcMain.handle('printing:testNetworkPrinter', async (_event, { ip, port, dotsWidth }) => {
+  requireManagerOrAdmin();
+  if (!ip || !String(ip).trim()) throw new Error('من فضلك أدخل عنوان IP الطابعة أولاً.');
+  const win = new BrowserWindow({ show: false, width: 320, height: 260, webPreferences: { sandbox: true } });
+  try {
+    await win.loadURL('data:text/html,' + encodeURIComponent(`
+      <html dir="rtl"><body style="margin:0;padding:16px;font-family:sans-serif;text-align:center;width:288px;box-sizing:border-box;">
+        <div style="font-size:18px;font-weight:800;">اختبار الطباعة</div>
+        <div style="font-size:13px;margin-top:6px;">Nexora POS</div>
+        <div style="border-top:1px dashed #000;margin:10px 0;"></div>
+        <div style="font-size:12px;">لو وصلك هذا السطر مطبوعاً، فالاتصال بالطابعة الشبكية يعمل بنجاح ✓</div>
+      </body></html>
+    `));
+    await captureWindowAndPrintNetwork(win, { ip: String(ip).trim(), port: port || '9100', dotsWidth: Number(dotsWidth) || 576 });
+    return { success: true };
+  } finally {
+    if (!win.isDestroyed()) win.destroy();
+  }
 });
 // نسخ نصوص قصيرة (مثل بصمة الجهاز) إلى حافظة النظام عبر Electron مباشرة، وليس عبر
 // navigator.clipboard في الواجهة: تلك الواجهة تمر بنظام أذونات Chromium الذي نرفضه

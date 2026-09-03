@@ -43,6 +43,14 @@ const fieldKitchenAutoPrint = document.getElementById('fieldKitchenAutoPrint');
 const fieldKitchenPrinterName = document.getElementById('fieldKitchenPrinterName');
 const fieldReceiptAutoPrint = document.getElementById('fieldReceiptAutoPrint');
 const fieldReceiptPrinterName = document.getElementById('fieldReceiptPrinterName');
+const fieldKitchenPrinterMode = document.getElementById('fieldKitchenPrinterMode');
+const fieldKitchenPrinterIp = document.getElementById('fieldKitchenPrinterIp');
+const fieldKitchenPrinterPort = document.getElementById('fieldKitchenPrinterPort');
+const testKitchenNetworkPrinterBtn = document.getElementById('testKitchenNetworkPrinterBtn');
+const fieldReceiptPrinterMode = document.getElementById('fieldReceiptPrinterMode');
+const fieldReceiptPrinterIp = document.getElementById('fieldReceiptPrinterIp');
+const fieldReceiptPrinterPort = document.getElementById('fieldReceiptPrinterPort');
+const testReceiptNetworkPrinterBtn = document.getElementById('testReceiptNetworkPrinterBtn');
 const loadAuditBtn = document.getElementById('loadAuditBtn');
 const auditLogList = document.getElementById('auditLogList');
 const appCurrentVersion = document.getElementById('appCurrentVersion');
@@ -125,7 +133,18 @@ async function init() {
   fieldKitchenPrinterName.value = printing.kitchenPrinterName || '';
   fieldReceiptAutoPrint.checked = printing.receiptAutoPrint;
   fieldReceiptPrinterName.value = printing.receiptPrinterName || '';
+  fieldKitchenPrinterMode.value = printing.kitchenPrinterMode || 'system';
+  fieldKitchenPrinterIp.value = printing.kitchenPrinterIp || '';
+  fieldKitchenPrinterPort.value = printing.kitchenPrinterPort || '9100';
+  fieldReceiptPrinterMode.value = printing.receiptPrinterMode || 'system';
+  fieldReceiptPrinterIp.value = printing.receiptPrinterIp || '';
+  fieldReceiptPrinterPort.value = printing.receiptPrinterPort || '9100';
+  togglePrinterModeFields();
   printingForm.addEventListener('submit', savePrintingConfig);
+  fieldKitchenPrinterMode.addEventListener('change', togglePrinterModeFields);
+  fieldReceiptPrinterMode.addEventListener('change', togglePrinterModeFields);
+  testKitchenNetworkPrinterBtn.addEventListener('click', () => testNetworkPrinter('kitchen'));
+  testReceiptNetworkPrinterBtn.addEventListener('click', () => testNetworkPrinter('receipt'));
   loadAuditBtn.addEventListener('click', loadAuditLog);
 
   appCurrentVersion.textContent = await window.api.updates.currentVersion();
@@ -236,11 +255,45 @@ async function populatePrinterOptions(savedKitchenName, savedReceiptName) {
   fillSelect(fieldReceiptPrinterName, savedReceiptName);
 }
 
+// يُظهر/يُخفي حقول IP-المنفذ حسب الوضع المختار (نظام ويندوز أو شبكة مباشرة) لكل طابعة
+function togglePrinterModeFields() {
+  const kitchenNetwork = fieldKitchenPrinterMode.value === 'network';
+  document.querySelectorAll('.kitchen-network-only').forEach((el) => el.classList.toggle('hidden', !kitchenNetwork));
+  document.querySelectorAll('.kitchen-system-only').forEach((el) => el.classList.toggle('hidden', kitchenNetwork));
+  const receiptNetwork = fieldReceiptPrinterMode.value === 'network';
+  document.querySelectorAll('.receipt-network-only').forEach((el) => el.classList.toggle('hidden', !receiptNetwork));
+  document.querySelectorAll('.receipt-system-only').forEach((el) => el.classList.toggle('hidden', receiptNetwork));
+}
+
+async function testNetworkPrinter(which) {
+  const ip = (which === 'kitchen' ? fieldKitchenPrinterIp : fieldReceiptPrinterIp).value.trim();
+  const port = (which === 'kitchen' ? fieldKitchenPrinterPort : fieldReceiptPrinterPort).value.trim() || '9100';
+  const btn = which === 'kitchen' ? testKitchenNetworkPrinterBtn : testReceiptNetworkPrinterBtn;
+  if (!ip) { showToast('من فضلك أدخل عنوان IP الطابعة أولاً.', 'error'); return; }
+  btn.disabled = true;
+  const originalText = btn.textContent;
+  btn.textContent = 'جارٍ الاختبار...';
+  try {
+    await window.api.printing.testNetworkPrinter({ ip, port, dotsWidth: 576 });
+    showToast('تم إرسال إيصال الاختبار — تحقق من الطابعة.');
+  } catch (err) {
+    showToast('فشل الاختبار: ' + err.message, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = originalText;
+  }
+}
+
 async function savePrintingConfig(event) {
   event.preventDefault();
   const btn = document.getElementById('savePrintingBtn'); btn.disabled = true;
   try {
-    await window.api.printing.saveConfig({ kitchenAutoPrint: fieldKitchenAutoPrint.checked, kitchenPrinterName: fieldKitchenPrinterName.value, receiptAutoPrint: fieldReceiptAutoPrint.checked, receiptPrinterName: fieldReceiptPrinterName.value });
+    await window.api.printing.saveConfig({
+      kitchenAutoPrint: fieldKitchenAutoPrint.checked, kitchenPrinterName: fieldKitchenPrinterName.value,
+      receiptAutoPrint: fieldReceiptAutoPrint.checked, receiptPrinterName: fieldReceiptPrinterName.value,
+      kitchenPrinterMode: fieldKitchenPrinterMode.value, kitchenPrinterIp: fieldKitchenPrinterIp.value, kitchenPrinterPort: fieldKitchenPrinterPort.value,
+      receiptPrinterMode: fieldReceiptPrinterMode.value, receiptPrinterIp: fieldReceiptPrinterIp.value, receiptPrinterPort: fieldReceiptPrinterPort.value,
+    });
     showToast('تم حفظ إعدادات الطباعة التلقائية.');
   } catch (err) { showToast('تعذر حفظ إعدادات الطباعة: ' + err.message, 'error'); }
   finally { btn.disabled = false; }

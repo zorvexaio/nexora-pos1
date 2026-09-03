@@ -1,6 +1,6 @@
 {
   "name": "nexora-pos",
-  "version": "0.46.4",
+  "version": "0.46.1",
   "description": "Nexora POS - Hardened global-ready offline-first POS platform",
   "main": "main.js",
   "author": "",
