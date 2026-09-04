@@ -248,10 +248,20 @@ function cartToItems() {
   }));
 }
 
+// لو فشلت الطباعة التلقائية (طابعة غير متصلة/IP غلط/إلخ)، ننبّه المستخدم فوراً بدل
+// فشل صامت لا يظهر إلا في سجل التدقيق — نفس السبب الحقيقي وراء "الطابعة لا تعمل أبداً"
+// دون أي رسالة توضّح السبب.
+function warnPrintOutcome(printOutcome) {
+  if (!printOutcome) return;
+  if (printOutcome.kitchen && printOutcome.kitchen.success === false) alert(`⚠️ لم تُطبع تذكرة المطبخ: ${printOutcome.kitchen.reason || 'خطأ غير معروف'}`);
+  if (printOutcome.receipt && printOutcome.receipt.success === false) alert(`⚠️ لم تُطبع الفاتورة: ${printOutcome.receipt.reason || 'خطأ غير معروف'}`);
+}
+
 async function saveOrder(showAlert) {
   // الـIPC الخاص بحفظ طلب الطاولة يرسل تذكرة المطبخ تلقائياً بعد نجاح transaction؛
   // لا نستدعي الطباعة مرة ثانية من الواجهة حتى لا يصل للمطبخ وصلان لنفس الحفظ.
-  await window.api.tables.setItems(currentSaleId, cartToItems());
+  const result = await window.api.tables.setItems(currentSaleId, cartToItems());
+  warnPrintOutcome(result?.printOutcome);
   if (showAlert) alert(t('tableOrder.orderSaved'));
 }
 
@@ -303,6 +313,7 @@ document.getElementById('confirmSplitBillBtn').addEventListener('click', async (
     const remaining = await window.api.tables.getOpenSale(tableId);
     cart = remaining.items.map(i => ({ productId: i.product_id, name: i.product_name, price: i.unit_price, taxRate: i.tax_rate, quantity: i.quantity, saleItemId: i.id }));
     renderCart();
+    warnPrintOutcome(result?.printOutcome);
     alert(`${t('tableOrder.splitPaid')}${result.invoiceNumber || result.id}`);
   } catch (err) { alert(t('tableOrder.splitFailed') + err.message); }
 });
@@ -406,7 +417,8 @@ async function confirmPayment() {
   confirmPaymentBtn.disabled = true;
   confirmPaymentBtn.textContent = t('tableOrder.closing');
   try {
-    await window.api.tables.close(currentSaleId, { paymentMethod: method, cashAmount, cardAmount, changeDue });
+    const closeResult = await window.api.tables.close(currentSaleId, { paymentMethod: method, cashAmount, cardAmount, changeDue });
+    warnPrintOutcome(closeResult?.printOutcome);
     window.location.href = 'tables.html';
   } catch (err) {
     showPaymentError(t('tableOrder.genericError') + err.message);

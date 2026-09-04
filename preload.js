@@ -165,6 +165,10 @@ contextBridge.exposeInMainWorld('api', {
     approve: (username, password) => ipcRenderer.invoke('discount:approve', { username, password }),
     approveWithPin: (pin) => ipcRenderer.invoke('discount:approveWithPin', pin),
   },
+  delivery: {
+    getPricing: () => ipcRenderer.invoke('delivery:getPricing'),
+    setPricing: (defaultFee, pricePerKm) => ipcRenderer.invoke('delivery:setPricing', { defaultFee, pricePerKm }),
+  },
   weighing: {
     getPrefix: () => ipcRenderer.invoke('weighing:getPrefix'),
     setPrefix: (prefix) => ipcRenderer.invoke('weighing:setPrefix', prefix),

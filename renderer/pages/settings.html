@@ -112,6 +112,25 @@
       </div>
 
       <div class="report-panel settings-panel">
+        <h2>تسعير التوصيل الأوتوماتيكي</h2>
+        <form id="deliveryPricingForm" class="form-grid">
+          <div class="form-field">
+            <label>السعر الثابت الافتراضي</label>
+            <input id="fieldDeliveryDefaultFee" type="number" min="0" step="0.01" required />
+            <div class="field-hint">هذا الرقم يظهر تلقائياً في شاشة الكاشير فور اختيار "توصيل"، قبل إدخال أي مسافة.</div>
+          </div>
+          <div class="form-field">
+            <label>سعر الكيلومتر الواحد</label>
+            <input id="fieldDeliveryPricePerKm" type="number" min="0" step="0.01" required />
+            <div class="field-hint">لو الكاشير أدخل عدد كيلومترات في شاشة البيع، رسوم التوصيل تتحسب أوتوماتيكياً = المسافة × هذا السعر (بدل السعر الثابت).</div>
+          </div>
+          <div class="form-field full">
+            <button type="submit" id="saveDeliveryPricingBtn" class="btn btn-primary">حفظ تسعير التوصيل</button>
+          </div>
+        </form>
+      </div>
+
+      <div class="report-panel settings-panel">
         <h2>البيع بالوزن (خضار وفواكه السوبرماركت)</h2>
         <form id="weighingForm" class="form-grid">
           <div class="form-field full">

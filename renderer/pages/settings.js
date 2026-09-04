@@ -20,6 +20,9 @@ const fieldFiscalProvider = document.getElementById('fieldFiscalProvider');
 
 const discountForm = document.getElementById('discountForm');
 const fieldMaxDiscountPercent = document.getElementById('fieldMaxDiscountPercent');
+const deliveryPricingForm = document.getElementById('deliveryPricingForm');
+const fieldDeliveryDefaultFee = document.getElementById('fieldDeliveryDefaultFee');
+const fieldDeliveryPricePerKm = document.getElementById('fieldDeliveryPricePerKm');
 const weighingForm = document.getElementById('weighingForm');
 const fieldWeightedPrefix = document.getElementById('fieldWeightedPrefix');
 
@@ -104,6 +107,9 @@ async function init() {
 
   fieldMaxDiscountPercent.value = await window.api.discount.maxCashierPercent();
   fieldWeightedPrefix.value = await window.api.weighing.getPrefix();
+  const deliveryPricing = await window.api.delivery.getPricing();
+  fieldDeliveryDefaultFee.value = deliveryPricing.defaultFee;
+  fieldDeliveryPricePerKm.value = deliveryPricing.pricePerKm;
 
   const branding = await window.api.branding.get();
   fieldStoreName.value = branding.storeName || '';
@@ -116,6 +122,7 @@ async function init() {
   currencyForm.addEventListener('submit', saveCurrency);
   globalForm.addEventListener('submit', saveGlobalProfile);
   discountForm.addEventListener('submit', saveDiscountLimit);
+  deliveryPricingForm.addEventListener('submit', saveDeliveryPricing);
   weighingForm.addEventListener('submit', saveWeighingPrefix);
   createBackupBtn.addEventListener('click', createBackup);
   restoreBackupBtn.addEventListener('click', restoreBackup);
@@ -400,6 +407,22 @@ async function saveDiscountLimit(e) {
   } finally {
     btn.disabled = false;
     btn.textContent = 'حفظ حد الخصم';
+  }
+}
+
+async function saveDeliveryPricing(e) {
+  e.preventDefault();
+  const btn = document.getElementById('saveDeliveryPricingBtn');
+  btn.disabled = true;
+  btn.textContent = 'جارٍ الحفظ...';
+  try {
+    await window.api.delivery.setPricing(parseFloat(fieldDeliveryDefaultFee.value) || 0, parseFloat(fieldDeliveryPricePerKm.value) || 0);
+    showToast('تم حفظ تسعير التوصيل.');
+  } catch (err) {
+    showToast('حدث خطأ أثناء الحفظ: ' + err.message, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'حفظ تسعير التوصيل';
   }
 }
 

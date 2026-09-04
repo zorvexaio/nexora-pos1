@@ -76,10 +76,11 @@ function renderReceipt(sale, branding, currency = {}) {
       <div class="receipt-meta">${formatDate(sale.created_at)}</div>
       ${sale.customer_name ? `<div class="receipt-meta">${t('receipt.customer')}: ${escapeHtml(sale.customer_name)}</div>` : ''}
       ${sale.order_type === 'delivery' ? `<div class="receipt-meta">${t('receipt.deliveryOrder')}${sale.delivery_person ? ` — ${t('receipt.deliveryPerson')}: ${escapeHtml(sale.delivery_person)}` : ''}</div>` : ''}
+      ${sale.order_type === 'delivery' ? `<div class="receipt-meta">${sale.delivery_time ? `${t('receipt.deliveryTime')}: ${formatDate(sale.delivery_time)}` : t('receipt.deliverNow')}</div>` : ''}
     </div>
 
     <div class="receipt-divider"></div>
-
+    ${sale.notes ? `<div class="receipt-order-note">${escapeHtml(sale.notes)}</div><div class="receipt-divider"></div>` : ''}
     <div class="receipt-items">${itemsHtml}</div>
 
     <div class="receipt-divider"></div>

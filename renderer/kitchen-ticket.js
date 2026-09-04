@@ -33,12 +33,21 @@ async function init() {
     )
     .join('');
 
+  const deliveryTimeHtml = sale.order_type === 'delivery'
+    ? `<div class="kitchen-delivery-time">🛵 ${sale.delivery_time ? t('kitchen.deliverAt') + ' ' + formatDate(sale.delivery_time) : t('kitchen.deliverNow')}</div>`
+    : '';
+  // ملاحظة الطلب العامة (مش ملاحظة صنف بعينه) — لازم تكون واضحة جداً للمطبخ لأنها
+  // ممكن تكون تعليمات مهمة ("حساسية مكسرات"، "بدون بصل خالص")، فمعاملتها زي تحذير كبير.
+  const orderNoteHtml = sale.notes ? `<div class="kitchen-order-note">⚠ ${escapeHtml(sale.notes)}</div>` : '';
+
   ticketEl.innerHTML = `
     <div class="receipt-header">
       <div class="receipt-brand">${t('kitchen.title')}</div>
       <div class="receipt-meta">${t('kitchen.orderNumber')} ${sale.id}${sale.table_name ? ` — ${escapeHtml(sale.table_name)}` : ''}</div>
       <div class="receipt-meta">${formatDate(sale.created_at)}</div>
     </div>
+    ${deliveryTimeHtml}
+    ${orderNoteHtml}
     <div class="receipt-divider"></div>
     <div class="kitchen-items">${itemsHtml}</div>
   `;

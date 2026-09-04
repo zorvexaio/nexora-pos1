@@ -986,10 +986,10 @@ ipcMain.handle('payroll:employee', (_event, { monthId, employeeId }) => { requir
 ipcMain.handle('payroll:addTransaction', (_event, payload) => {
   requireAdmin();
   const result = db.addPayrollV2Transaction({ ...payload, createdBy: currentUser.id });
-  db.logAudit({ userId: currentUser.id, action: 'payroll_transaction_added', entityType: 'payroll_transaction', entityId: result.id, details: { monthId: payload.monthId, employeeId: payload.employeeId, type: payload.type, amount: payload.amount, quantity: payload.quantity } });
+  db.logAudit({ userId: currentUser.id, action: 'payroll_transaction_added', entityType: 'payroll_transaction', entityId: result.id, details: { monthId: payload.monthId, employeeId: payload.employeeId, type: payload.type, amount: payload.amount, quantity: payload.quantity, paidFromRegister: !!payload.paidFromRegister, cashMovementId: result.cashMovementId || null } });
   return result;
 });
-ipcMain.handle('payroll:removeTransaction', (_event, transactionId) => { requireAdmin(); const result=db.removePayrollV2Transaction(transactionId); db.logAudit({ userId: currentUser.id, action: 'payroll_transaction_removed', entityType: 'payroll_transaction', entityId: transactionId }); return result; });
+ipcMain.handle('payroll:removeTransaction', (_event, transactionId) => { requireAdmin(); const result=db.removePayrollV2Transaction(transactionId, currentUser.id); db.logAudit({ userId: currentUser.id, action: 'payroll_transaction_removed', entityType: 'payroll_transaction', entityId: transactionId }); return result; });
 ipcMain.handle('payroll:setRegularHours', (_event, { monthId, employeeId, hours }) => { requireAdmin(); return db.setPayrollV2RegularHours(monthId, employeeId, hours); });
 ipcMain.handle('payroll:setStartDate', (_event, { monthId, employeeId, startDate }) => {
   requireAdmin();
@@ -1090,6 +1090,23 @@ ipcMain.handle('discount:setMaxCashierPercent', (_event, percent) => {
   const value = Number(percent);
   if (!Number.isFinite(value) || value < 0 || value > 100) throw new Error('نسبة الخصم القصوى يجب أن تكون بين 0 و100.');
   return db.setSetting('max_cashier_discount_percent', String(Math.round(value * 100) / 100));
+});
+/* ---------------- التوصيل (تسعير أوتوماتيكي حسب المسافة) ---------------- */
+// السعر الثابت الافتراضي يظهر فور اختيار "توصيل" (قبل إدخال أي مسافة). لو الكاشير
+// أدخل عدد كيلومترات، رسوم التوصيل تتحسب أوتوماتيكياً = المسافة × سعر الكيلومتر،
+// بدل ما يكتبها يدوياً في كل فاتورة.
+ipcMain.handle('delivery:getPricing', () => { requireAccountReady(); return {
+  defaultFee: Number(db.getSetting('delivery_default_fee', '0')) || 0,
+  pricePerKm: Number(db.getSetting('delivery_price_per_km', '0')) || 0,
+}; });
+ipcMain.handle('delivery:setPricing', (_event, { defaultFee, pricePerKm }) => {
+  requireManagerOrAdmin();
+  const fee = Number(defaultFee), perKm = Number(pricePerKm);
+  if (!Number.isFinite(fee) || fee < 0) throw new Error('السعر الثابت الافتراضي للتوصيل غير صالح.');
+  if (!Number.isFinite(perKm) || perKm < 0) throw new Error('سعر الكيلومتر غير صالح.');
+  db.setSetting('delivery_default_fee', String(Math.round(fee * 100) / 100));
+  db.setSetting('delivery_price_per_km', String(Math.round(perKm * 100) / 100));
+  return { success: true };
 });
 // موافقة مدير على خصم يتجاوز الحد: يتطلب إدخال اسم مستخدم/كلمة مرور مدير حتى لو الكاشير هو المسجّل دخوله حالياً
 ipcMain.handle('discount:approve', (_event, { username, password }) => { requireAccountReady();
@@ -1484,8 +1501,9 @@ ipcMain.handle('tables:setItems', (_event, { saleId, items }) => {
   }
   const result = db.setOpenSaleItems(saleId, items);
   db.logAudit({ userId: currentUser.id, action: 'table_order_updated', entityType: 'sale', entityId: saleId, details: { itemCount: (items || []).length } });
-  void autoSendKitchen(saleId);
-  return result;
+  // نرفق نتيجة الطباعة بالرد بدل تجاهلها (void) حتى تقدر الواجهة تنبّه المستخدم
+  // فوراً لو الطابعة فشلت، بدل فشل صامت ما حد يعرف سببه إلا من سجل التدقيق.
+  return autoSendKitchen(saleId).then((kitchen) => ({ ...result, printOutcome: { kitchen } }));
 });
 ipcMain.handle('tables:merge', (_event, { sourceTableId, targetTableId }) => {
   requireManagerOrAdmin();
@@ -1497,8 +1515,7 @@ ipcMain.handle('tables:split', (_event, { saleId, selected, payment }) => {
   const result = db.splitTableSale(saleId, selected, payment, currentUser.id, shift?.id || null);
   // دفع جزء من الطاولة = فاتورة للزبون فقط. لا نرسل تذكرة مطبخ هنا لأن الطلب
   // وصل للمطبخ بالفعل عند حفظه، وإعادة إرسالها ستنتج طلباً مكرراً.
-  void autoPrintReceipt(result.id);
-  return result;
+  return autoPrintReceipt(result.id).then((receipt) => ({ ...result, printOutcome: { receipt } }));
 });
 ipcMain.handle('tables:close', (_event, { saleId, payment }) => {
   requireAccountReady();
@@ -1506,8 +1523,7 @@ ipcMain.handle('tables:close', (_event, { saleId, payment }) => {
   const result = db.closeTableSale(saleId, payment, currentUser.id, shift?.id || null);
   db.logAudit({ userId: currentUser.id, action: 'table_order_closed', entityType: 'sale', entityId: saleId, details: { paymentMethod: payment.paymentMethod } });
   // إغلاق/دفع الطاولة = فاتورة دفع فقط. لا نعيد إرسال طلب للمطبخ.
-  void autoPrintReceipt(saleId);
-  return result;
+  return autoPrintReceipt(saleId).then((receipt) => ({ ...result, printOutcome: { receipt } }));
 });
 // تحرير طاولة عالقة "مشغولة" رغم عدم وجود أصناف فعلية عليها (مدير/أدمن فقط)
 ipcMain.handle('tables:release', (_event, tableId) => {
@@ -1545,9 +1561,18 @@ ipcMain.handle('sale:create', (_event, sale) => {
   };
   const result = db.createSale(trustedSale);
   db.logAudit({ userId: currentUser.id, action: 'sale_created', entityType: 'sale', entityId: result.id, details: { orderType: sale.orderType, total: sale.grandTotal } });
-  if (['takeaway', 'in_store'].includes(sale.orderType)) void autoSendKitchen(result.id);
-  void autoPrintReceipt(result.id);
-  return result;
+  // 'delivery' كانت مستبعدة من هذه القائمة سابقاً، فطلبات التوصيل المُنشأة من شاشة
+  // الكاشير مباشرة (مش عبر الطاولات) ما كانت توصل للمطبخ تلقائياً أبداً — طلب توصيل
+  // لازم يوصل للمطبخ زي أي طلب تاني عشان يتحضّر أصلاً.
+  const printOutcome = { kitchen: null, receipt: null };
+  const printJobs = [];
+  if (['takeaway', 'in_store', 'delivery'].includes(sale.orderType)) {
+    printJobs.push(autoSendKitchen(result.id).then((r) => { printOutcome.kitchen = r; }));
+  }
+  printJobs.push(autoPrintReceipt(result.id).then((r) => { printOutcome.receipt = r; }));
+  // ننتظر نتيجة الطباعة (لا تمنع إرجاع نتيجة البيع، لكن تُرفَق به) عشان الواجهة تقدر
+  // تنبّه الكاشير فوراً لو في مشكلة حقيقية بدل ما تفشل الطباعة بصمت تام كما كان يحدث سابقاً.
+  return Promise.all(printJobs).then(() => ({ ...result, printOutcome }));
 });
 ipcMain.handle('sales:list', (_event, filters) => { requireAccountReady(); return db.listSales(filters); });
 ipcMain.handle('sales:get', (_event, id) => { requireAccountReady(); return db.getSale(id, db.getCurrentBranch().id); });

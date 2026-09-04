@@ -413,6 +413,12 @@ function runMigrations() {
   tryAddColumn('payroll_items', `pay_rate REAL NOT NULL DEFAULT 0`);
   tryAddColumn('sales', `delivery_fee REAL NOT NULL DEFAULT 0`);
   tryAddColumn('sales', `delivery_person TEXT`);
+  // ملاحظة عامة على مستوى الفاتورة كلها (مش على صنف واحد بعينه) — مثلاً "اترك الطلب
+  // عند الباب"، "من غير أكياس بلاستيك". تُطبع بشكل بارز أعلى تذكرة المطبخ والفاتورة.
+  tryAddColumn('sales', `notes TEXT`);
+  // وقت التسليم المطلوب لطلبات التوصيل: NULL = الآن (فوري). غير ذلك = وقت محدد
+  // بصيغة ISO يختاره الكاشير بناءً على طلب الزبون.
+  tryAddColumn('sales', `delivery_time TEXT`);
   tryAddColumn('sales', `discount_type TEXT`);
   tryAddColumn('sales', `discount_value REAL DEFAULT 0`);
   tryAddColumn('sales', `discount_approved_by INTEGER REFERENCES users(id)`);
@@ -666,6 +672,10 @@ function runMigrations() {
       CREATE INDEX IF NOT EXISTS idx_payroll_transactions_month_employee ON payroll_transactions(month_id, employee_id, event_date, id);
     `);
   }
+  // يربط سلفة الموظف (لو اتدفعت كاش من الصندوق وقت تسجيلها) بحركة النقد المقابلة في
+  // cash_movements، حتى تنعكس فعلياً على رصيد الصندوق والتقارير المالية بدل ما تفضل
+  // معزولة جوه شاشة الرواتب بس. NULL لو السلفة اتسجلت كقيد رواتب فقط بدون صرف فوري.
+  tryAddColumn('payroll_transactions', `cash_movement_id INTEGER REFERENCES cash_movements(id)`);
 
   // Migrate existing payroll-only workers once. Their login account remains legacy data for compatibility,
   // but all new payroll operations use payroll_employees and never create a users row.
@@ -1665,18 +1675,27 @@ const createSaleTx = db.transaction((sale) => {
   if (!Number.isFinite(rawDeliveryFee) || rawDeliveryFee < 0) throw new Error('رسوم التوصيل غير صالحة.');
   const deliveryFee = rawDeliveryFee;
   const grandTotal = Math.max(0, subtotal + taxTotal - discountTotal - bundleDiscountTotal + deliveryFee);
+  const notes = String(sale.notes || '').trim().slice(0, 500) || null;
+  // وقت التسليم: فاضي/غير موجود = "الآن" (فوري). لو الكاشير حدد وقت مستقبلي، لازم
+  // يكون تاريخ/وقت صالح فعلاً، وإلا نرفضه بدل ما نخزّن قيمة تالفة تكسر شاشة المطبخ.
+  let deliveryTime = null;
+  if (sale.orderType === 'delivery' && sale.deliveryTime) {
+    const d = new Date(sale.deliveryTime);
+    if (Number.isNaN(d.getTime())) throw new Error('وقت التسليم غير صالح.');
+    deliveryTime = d.toISOString();
+  }
 
-  sale = { ...sale, subtotal, taxTotal, discountTotal, discountType, discountValue, discountApprovedBy, bundleDiscountTotal, grandTotal, deliveryFee, items: priced };
+  sale = { ...sale, subtotal, taxTotal, discountTotal, discountType, discountValue, discountApprovedBy, bundleDiscountTotal, grandTotal, deliveryFee, notes, deliveryTime, items: priced };
   validatePaymentAmounts(grandTotal, sale.paymentMethod || 'cash', sale.cashAmount, sale.cardAmount, sale.changeDue);
 
   const dueAmount = sale.paymentMethod === 'credit' ? grandTotal : 0;
   const invoiceNumber = nextInvoiceNumber();
   const saleInfo = db
     .prepare(
-      `INSERT INTO sales (uuid, branch_id, user_id, customer_id, table_id, shift_id, order_type, delivery_fee, delivery_person,
+      `INSERT INTO sales (uuid, branch_id, user_id, customer_id, table_id, shift_id, order_type, delivery_fee, delivery_person, notes, delivery_time,
                            subtotal, tax_total, discount_total, discount_type, discount_value, discount_approved_by,
                            bundle_discount_total, grand_total, payment_method, cash_amount, card_amount, change_due, due_amount, exchange_rate, invoice_number, payment_reference, payment_provider, payment_currency, client_request_id, status)
-       VALUES (@uuid, @branch_id, @user_id, @customer_id, @table_id, @shift_id, @order_type, @delivery_fee, @delivery_person,
+       VALUES (@uuid, @branch_id, @user_id, @customer_id, @table_id, @shift_id, @order_type, @delivery_fee, @delivery_person, @notes, @delivery_time,
                @subtotal, @tax_total, @discount_total, @discount_type, @discount_value, @discount_approved_by,
                @bundle_discount_total, @grand_total, @payment_method, @cash_amount, @card_amount, @change_due, @due_amount, @exchange_rate, @invoice_number, @payment_reference, @payment_provider, @payment_currency, @client_request_id, 'completed')`
     )
@@ -1690,6 +1709,8 @@ const createSaleTx = db.transaction((sale) => {
       order_type: sale.orderType || 'in_store',
       delivery_fee: sale.deliveryFee,
       delivery_person: sale.deliveryPerson || null,
+      notes: sale.notes,
+      delivery_time: sale.deliveryTime,
       subtotal: sale.subtotal,
       tax_total: sale.taxTotal,
       discount_total: sale.discountTotal || 0,
@@ -3217,7 +3238,7 @@ function getPayrollV2Month(monthKey) {
   const payableItems=items.filter(x=>Number(x.is_active)!==0);
   return {id:m.id,uuid:m.uuid,month_key:m.month_key,items,transactions,total:Math.round(payableItems.reduce((s,x)=>s+Number(x.net_salary||0),0)*100)/100};
 }
-function addPayrollV2Transaction({monthId,employeeId,type,amount,quantity,eventDate,reason,createdBy}) {
+function addPayrollV2Transaction({monthId,employeeId,type,amount,quantity,eventDate,reason,createdBy,paidFromRegister}) {
   const b=getCurrentBranch(), m=payrollMonth(monthId);
   // 'hours' = سجل ساعات عمل ليوم واحد بالتحديد (quantity = عدد الساعات)، يُستخدم مع
   // العاملين بالساعة بدل إدخال إجمالي شهري يدوي واحد عرضة للخطأ.
@@ -3231,19 +3252,47 @@ function addPayrollV2Transaction({monthId,employeeId,type,amount,quantity,eventD
   const key=m.month_key; if(date.slice(0,7)!==key) throw new Error('تاريخ الحركة يجب أن يكون ضمن الشهر المحدد.');
   if(zeroAmountTypes && amt!==0) throw new Error(type==='absence' ? 'الغياب لا يحتاج مبلغًا؛ يُحسب الخصم تلقائيًا.' : 'ساعات العمل لا تحتاج مبلغًا؛ يُحسب الراتب تلقائياً من الساعات والأجر بالساعة.');
   if(!zeroAmountTypes && amt<=0) throw new Error('المبلغ يجب أن يكون أكبر من صفر.');
-  const e=db.prepare('SELECT id,pay_type FROM payroll_employees WHERE id=? AND branch_id=?').get(Number(employeeId),b.id); if(!e)throw new Error('العامل غير موجود.');
+  const e=db.prepare('SELECT id,pay_type,full_name FROM payroll_employees WHERE id=? AND branch_id=?').get(Number(employeeId),b.id); if(!e)throw new Error('العامل غير موجود.');
   if(type==='hours' && e.pay_type!=='hourly') throw new Error('تسجيل الساعات متاح فقط للعاملين بنظام الأجر بالساعة.');
+  // السلفة ممكن تتسجل كصرف نقدي فوري من الصندوق (لو الموظف استلمها كاش دلوقتي)، أو كقيد
+  // رواتب بحت (لو هتتسوى لاحقاً بطريقة تانية). لو "من الصندوق"، لازم يكون فيه وردية مفتوحة
+  // فعلاً عشان الفلوس فعلياً تخصم من رصيد الصندوق وتظهر في التقارير المالية.
+  const wantsCashOut = type==='advance' && !!paidFromRegister;
   const result=db.transaction(()=>{
+    let cashMovementId=null;
+    if(wantsCashOut){
+      const openShift=getOpenShift();
+      if(!openShift) throw new Error('لا يمكن تسجيل السلفة كصرف من الصندوق لعدم وجود وردية مفتوحة حالياً. افتح وردية أولاً، أو سجّل السلفة كقيد رواتب بدون خصمها من الصندوق الآن.');
+      const cm=addCashMovement({shiftId:openShift.id,type:'cash_out',amount:amt,reason:`سلفة موظف: ${e.full_name}`,reference:'payroll_advance',createdBy});
+      cashMovementId=cm.id;
+    }
     const exists=db.prepare('SELECT id FROM payroll_employee_months WHERE month_id=? AND employee_id=?').get(m.id,e.id);
     if(!exists) db.prepare(`INSERT INTO payroll_employee_months(month_id,employee_id,pay_type,pay_rate,base_amount) SELECT ?,id,pay_type,pay_rate,CASE WHEN pay_type='monthly' THEN pay_rate WHEN pay_type='daily' THEN pay_rate*? ELSE 0 END FROM payroll_employees WHERE id=?`).run(m.id,daysInPayrollMonth(key),e.id);
     if(type==='absence') { const dup=db.prepare("SELECT id FROM payroll_transactions WHERE month_id=? AND employee_id=? AND type=\'absence\' AND event_date=?").get(m.id,e.id,date); if(dup) throw new Error('يوم الغياب هذا مسجل بالفعل.'); }
     if(type==='hours') { const dup=db.prepare("SELECT id FROM payroll_transactions WHERE month_id=? AND employee_id=? AND type=\'hours\' AND event_date=?").get(m.id,e.id,date); if(dup) throw new Error('ساعات هذا اليوم مسجلة بالفعل. احذف السجل القديم إن أردت تعديله.'); }
-    const info=db.prepare(`INSERT INTO payroll_transactions(uuid,branch_id,month_id,employee_id,type,amount,quantity,event_date,reason,created_by) VALUES(?,?,?,?,?,?,?,?,?,?)`).run(uuid(),b.id,m.id,e.id,type,Math.round(amt*100)/100,Math.round(qty*100)/100,date,String(reason||'').trim()||null,createdBy||null);
-    return {success:true,id:Number(info.lastInsertRowid),item:recalcPayrollEmployeeMonth(m.id,e.id)};
+    const info=db.prepare(`INSERT INTO payroll_transactions(uuid,branch_id,month_id,employee_id,type,amount,quantity,event_date,reason,created_by,cash_movement_id) VALUES(?,?,?,?,?,?,?,?,?,?,?)`).run(uuid(),b.id,m.id,e.id,type,Math.round(amt*100)/100,Math.round(qty*100)/100,date,String(reason||'').trim()||null,createdBy||null,cashMovementId);
+    return {success:true,id:Number(info.lastInsertRowid),cashMovementId,item:recalcPayrollEmployeeMonth(m.id,e.id)};
   })();
   return result;
 }
-function removePayrollV2Transaction(transactionId){ const b=getCurrentBranch(); const t=db.prepare('SELECT id,month_id,employee_id FROM payroll_transactions WHERE id=? AND branch_id=?').get(Number(transactionId),b.id); if(!t)throw new Error('الحركة غير موجودة.'); db.prepare('DELETE FROM payroll_transactions WHERE id=?').run(t.id); return {success:true,item:recalcPayrollEmployeeMonth(t.month_id,t.employee_id)}; }
+function removePayrollV2Transaction(transactionId,deletedBy){
+  const b=getCurrentBranch();
+  const t=db.prepare('SELECT id,month_id,employee_id,amount,cash_movement_id FROM payroll_transactions WHERE id=? AND branch_id=?').get(Number(transactionId),b.id);
+  if(!t)throw new Error('الحركة غير موجودة.');
+  const result=db.transaction(()=>{
+    // لو السلفة دي كانت اتخصمت فعلياً من الصندوق، لازم نرجّع المبلغ للصندوق (حركة إدخال
+    // معاكسة) قبل حذف القيد، وإلا هيفضل رصيد الصندوق ناقص فلوس من غير سبب. نسيب حركة النقد
+    // الأصلية زي ما هي (سجل تاريخي ثابت، متسقّ مع باقي جداول الصندوق) ونضيف حركة عكسية.
+    if(t.cash_movement_id){
+      const openShift=getOpenShift();
+      if(!openShift) throw new Error('هذه السلفة مسجَّلة كصرف من الصندوق. لحذفها لازم تفتح وردية أولاً حتى يُعاد المبلغ للصندوق.');
+      addCashMovement({shiftId:openShift.id,type:'cash_in',amount:t.amount,reason:'إلغاء/حذف سلفة موظف (تصحيح)',reference:`payroll_advance_reversal:${t.id}`,createdBy:deletedBy||null});
+    }
+    db.prepare('DELETE FROM payroll_transactions WHERE id=?').run(t.id);
+    return recalcPayrollEmployeeMonth(t.month_id,t.employee_id);
+  })();
+  return {success:true,item:result};
+}
 // يحدّد تاريخ التحاق العامل ضمن هذا الشهر تحديداً (متى بدأ يستحق راتباً هذا الشهر).
 // بعدها يُعاد احتساب صافي الراتب فوراً على أساس عدد الأيام من هذا التاريخ وحتى اليوم.
 function setPayrollEmployeeMonthStartDate(monthId,employeeId,startDate){

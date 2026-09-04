@@ -31,7 +31,11 @@ function persistDraftCartNow() {
     cart,
     orderType: selectedOrderType(),
     deliveryFee: deliveryFeeInput.value,
+    deliveryDistanceKm: deliveryDistanceInput.value,
     deliveryPerson: deliveryPersonInput.value,
+    deliveryTimeMode: selectedDeliveryTimeMode(),
+    deliveryCustomTime: deliveryCustomTimeInput.value,
+    orderNote: orderNoteInput.value,
     discountType: discountTypeSelect.value,
     discountValue: discountValueInput.value,
     selectedCustomerId,
@@ -69,8 +73,15 @@ function restoreDraftIfAny() {
   const savedOrderOption = document.querySelector(`input[name="orderType"][value="${savedOrderType}"]`);
   if (savedOrderOption) savedOrderOption.checked = true;
   deliveryFields.classList.toggle('hidden', draft.orderType !== 'delivery');
+  deliveryDistanceInput.value = draft.deliveryDistanceKm || '';
   deliveryFeeInput.value = draft.deliveryFee || 0;
   deliveryPersonInput.value = draft.deliveryPerson || '';
+  const savedTimeMode = document.querySelector(`input[name="deliveryTimeMode"][value="${draft.deliveryTimeMode === 'custom' ? 'custom' : 'now'}"]`);
+  if (savedTimeMode) savedTimeMode.checked = true;
+  deliveryCustomTimeInput.value = draft.deliveryCustomTime || '';
+  deliveryCustomTimeInput.classList.toggle('hidden', draft.deliveryTimeMode !== 'custom');
+  orderNoteInput.value = draft.orderNote || '';
+  updateDeliveryDistanceHint();
   discountTypeSelect.value = draft.discountType || 'none';
   discountValueInput.disabled = discountTypeSelect.value === 'none';
   discountValueInput.value = draft.discountValue || 0;
@@ -102,8 +113,44 @@ function showDraftRestoredNotice(savedAt) {
 }
 
 const deliveryFields = document.getElementById('deliveryFields');
+const deliveryDistanceInput = document.getElementById('deliveryDistanceInput');
+const deliveryDistanceHint = document.getElementById('deliveryDistanceHint');
 const deliveryFeeInput = document.getElementById('deliveryFeeInput');
 const deliveryPersonInput = document.getElementById('deliveryPersonInput');
+const deliveryCustomTimeInput = document.getElementById('deliveryCustomTimeInput');
+const orderNoteInput = document.getElementById('orderNoteInput');
+let deliveryPricingConfig = { defaultFee: 0, pricePerKm: 0 };
+
+function selectedDeliveryTimeMode() {
+  const el = document.querySelector('input[name="deliveryTimeMode"]:checked');
+  return el ? el.value : 'now';
+}
+// يرجع وقت التسليم كـISO datetime كامل (اليوم + الوقت المختار)، أو null لو "الآن".
+function computeDeliveryTimeIso() {
+  if (selectedDeliveryTimeMode() !== 'custom' || !deliveryCustomTimeInput.value) return null;
+  const [h, m] = deliveryCustomTimeInput.value.split(':').map(Number);
+  const d = new Date();
+  d.setHours(h, m, 0, 0);
+  // لو الوقت المختار فات فعلاً النهاردة (مثلاً الساعة 2 ظهر واختار 9 صباحاً)، غالباً
+  // يقصد بكرة الصبح مش قبل شوية — نفترض اليوم التالي بدل تسجيل وقت في الماضي.
+  if (d.getTime() < Date.now()) d.setDate(d.getDate() + 1);
+  return d.toISOString();
+}
+
+// لو الكاشير أدخل مسافة، الرسوم = المسافة × سعر الكيلومتر (من الإعدادات) أوتوماتيكياً.
+// لو مسح المسافة، ترجع الرسوم للسعر الثابت الافتراضي. القيمة تفضل قابلة للتعديل اليدوي
+// بعد الحساب لو الكاشير عايز يستثني حالة معينة.
+function applyDeliveryDistancePricing() {
+  const km = parseLocaleNumber(deliveryDistanceInput.value);
+  if (km > 0) deliveryFeeInput.value = (Math.round(km * deliveryPricingConfig.pricePerKm * 100) / 100).toFixed(2);
+  else deliveryFeeInput.value = deliveryPricingConfig.defaultFee.toFixed(2);
+  updateDeliveryDistanceHint();
+  renderCart();
+}
+function updateDeliveryDistanceHint() {
+  if (!deliveryDistanceHint) return;
+  deliveryDistanceHint.textContent = `سعر الكيلومتر: ${deliveryPricingConfig.pricePerKm.toFixed(2)} — السعر الثابت بدون مسافة: ${deliveryPricingConfig.defaultFee.toFixed(2)}`;
+}
 const discountTypeSelect = document.getElementById('discountTypeSelect');
 const discountValueInput = document.getElementById('discountValueInput');
 const discountApprovalNote = document.getElementById('discountApprovalNote');
@@ -141,6 +188,8 @@ async function init() {
 
   maxCashierDiscountPercent = await window.api.discount.maxCashierPercent();
   activeBundles = await window.api.bundles.listActive();
+  deliveryPricingConfig = await window.api.delivery.getPricing();
+  updateDeliveryDistanceHint();
 
   await loadProducts();
   restoreDraftIfAny();
@@ -157,11 +206,20 @@ async function init() {
 
   document.querySelectorAll('input[name="orderType"]').forEach((el) =>
     el.addEventListener('change', () => {
-      deliveryFields.classList.toggle('hidden', selectedOrderType() !== 'delivery');
+      const isDelivery = selectedOrderType() === 'delivery';
+      deliveryFields.classList.toggle('hidden', !isDelivery);
+      // فور فتح "توصيل" لأول مرة (مفيش مسافة متسجلة)، نظهر السعر الثابت الافتراضي فوراً.
+      if (isDelivery && !deliveryDistanceInput.value) deliveryFeeInput.value = deliveryPricingConfig.defaultFee.toFixed(2);
       renderCart();
     })
   );
+  deliveryDistanceInput.addEventListener('input', applyDeliveryDistancePricing);
   deliveryFeeInput.addEventListener('input', renderCart);
+  document.querySelectorAll('input[name="deliveryTimeMode"]').forEach((el) =>
+    el.addEventListener('change', () => {
+      deliveryCustomTimeInput.classList.toggle('hidden', selectedDeliveryTimeMode() !== 'custom');
+    })
+  );
   discountTypeSelect.addEventListener('change', () => {
     discountValueInput.disabled = discountTypeSelect.value === 'none';
     if (discountTypeSelect.value === 'none') discountValueInput.value = 0;
@@ -1116,6 +1174,8 @@ async function confirmPayment() {
     orderType,
     deliveryFee: currentSaleTotals.deliveryFee,
     deliveryPerson: orderType === 'delivery' ? deliveryPersonInput.value.trim() || null : null,
+    deliveryTime: orderType === 'delivery' ? computeDeliveryTimeIso() : null,
+    notes: orderNoteInput.value.trim() || null,
     grandTotal: total,
     paymentMethod: method,
     cashAmount,
@@ -1133,6 +1193,11 @@ async function confirmPayment() {
   try {
     const result = await window.api.sales.create(sale);
     showToast(`${ts('تم حفظ الفاتورة')}${result?.invoiceNumber ? ` #${result.invoiceNumber}` : ''}`, 'success');
+    // نبّه الكاشير فوراً لو الطباعة التلقائية فشلت (طابعة غير متصلة/IP غلط/إلخ) بدل ما
+    // يفشل الأمر بصمت وميعرفش السبب إلا لو فتح سجل التدقيق يدوياً.
+    const po = result?.printOutcome;
+    if (po?.kitchen && po.kitchen.success === false) showToast(`⚠️ لم تُطبع تذكرة المطبخ: ${po.kitchen.reason || 'خطأ غير معروف'}`, 'error');
+    if (po?.receipt && po.receipt.success === false) showToast(`⚠️ لم تُطبع الفاتورة: ${po.receipt.reason || 'خطأ غير معروف'}`, 'error');
     cart = [];
     clearDraftCart();
     renderCart();
@@ -1154,8 +1219,13 @@ async function confirmPayment() {
 function resetOrderExtras() {
   document.querySelector('input[name="orderType"][value="takeaway"]').checked = true;
   deliveryFields.classList.add('hidden');
+  deliveryDistanceInput.value = '';
   deliveryFeeInput.value = 0;
   deliveryPersonInput.value = '';
+  document.querySelector('input[name="deliveryTimeMode"][value="now"]').checked = true;
+  deliveryCustomTimeInput.value = '';
+  deliveryCustomTimeInput.classList.add('hidden');
+  orderNoteInput.value = '';
   discountTypeSelect.value = 'none';
   discountValueInput.value = 0;
   discountValueInput.disabled = true;
