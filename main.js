@@ -1229,6 +1229,8 @@ ipcMain.handle('discount:approveWithPin', (_event, pin) => { requireAccountReady
 // نفس المبرر: كانتا بلا فحص صلاحية بالخلفية رغم حساسية بيانات الأرباح والخسائر
 ipcMain.handle('reports:delivery', (_event, range) => { requireManagerOrAdmin(); return db.getDeliverySummary(range); });
 ipcMain.handle('reports:profitLoss', (_event, range) => { requireManagerOrAdmin(); return db.getProfitLoss(range); });
+ipcMain.handle('reports:cashMovements', (_event, range) => { requireManagerOrAdmin(); return db.getCashMovementsSummary(range); });
+ipcMain.handle('reports:balances', () => { requireManagerOrAdmin(); return db.getBalancesSnapshot(); });
 
 /* ---------------- تصدير التقارير ---------------- */
 ipcMain.handle('reports:exportExcel', async (_event, range) => {
@@ -1587,6 +1589,19 @@ ipcMain.handle('customers:receivePayment', (_event, payload) => {
 ipcMain.handle('suppliers:list', () => { requireManagerOrAdmin(); return db.listSuppliers(); });
 ipcMain.handle('suppliers:create', (_event, supplier) => { requireManagerOrAdmin(); return db.createSupplier(supplier); });
 ipcMain.handle('suppliers:update', (_event, supplier) => { requireManagerOrAdmin(); return db.updateSupplier(supplier); });
+ipcMain.handle('suppliers:payDebt', (_event, payload) => {
+  requireManagerOrAdmin();
+  const shift = db.getOpenShift();
+  const result = db.paySupplierDebt({ ...payload, userId: currentUser.id, shiftId: shift?.id || null });
+  db.logAudit({
+    userId: currentUser.id,
+    action: 'supplier_payment_made',
+    entityType: 'supplier',
+    entityId: payload.supplierId,
+    details: { amount: payload.amount },
+  });
+  return result;
+});
 ipcMain.handle('purchases:list', () => { requireManagerOrAdmin(); return db.listPurchaseOrders(); });
 ipcMain.handle('purchases:get', (_event, id) => { requireManagerOrAdmin(); return db.getPurchaseOrder(id); });
 ipcMain.handle('purchases:create', (_event, purchase) => { requireManagerOrAdmin(); const shift = db.getOpenShift(); return db.createPurchaseOrder({ ...purchase, userId: currentUser.id, shiftId: shift?.id || null }); });

@@ -59,6 +59,30 @@
         </div>
       </div>
 
+      <div class="section-heading">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="6" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg>
+        <h2>وضعك المالي الآن</h2>
+      </div>
+      <p class="reports-subtitle" style="margin:-6px 0 12px;">هذه أرقام لحظية (الآن) ولا علاقة لها بالفترة المحددة تحت — بعكس باقي أرقام هذه الصفحة.</p>
+      <div class="kpi-row" id="balancesRow">
+        <div class="kpi-card kpi-highlight" data-tone="brand">
+          <span class="kpi-icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="6" width="20" height="14" rx="2"/><circle cx="12" cy="13" r="3"/></svg></span>
+          <div class="kpi-body"><div class="kpi-label">الكاش المفروض يكون بالصندوق الآن</div><div class="kpi-value" id="balCash">—</div><div class="kpi-trend" id="balCashHint"></div></div>
+        </div>
+        <div class="kpi-card" data-tone="danger">
+          <span class="kpi-icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 17h11V6H3z"/><path d="M14 10h4l3 3v4h-7z"/></svg></span>
+          <div class="kpi-body"><div class="kpi-label">المتبقي دفعه للموردين</div><div class="kpi-value" id="balSupplier">0.00</div><div class="kpi-trend" id="balSupplierHint"></div></div>
+        </div>
+        <div class="kpi-card" data-tone="warning">
+          <span class="kpi-icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg></span>
+          <div class="kpi-body"><div class="kpi-label">سلف الموظفين اللي لسا ما رجعت</div><div class="kpi-value" id="balAdvances">0.00</div><div class="kpi-trend" id="balAdvancesHint"></div></div>
+        </div>
+        <div class="kpi-card" data-tone="indigo">
+          <span class="kpi-icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2h9l3 3v17H6z"/><path d="M9 8h6M9 12h6M9 16h4"/></svg></span>
+          <div class="kpi-body"><div class="kpi-label">ديون العملاء المستحقة لنا</div><div class="kpi-value" id="balCustomer">0.00</div><div class="kpi-trend" id="balCustomerHint"></div></div>
+        </div>
+      </div>
+
       <div class="filters-row reports-filters">
         <div class="range-presets">
           <button class="btn btn-secondary btn-sm" data-range="today">اليوم</button>
@@ -102,6 +126,7 @@
         <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-4 4"/></svg>
         <h2>الربح والخسارة</h2>
       </div>
+      <p class="reports-subtitle" style="margin:-6px 0 12px;">هذا ربح/خسارة المبيعات فقط عن الفترة المحددة فوق — رقم محاسبي، وليس كاش موجود بالصندوق فعلياً.</p>
       <div class="pl-flow">
         <div class="pl-card" data-tone="slate">
           <div class="pl-label">صافي الإيراد (بعد الخصم)</div>
@@ -131,7 +156,25 @@
         </div>
       </div>
       <div class="empty-state" style="font-size:12px;">
-        محسوب على أساس تكلفة المنتج الحالية بجدول المنتجات، وليس تكلفته وقت البيع بالضبط. المقارنة أعلى الصفحة مقابل فترة سابقة مساوية بالطول تسبق الفترة المحددة مباشرة.
+        محسوب على أساس تكلفة المنتج المسجَّلة فعلياً وقت كل عملية بيع، وليس تكلفته الحالية بجدول المنتجات اليوم. المقارنة أعلى الصفحة مقابل فترة سابقة مساوية بالطول تسبق الفترة المحددة مباشرة.
+      </div>
+
+      <div class="report-panel full">
+        <h2>حركات الصندوق اليدوية <span class="panel-hint">سلف موظفين، دفعات موردين، تسديد ديون...</span></h2>
+        <p class="reports-subtitle" style="margin:0 0 10px;">هذا إجمالي ما دخل/خرج من الصندوق يدوياً خلال الفترة المحددة فقط. للرصيد المتبقي الآن (كم باقي من كل سلفة أو دين مورد) شوف قسم "وضعك المالي الآن" أعلى الصفحة.</p>
+        <div class="kpi-row">
+          <div class="kpi-card" data-tone="warning">
+            <div class="kpi-body"><div class="kpi-label">إجمالي المصروف من الصندوق</div><div class="kpi-value" id="cashMovementsOut">0.00</div></div>
+          </div>
+          <div class="kpi-card" data-tone="indigo">
+            <div class="kpi-body"><div class="kpi-label">إجمالي المُدخل للصندوق</div><div class="kpi-value" id="cashMovementsIn">0.00</div></div>
+          </div>
+        </div>
+        <table class="products-table">
+          <thead><tr><th>البند</th><th>عدد الحركات</th><th>الإجمالي</th></tr></thead>
+          <tbody id="cashMovementsBody"></tbody>
+        </table>
+        <p id="cashMovementsEmpty" class="field-hint hidden">لا توجد حركات صندوق يدوية في هذه الفترة.</p>
       </div>
 
       <div class="report-panel full">

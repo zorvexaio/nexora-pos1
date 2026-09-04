@@ -33,12 +33,21 @@ function zip(entries) {
 function dataSets(report) {
   const s = report.summary;
   const p = report.profitLoss;
+  const bal = report.balances;
+  const balanceRows = bal ? [
+    ['وضعك المالي الآن (لحظي - لا علاقة له بفترة التقرير أعلاه)', ''],
+    ['الكاش المفروض بالصندوق الآن', bal.shiftOpen ? bal.expectedCash : 'لا يوجد صندوق مفتوح حالياً'],
+    ['المتبقي دفعه للموردين', bal.supplierDebt.total],
+    ['سلف الموظفين اللي لسا ما رجعت', bal.employeeAdvances.total],
+    ['ديون العملاء المستحقة لنا', bal.customerDebt.total],
+  ] : [['المؤشر', 'القيمة']];
   return [
     ['ملخص', [['المؤشر', 'القيمة'], ['عدد الفواتير', s.count], ['الإجمالي الفرعي', s.subtotal], ['الضريبة', s.tax], ['إجمالي المبيعات', s.total], ['من', report.range.from], ['إلى', report.range.to]]],
+    ['وضعك المالي الآن', balanceRows],
     ['الأصناف الأكثر مبيعاً', [['المنتج', 'الكمية', 'الإجمالي'], ...report.topProducts.map((p) => [p.name, p.qty, p.total])]],
     ['المبيعات اليومية', [['التاريخ', 'عدد الفواتير', 'الإجمالي'], ...report.daily.map((d) => [d.day, d.count, d.total])]],
     ['التوصيل', [['المندوب', 'عدد الطلبات', 'رسوم التوصيل'], ...report.delivery.byPerson.map((p) => [p.deliveryPerson, p.orderCount, p.deliveryFees])]],
-    ['الربح والخسارة', [['المؤشر', 'القيمة'], ['صافي الإيراد', p.netRevenue], ['تكلفة المنتجات المباعة', p.cost], ['قيمة المرتجعات', p.returnsRevenue], ['الربح الإجمالي (قبل الرواتب)', p.grossProfit], ['مصروف الرواتب', p.payrollExpense], ['صافي الربح (بعد الرواتب)', p.netProfit], ['هامش الربح %', p.marginPercent]]],
+    ['الربح والخسارة (عن الفترة أعلاه فقط)', [['المؤشر', 'القيمة'], ['صافي الإيراد', p.netRevenue], ['تكلفة المنتجات المباعة', p.cost], ['قيمة المرتجعات', p.returnsRevenue], ['الربح الإجمالي (قبل الرواتب)', p.grossProfit], ['مصروف الرواتب', p.payrollExpense], ['صافي الربح (بعد الرواتب)', p.netProfit], ['هامش الربح %', p.marginPercent]]],
     ['الأصناف الأكثر ربحاً', [['المنتج', 'الكمية', 'الإيراد', 'التكلفة', 'الربح'], ...p.byProduct.map((item) => [item.name, item.qty, item.revenue, item.cost, item.profit])]],
   ];
 }

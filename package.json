@@ -10,6 +10,7 @@
     "test": "node server/test-sync.js",
     "rebuild": "node tools/rebuild-native.js",
     "dist:win": "node tools/release-preflight.js --windows-signed && electron-builder --win",
+    "dist:win:unsigned": "node tools/release-preflight.js && electron-builder --win",
     "dist:win:publish": "node tools/release-preflight.js --windows-signed && electron-builder --win --publish always",
     "dist:mac": "node tools/release-preflight.js && electron-builder --mac",
     "dist:linux": "node tools/release-preflight.js && electron-builder --linux",

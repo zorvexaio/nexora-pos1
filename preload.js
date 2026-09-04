@@ -61,6 +61,7 @@ contextBridge.exposeInMainWorld('api', {
     list: () => ipcRenderer.invoke('suppliers:list'),
     create: (supplier) => ipcRenderer.invoke('suppliers:create', supplier),
     update: (supplier) => ipcRenderer.invoke('suppliers:update', supplier),
+    payDebt: (payload) => ipcRenderer.invoke('suppliers:payDebt', payload),
   },
   purchases: {
     list: () => ipcRenderer.invoke('purchases:list'),
@@ -115,6 +116,8 @@ contextBridge.exposeInMainWorld('api', {
     daily: (range) => ipcRenderer.invoke('reports:daily', range),
     delivery: (range) => ipcRenderer.invoke('reports:delivery', range),
     profitLoss: (range) => ipcRenderer.invoke('reports:profitLoss', range),
+    cashMovements: (range) => ipcRenderer.invoke('reports:cashMovements', range),
+    balances: () => ipcRenderer.invoke('reports:balances'),
     exportExcel: (range) => ipcRenderer.invoke('reports:exportExcel', range),
     exportPdf: (range) => ipcRenderer.invoke('reports:exportPdf', range),
     debtAging: () => ipcRenderer.invoke('reports:debtAging'),

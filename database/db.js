@@ -14,7 +14,7 @@ const userDataPath = app.getPath('userData');
 const dbPath = path.join(userDataPath, 'pos.db');
 const keyPath = path.join(userDataPath, 'pos.db.key');
 const databaseExistedBeforeOpen = fs.existsSync(dbPath) && fs.statSync(dbPath).size > 0;
-const CURRENT_SCHEMA_VERSION = 15;
+const CURRENT_SCHEMA_VERSION = 16;
 
 function getEncryptionKey() {
   if (!safeStorage.isEncryptionAvailable()) {
@@ -201,6 +201,7 @@ function init() {
       [13, 'payroll-advance-repayments-v13', migratePayrollAdvanceRepayments],
       [14, 'payroll-termination-final-settlement-v14', migratePayrollTermination],
       [15, 'payroll-commercial-hardening-v15', migratePayrollCommercialV15],
+      [16, 'shifts-minor-trigger-null-fix-v16', migrateShiftsMinorTriggerNullFix],
     ];
     for (const [version, name, migration] of versionedMigrations) applyVersionedMigration(version, name, migration);
     assertMigrationJournalIntegrity(versionedMigrations);
@@ -589,6 +590,35 @@ function migrateFinancialMinorUnits() {
         BEGIN UPDATE ${table} SET ${source}=CAST(NEW.${target} AS REAL) / ${multiplier} WHERE rowid=NEW.rowid; END;`);
     }
   }
+}
+
+// ترحيلة v16: تصلح المُطلِقين (triggers) اللي أنشأتهم الترحيلة v2 لجدول shifts.
+// المُطلِقان الأصليان كانا يحسبان shifts.expected_cash_minor / actual_cash_minor /
+// cash_difference_minor مباشرة من NEW.expected_cash / NEW.actual_cash / NEW.cash_difference.
+// لكن الأعمدة النصية دي (REAL) تُترك عمداً NULL عند فتح وردية جديدة — لا تُملأ إلا عند
+// إغلاقها. NULL * أي رقم = NULL في SQLite، وبما إن أعمدة الـ _minor معرَّفة NOT NULL
+// DEFAULT 0، كانت أي محاولة لفتح وردية جديدة تفشل بخطأ:
+//   NOT NULL constraint failed: shifts.expected_cash_minor
+// الإصلاح: إعادة إنشاء نفس المُطلِقين بحماية COALESCE(..., 0). لا نعدّل ترحيلة v2
+// المنشورة (checksum محمي)؛ نضيف ترحيلة جديدة idempotent بدل ذلك.
+function migrateShiftsMinorTriggerNullFix() {
+  const multiplier = `(CASE COALESCE((SELECT currency_minor_unit FROM organization_profile LIMIT 1), 2)
+    WHEN 0 THEN 1 WHEN 1 THEN 10 WHEN 2 THEN 100 WHEN 3 THEN 1000 WHEN 4 THEN 10000 WHEN 5 THEN 100000 WHEN 6 THEN 1000000 ELSE 100 END)`;
+  const fields = [
+    ['opening_amount', 'opening_amount_minor'],
+    ['expected_cash', 'expected_cash_minor'],
+    ['actual_cash', 'actual_cash_minor'],
+    ['cash_difference', 'cash_difference_minor'],
+  ];
+  const assignments = fields
+    .map(([source, target]) => `${target}=CAST(ROUND(COALESCE(NEW.${source},0) * ${multiplier}) AS INTEGER)`)
+    .join(', ');
+  db.exec(`DROP TRIGGER IF EXISTS trg_shifts_money_minor_ai`);
+  db.exec(`DROP TRIGGER IF EXISTS trg_shifts_money_minor_au`);
+  db.exec(`CREATE TRIGGER trg_shifts_money_minor_ai AFTER INSERT ON shifts BEGIN UPDATE shifts SET ${assignments} WHERE rowid=NEW.rowid; END;`);
+  db.exec(`CREATE TRIGGER trg_shifts_money_minor_au AFTER UPDATE OF opening_amount, expected_cash, actual_cash, cash_difference ON shifts BEGIN UPDATE shifts SET ${assignments} WHERE rowid=NEW.rowid; END;`);
+  // أي وردية سبق وحاولت المرور بالمُطلِق القديم فشلت بالكامل (الـ INSERT اتلغى)، فمفيش
+  // بيانات قديمة محتاجة تصحيح هنا — الإصلاح كافٍ لأي فتح وردية جديد من الآن.
 }
 
 function migrateAccountingCore() {
@@ -2641,6 +2671,67 @@ function listInventoryMovements(filters = {}) {
 }
 
 /* ---------------- التقارير ---------------- */
+// كانت هذه الحركات (سلف موظفين، دفعات موردين...الخ) تُخصم فعلياً من "الكاش المتوقع" بشاشة
+// الصندوق بدون أي عرض منفصل لها بشاشة "التقارير" — فكان صاحب المحل يشوف الرقم الكلي بس
+// من غير ما يعرف وين راح تفصيله. هذه الدالة تجمّعها حسب السبب لعرضها بوضوح بالتقارير.
+function getCashMovementsSummary(range = {}) {
+  const branch = getCurrentBranch();
+  const { from, to } = dateRangeParams(range);
+  const rows = db.prepare(`SELECT type, reference, reason, amount, created_at FROM cash_movements WHERE branch_id=? AND created_at BETWEEN ? AND ? ORDER BY created_at DESC`).all(branch.id, from, to);
+  const groups = new Map();
+  let cashIn = 0, cashOut = 0;
+  for (const row of rows) {
+    const amount = Number(row.amount || 0);
+    if (row.type === 'cash_in') cashIn += amount; else cashOut += amount;
+    const key = String(row.reference || '').split(':')[0] || 'other';
+    const current = groups.get(key) || { key, type: row.type, count: 0, total: 0 };
+    current.count += 1;
+    current.total += amount;
+    groups.set(key, current);
+  }
+  return { from, to, cashIn, cashOut, net: cashIn - cashOut, groups: [...groups.values()].sort((a, b) => b.total - a.total) };
+}
+
+// صاحب المحل كان يفتح "التقارير" ويشوف أرقام الفترة المحددة (مبيعات/ربح/خسارة) مع أرقام
+// "لحظية" (الكاش المتوقع بالصندوق الآن، رصيد السلف، رصيد الموردين) بدون أي فاصل بينها، فتختلط
+// عليه ولا يعرف شقد لازم يكون معه كاش فعلياً أو شقد ضل من سلفة دفعها أو دين مورد. هذه الدالة
+// ترجع "الوضع المالي الآن" بمعزل عن أي فترة تاريخية ليُعرض بقسم منفصل وواضح أعلى صفحة التقارير.
+function getBalancesSnapshot() {
+  const branch = getCurrentBranch();
+  const unit = Number(getGlobalProfile()?.currency_minor_unit || 2);
+
+  const openShift = getOpenShift();
+  const expectedCash = openShift ? computeExpectedCash(openShift) : null;
+
+  const supplierRow = db
+    .prepare(`SELECT COALESCE(SUM(balance),0) AS total, COUNT(*) AS cnt FROM suppliers WHERE branch_id=? AND balance>0`)
+    .get(branch.id);
+
+  const customerRow = db
+    .prepare(`SELECT COALESCE(SUM(balance),0) AS total, COUNT(*) AS cnt FROM customers WHERE branch_id=? AND balance>0`)
+    .get(branch.id);
+
+  const advanceRows = db
+    .prepare(`SELECT a.id, a.principal_minor,
+        COALESCE((SELECT SUM(pa.amount_minor) FROM payroll_advance_payment_allocations pa
+                  JOIN payroll_advance_payments p ON p.id=pa.payment_id
+                  WHERE p.voided_at IS NULL AND p.advance_id=a.id),0) AS recovered_minor
+      FROM payroll_advances a WHERE a.branch_id=? AND a.status='active'`)
+    .all(branch.id);
+  let advanceRemainingMinor = 0;
+  for (const a of advanceRows) {
+    advanceRemainingMinor += Math.max(0, Number(a.principal_minor || 0) - Number(a.recovered_minor || 0));
+  }
+
+  return {
+    expectedCash: expectedCash === null ? null : Math.round(expectedCash * 100) / 100,
+    shiftOpen: !!openShift,
+    supplierDebt: { total: Number(supplierRow.total || 0), count: supplierRow.cnt },
+    customerDebt: { total: Number(customerRow.total || 0), count: customerRow.cnt },
+    employeeAdvances: { total: money.fromMinor(advanceRemainingMinor, unit), count: advanceRows.filter(a => (Number(a.principal_minor || 0) - Number(a.recovered_minor || 0)) > 0).length },
+  };
+}
+
 function dateRangeParams(range = {}) {
   // تقارير اليوم/الأسبوع/الشهر يجب أن تُفسَّر حسب المنطقة الزمنية للمؤسسة،
   // لا حسب UTC الخاص بعملية Electron. هذا يمنع انقسام يوم العمل عند منتصف الليل.
@@ -2926,19 +3017,42 @@ function getTopProducts(range = {}) {
     .all(branch.id, branch.id, from, to, limit);
 }
 
+// كانت هذه الدالة تُجمِّع المبيعات حسب date(created_at) مباشرة — وcreated_at مخزّن بتوقيت UTC،
+// فأي فرع بمنطقة زمنية أمامية عن UTC (مثل تركيا UTC+3) كانت مبيعات ساعات الفجر المحلية (مثلاً
+// 00:30-02:59) تُحسَب بالخطأ على اليوم السابق في هذا التقرير رغم وقوعها ضمن نطاق التاريخ المحلي
+// الصحيح المفلتَر أعلاه بواسطة dateRangeParams. نجمع الآن يدوياً حسب التاريخ المحلي الفعلي.
 function getDailySales(range = {}) {
   const branch = getCurrentBranch();
-  const { from, to } = dateRangeParams(range);
+  const { from, to, timeZone } = dateRangeParams(range);
 
-  return db
+  const rows = db
     .prepare(
-      `SELECT date(created_at) AS day, COUNT(*) AS count, COALESCE(SUM(grand_total),0) AS total
+      `SELECT created_at, grand_total
        FROM sales
-       WHERE branch_id = ? AND status IN ('completed','partially_refunded') AND created_at BETWEEN ? AND ?
-       GROUP BY day
-       ORDER BY day`
+       WHERE branch_id = ? AND status IN ('completed','partially_refunded') AND created_at BETWEEN ? AND ?`
     )
     .all(branch.id, from, to);
+
+  let formatter;
+  try {
+    formatter = new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' });
+  } catch (_) {
+    formatter = new Intl.DateTimeFormat('en-CA', { timeZone: 'UTC', year: 'numeric', month: '2-digit', day: '2-digit' });
+  }
+
+  const byDay = new Map();
+  for (const row of rows) {
+    const utcDate = new Date(String(row.created_at).replace(' ', 'T') + 'Z');
+    const day = Number.isNaN(utcDate.getTime()) ? String(row.created_at).slice(0, 10) : formatter.format(utcDate);
+    const entry = byDay.get(day) || { day, count: 0, total: 0 };
+    entry.count += 1;
+    entry.total += Number(row.grand_total || 0);
+    byDay.set(day, entry);
+  }
+
+  return [...byDay.values()]
+    .map((entry) => ({ ...entry, total: Math.round(entry.total * 100) / 100 }))
+    .sort((a, b) => a.day.localeCompare(b.day));
 }
 
 // قائمة الفواتير ضمن فترة معينة (رقم الفاتورة، التاريخ، العميل، طريقة الدفع، الإجمالي...)
@@ -3195,6 +3309,38 @@ function receivePurchaseOrderCore(purchaseOrderId, branchId, context = {}) {
 const receivePurchaseOrderTx = db.transaction(receivePurchaseOrderCore);
 function receivePurchaseOrder(id, context = {}) { return receivePurchaseOrderTx(id, getCurrentBranch().id, context); }
 function listPurchaseOrders() { const b=getCurrentBranch(); return db.prepare(`SELECT p.*, s.name AS supplier_name, b.name AS branch_name FROM purchase_orders p JOIN suppliers s ON s.id=p.supplier_id JOIN branches b ON b.id=p.branch_id WHERE p.branch_id=? ORDER BY p.created_at DESC`).all(b.id); }
+// شاشة الموردين كانت تعرض "الرصيد المستحق لهم" بدون أي زر لتسجيل دفعة تسدّده خارج
+// إنشاء فاتورة شراء جديدة (الدفع كان مربوطاً فقط بـ purchasePaid عند الشراء) — نفس فجوة
+// دفعات العملاء التي عولجت بـ receiveCustomerPayment. هذه الدالة تقابلها لجهة الموردين.
+const paySupplierDebtTx = db.transaction((payload) => {
+  const amount = Number(payload.amount);
+  if (!(amount > 0)) throw new Error('مبلغ الدفعة غير صالح.');
+  const branch = getCurrentBranch();
+  const supplier = db.prepare('SELECT balance FROM suppliers WHERE id=? AND branch_id=?').get(Number(payload.supplierId), branch.id);
+  if (!supplier) throw new Error('المورد غير موجود في الفرع الحالي.');
+  const balanceAfter = Math.max(0, Number(supplier.balance || 0) - amount);
+  const applied = Number(supplier.balance || 0) - balanceAfter;
+  if (!(applied > 0)) throw new Error('لا يوجد رصيد مستحق لهذا المورد.');
+  const paymentMethod = String(payload.paymentMethod || 'cash').trim();
+  if (!['cash', 'card'].includes(paymentMethod)) throw new Error('طريقة دفع المورد غير صالحة.');
+  db.prepare(`UPDATE suppliers SET balance=?,updated_at=datetime('now'),synced=0 WHERE id=? AND branch_id=?`).run(balanceAfter, Number(payload.supplierId), branch.id);
+  db.prepare(`INSERT INTO supplier_ledger (uuid, branch_id, supplier_id, purchase_order_id, entry_type, amount, balance_after, notes, synced) VALUES (?, ?, ?, NULL, 'payment', ?, ?, ?, 0)`)
+    .run(uuid(), branch.id, Number(payload.supplierId), -applied, balanceAfter, payload.notes || `دفعة ${paymentMethod === 'cash' ? 'نقدية' : 'بطاقة'} للمورد`);
+  const currency = String(getGlobalProfile().currency_code || 'USD').trim().toUpperCase();
+  const shiftId = payload.shiftId || null;
+  db.prepare(`INSERT INTO payment_transactions(uuid,branch_id,shift_id,method,currency_code,amount,exchange_rate,external_id,masked_descriptor,created_by) VALUES(?,?,?,?,?,?,?,?,?,?)`)
+    .run(uuid(), branch.id, shiftId, paymentMethod, currency, -applied, 1, `supplier-payment:${payload.supplierId}`, 'دفعة لمورد', payload.userId || null);
+  let cashMovementRecorded = false;
+  if (paymentMethod === 'cash' && shiftId) {
+    const shift = db.prepare("SELECT id FROM shifts WHERE id=? AND branch_id=? AND status='open'").get(shiftId, branch.id);
+    if (!shift) throw new Error('جلسة الصندوق المحددة مغلقة أو لا تخص الفرع الحالي.');
+    db.prepare(`INSERT INTO cash_movements(uuid,branch_id,shift_id,type,amount,reason,reference,created_by) VALUES(?,?,?,?,?,?,?,?)`)
+      .run(uuid(), branch.id, shiftId, 'cash_out', applied, 'دفعة لمورد', `supplier:${payload.supplierId}`, payload.userId || null);
+    cashMovementRecorded = true;
+  }
+  return { success: true, applied, balanceAfter, cashMovementRecorded };
+});
+function paySupplierDebt(payload) { return paySupplierDebtTx(payload); }
 function getPurchaseOrder(id) { const b=getCurrentBranch(); const order = db.prepare(`SELECT p.*, s.name AS supplier_name, b.name AS branch_name FROM purchase_orders p JOIN suppliers s ON s.id=p.supplier_id JOIN branches b ON b.id=p.branch_id WHERE p.id=? AND p.branch_id=? AND s.branch_id=?`).get(id,b.id,b.id); return order ? { ...order, items: db.prepare(`SELECT i.*, pr.name AS product_name FROM purchase_order_items i JOIN products pr ON pr.id=i.product_id WHERE i.purchase_order_id=?`).all(id) } : null; }
 
 /* ---------------- طاولات المطعم والطلبات المفتوحة ---------------- */
@@ -3716,10 +3862,15 @@ function getShiftSummary(shiftId, branchId = null, viewerUserId = null, viewerRo
   const returns = db
     .prepare(`SELECT COUNT(*) AS count, COALESCE(SUM(total_refunded),0) AS total FROM returns WHERE shift_id = ?`)
     .get(shiftId);
+  // كانت "الكاش المتوقع" تحسب صحيح داخلياً (تشمل حركات الصندوق cash_in/cash_out)، لكن الشاشة
+  // ما كانت تعرض تفاصيل هالحركات (سلف موظفين، دفعات موردين...الخ) — فيبدو للمستخدم إنها "اختفت"
+  // رغم إنها فعلياً مخصومة من الرقم الإجمالي. نرجّع القائمة صراحة ليتم عرضها.
+  const movements = db.prepare(`SELECT id, type, amount, reason, reference, created_at FROM cash_movements WHERE shift_id=? ORDER BY created_at DESC, id DESC`).all(shiftId);
   return {
     ...shift,
     sales,
     returns,
+    movements,
     expectedCash: shift.status === 'closed' ? shift.expected_cash : computeExpectedCash(shift),
   };
 }
@@ -4194,7 +4345,7 @@ function repayPayrollAdvance({advanceId,amount,paymentDate,method='cash',referen
   const date = String(paymentDate || payrollTodayLocal().toISOString().slice(0,10)).slice(0,10);
   if(!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error('تاريخ تسديد السلفة غير صالح.');
   const amountMinor=money.toMinor(Number(amount),unit); if(amountMinor<=0) throw new Error('قيمة التسديد يجب أن تكون أكبر من صفر.');
-  const recovered=Number(db.prepare('SELECT COALESCE(SUM(amount_minor),0) x FROM payroll_advance_payment_allocations pa JOIN payroll_advance_payments p ON p.id=pa.payment_id WHERE p.voided_at IS NULL AND p.advance_id=?').get(advance.id).x||0);
+  const recovered=Number(db.prepare('SELECT COALESCE(SUM(pa.amount_minor),0) x FROM payroll_advance_payment_allocations pa JOIN payroll_advance_payments p ON p.id=pa.payment_id WHERE p.voided_at IS NULL AND p.advance_id=?').get(advance.id).x||0);
   const remaining=Math.max(0,Number(advance.principal_minor||0)-recovered);
   if(amountMinor>remaining) throw new Error(`مبلغ التسديد أكبر من الرصيد المتبقي (${money.fromMinor(remaining,unit)}).`);
   const tx=db.transaction(()=>{
@@ -4221,10 +4372,18 @@ function repayPayrollAdvance({advanceId,amount,paymentDate,method='cash',referen
   return {success:true,id:tx.id,cashMovementId:tx.cashMovementId,amount:money.fromMinor(tx.amountMinor,unit),remaining:money.fromMinor(tx.remainingMinor,unit),status:tx.remainingMinor<=0?'completed':'active'};
 }
 
+// كانت هذه الدالة تستدعي listPayrollAdvances(advanceId) — وlistPayrollAdvances تفلتر حسب
+// employee_id لا id السلفة نفسها (كما تُستخدم بكل الاستدعاءات الأخرى: main.js وlines 4363/4393
+// أدناه). أي تمرير معرّف السلفة هناك كان يُبحث خطأً عن سلف موظف رقمه = معرّف السلفة، فتفشل
+// شبه دائماً بخطأ "السلفة غير موجودة" حتى لو كانت السلفة موجودة فعلاً. نجلب السلفة مباشرة بمعرّفها.
 function settlePayrollAdvance(advanceId,{paymentDate,method='cash',reference='payroll_advance_early_settlement',notes,createdBy,paidFromRegister=false}={}){
-  const a=listPayrollAdvances(advanceId)[0]; if(!a) throw new Error('السلفة غير موجودة.');
-  if(Number(a.remaining_minor||0)<=0) return {success:true,status:'completed',amount:'0.00',remaining:'0.00'};
-  return repayPayrollAdvance({advanceId:a.id,amount:a.remaining,paymentDate,method,reference,notes,createdBy,paidFromRegister});
+  const b=getCurrentBranch(); const unit=Number(getGlobalProfile()?.currency_minor_unit||2);
+  const advance=db.prepare('SELECT * FROM payroll_advances WHERE id=? AND branch_id=?').get(Number(advanceId),b.id);
+  if(!advance) throw new Error('السلفة غير موجودة.');
+  const recoveredMinor=Number(db.prepare(`SELECT COALESCE(SUM(pa.amount_minor),0) x FROM payroll_advance_payment_allocations pa JOIN payroll_advance_payments p ON p.id=pa.payment_id WHERE p.voided_at IS NULL AND p.advance_id=?`).get(advance.id).x||0);
+  const remainingMinor=Math.max(0,Number(advance.principal_minor||0)-recoveredMinor);
+  if(remainingMinor<=0) return {success:true,status:'completed',amount:'0.00',remaining:'0.00'};
+  return repayPayrollAdvance({advanceId:advance.id,amount:money.fromMinor(remainingMinor,unit),paymentDate,method,reference,notes,createdBy,paidFromRegister});
 }
 
 function recordPayrollSalaryAdvanceRecovery({monthId,employeeId,amountMinor,createdBy,sourcePaymentId}){
@@ -4412,7 +4571,7 @@ function reopenPayrollMonth(monthId, reason, reopenedBy) {
   return {success:true,status:'open',reason:text};
 }
 
-function getPayrollV2Employee(monthId,employeeId){ const m=payrollMonth(monthId), b=getCurrentBranch(); recalcPayrollEmployeeMonth(m.id,Number(employeeId)); const employee=db.prepare(`SELECT e.*,m.month_id,m.month_key,m.pay_type,m.pay_rate,m.base_amount,m.base_amount_minor,m.regular_hours,m.absence_days,m.absence_deduction,m.bonus_total,m.deduction_total,m.advance_total,m.overtime_total,m.net_salary,m.net_salary_minor,m.debt_carry,m.debt_carry_minor FROM payroll_employee_months m JOIN payroll_employees e ON e.id=m.employee_id JOIN payroll_months pm ON pm.id=m.month_id WHERE m.month_id=? AND m.employee_id=? AND e.branch_id=?`).get(m.id,Number(employeeId),b.id); if(!employee)throw new Error('العامل غير موجود في هذا الشهر.'); const unit=Number(getGlobalProfile()?.currency_minor_unit||2); const paid=db.prepare('SELECT COALESCE(SUM(amount_minor),0) paid_minor,COALESCE(SUM(amount),0) paid_amount FROM payroll_payments WHERE branch_id=? AND month_id=? AND employee_id=?').get(b.id,m.id,Number(employeeId)); const paidMinor=Number(paid?.paid_minor||0),netMinor=money.toMinor(Number(employee.net_salary||0),unit); employee.paid_total=money.fromMinor(paidMinor,unit); employee.paid_total_minor=paidMinor; employee.remaining_salary=money.fromMinor(Math.max(0,netMinor-paidMinor),unit); employee.remaining_salary_minor=Math.max(0,netMinor-paidMinor); employee.payment_status=paidMinor>=netMinor?'paid':paidMinor>0?'partial':'unpaid'; const transactions=db.prepare('SELECT * FROM payroll_transactions WHERE month_id=? AND employee_id=? ORDER BY event_date DESC,id DESC').all(m.id,Number(employeeId)); const payments=listPayrollPayments(m.id,Number(employeeId)); return {employee,transactions,payments,monthStatus:m.status||'open'}; }
+function getPayrollV2Employee(monthId,employeeId){ const m=payrollMonth(monthId), b=getCurrentBranch(); recalcPayrollEmployeeMonth(m.id,Number(employeeId)); const employee=db.prepare(`SELECT e.*,m.month_id,pm.month_key,m.pay_type,m.pay_rate,m.base_amount,m.base_amount_minor,m.regular_hours,m.absence_days,m.absence_deduction,m.bonus_total,m.deduction_total,m.advance_total,m.overtime_total,m.net_salary,m.net_salary_minor,m.debt_carry,m.debt_carry_minor FROM payroll_employee_months m JOIN payroll_employees e ON e.id=m.employee_id JOIN payroll_months pm ON pm.id=m.month_id WHERE m.month_id=? AND m.employee_id=? AND e.branch_id=?`).get(m.id,Number(employeeId),b.id); if(!employee)throw new Error('العامل غير موجود في هذا الشهر.'); const unit=Number(getGlobalProfile()?.currency_minor_unit||2); const paid=db.prepare('SELECT COALESCE(SUM(amount_minor),0) paid_minor,COALESCE(SUM(amount),0) paid_amount FROM payroll_payments WHERE branch_id=? AND month_id=? AND employee_id=?').get(b.id,m.id,Number(employeeId)); const paidMinor=Number(paid?.paid_minor||0),netMinor=money.toMinor(Number(employee.net_salary||0),unit); employee.paid_total=money.fromMinor(paidMinor,unit); employee.paid_total_minor=paidMinor; employee.remaining_salary=money.fromMinor(Math.max(0,netMinor-paidMinor),unit); employee.remaining_salary_minor=Math.max(0,netMinor-paidMinor); employee.payment_status=paidMinor>=netMinor?'paid':paidMinor>0?'partial':'unpaid'; const transactions=db.prepare('SELECT * FROM payroll_transactions WHERE month_id=? AND employee_id=? ORDER BY event_date DESC,id DESC').all(m.id,Number(employeeId)); const payments=listPayrollPayments(m.id,Number(employeeId)); return {employee,transactions,payments,monthStatus:m.status||'open'}; }
 
 /* ==========================================================
    المرتجعات
@@ -4670,7 +4829,8 @@ function getReportExport(range = {}) {
   const daily = getDailySales(range);
   const delivery = getDeliverySummary(range);
   const profitLoss = getProfitLoss(range);
-  return { summary, topProducts, daily, delivery, profitLoss, range };
+  const balances = getBalancesSnapshot();
+  return { summary, topProducts, daily, delivery, profitLoss, balances, range };
 }
 
 /* ---------------- إعدادات ومحتوى المزامنة ---------------- */
@@ -5321,7 +5481,19 @@ async function backupTo(destPath) {
   fs.mkdirSync(path.dirname(target), { recursive: true });
   const temp = `${target}.tmp-${process.pid}-${Date.now()}`;
   try {
-    await db.backup(temp);
+    // db.backup() (SQLite's native online-backup API) refuses to run here: SQLite3
+    // Multiple Ciphers rejects the backup whenever the source connection carries a
+    // codec (our chacha20 key) but the destination file — opened internally by the
+    // library with a plain sqlite3_open_v2(), no PRAGMA key applied — does not. That
+    // mismatch is exactly "backup is not supported with incompatible source and
+    // target databases", and it fires on every attempt against an encrypted db, not
+    // just intermittently. Since encryption here is at-rest page encryption, a raw
+    // file copy after a full WAL checkpoint is a valid, fully encrypted backup and
+    // sidesteps the online-backup API entirely.
+    const checkpoint = db.pragma('wal_checkpoint(TRUNCATE)');
+    const stillPending = Array.isArray(checkpoint) && checkpoint[0] && Number(checkpoint[0].busy) !== 0;
+    if (stillPending) throw new Error('تعذّر إتمام نسخ سجل WAL إلى قاعدة البيانات الرئيسية قبل النسخ الاحتياطي (قاعدة البيانات مشغولة).');
+    fs.copyFileSync(dbPath, temp);
     const validation = validateBackupFile(temp);
     if (!validation.valid) throw new Error(validation.message);
     const bytes = fs.statSync(temp).size;
@@ -5342,7 +5514,7 @@ async function backupTo(destPath) {
 }
 const PORTABLE_BACKUP_MAGIC=Buffer.from('NEXORA-NXBAK-1\0','utf8');
 function derivePortableKey(passphrase,salt){return crypto.scryptSync(String(passphrase),salt,32,{N:16384,r:8,p:1}).toString('hex');}
-async function createPortableBackup(destPath,passphrase){const secret=String(passphrase||'');if(secret.length<12)throw new Error('كلمة مرور النسخة المحمولة يجب ألا تقل عن 12 محرفاً.');const tempDb=`${destPath}.work-${process.pid}-${Date.now()}.db`;const salt=crypto.randomBytes(16);const portableKey=derivePortableKey(secret,salt);try{await db.backup(tempDb);const h=new Database(tempDb);try{applyDatabaseKey(h);h.rekey(portableKey);}finally{h.close();}const dbBytes=fs.readFileSync(tempDb);const meta=Buffer.from(JSON.stringify({format:1,createdAt:new Date().toISOString(),appVersion:require('../package.json').version,schemaVersion:CURRENT_SCHEMA_VERSION,salt:salt.toString('base64'),dbSha256:crypto.createHash('sha256').update(dbBytes).digest('hex')}),'utf8');const header=Buffer.alloc(PORTABLE_BACKUP_MAGIC.length+4);PORTABLE_BACKUP_MAGIC.copy(header,0);header.writeUInt32BE(meta.length,PORTABLE_BACKUP_MAGIC.length);fs.writeFileSync(destPath,Buffer.concat([header,meta,dbBytes]));const checksum=crypto.createHash('sha256').update(fs.readFileSync(destPath)).digest('hex');try{db.prepare(`INSERT INTO backup_manifests(uuid,kind,path,file_size,sha256,schema_version,verified_at) VALUES(?,?,?,?,?,?,datetime('now'))`).run(uuid(),'portable',destPath,fs.statSync(destPath).size,checksum,CURRENT_SCHEMA_VERSION);}catch(_){ }return{success:true,path:destPath,sha256:checksum,schemaVersion:CURRENT_SCHEMA_VERSION};}finally{try{fs.unlinkSync(tempDb);}catch(_){}}}
+async function createPortableBackup(destPath,passphrase){const secret=String(passphrase||'');if(secret.length<12)throw new Error('كلمة مرور النسخة المحمولة يجب ألا تقل عن 12 محرفاً.');const tempDb=`${destPath}.work-${process.pid}-${Date.now()}.db`;const salt=crypto.randomBytes(16);const portableKey=derivePortableKey(secret,salt);try{const checkpoint=db.pragma('wal_checkpoint(TRUNCATE)');const stillPending=Array.isArray(checkpoint)&&checkpoint[0]&&Number(checkpoint[0].busy)!==0;if(stillPending)throw new Error('تعذّر إتمام نسخ سجل WAL إلى قاعدة البيانات الرئيسية قبل النسخ المحمولة (قاعدة البيانات مشغولة).');fs.copyFileSync(dbPath,tempDb);const h=new Database(tempDb);try{applyDatabaseKey(h);h.rekey(portableKey);}finally{h.close();}const dbBytes=fs.readFileSync(tempDb);const meta=Buffer.from(JSON.stringify({format:1,createdAt:new Date().toISOString(),appVersion:require('../package.json').version,schemaVersion:CURRENT_SCHEMA_VERSION,salt:salt.toString('base64'),dbSha256:crypto.createHash('sha256').update(dbBytes).digest('hex')}),'utf8');const header=Buffer.alloc(PORTABLE_BACKUP_MAGIC.length+4);PORTABLE_BACKUP_MAGIC.copy(header,0);header.writeUInt32BE(meta.length,PORTABLE_BACKUP_MAGIC.length);fs.writeFileSync(destPath,Buffer.concat([header,meta,dbBytes]));const checksum=crypto.createHash('sha256').update(fs.readFileSync(destPath)).digest('hex');try{db.prepare(`INSERT INTO backup_manifests(uuid,kind,path,file_size,sha256,schema_version,verified_at) VALUES(?,?,?,?,?,?,datetime('now'))`).run(uuid(),'portable',destPath,fs.statSync(destPath).size,checksum,CURRENT_SCHEMA_VERSION);}catch(_){ }return{success:true,path:destPath,sha256:checksum,schemaVersion:CURRENT_SCHEMA_VERSION};}finally{try{fs.unlinkSync(tempDb);}catch(_){}}}
 function restorePortableBackup(filePath,passphrase){const secret=String(passphrase||'');if(secret.length<12)return{valid:false,message:'كلمة مرور النسخة المحمولة غير صالحة.'};let data;try{data=fs.readFileSync(filePath);}catch(e){return{valid:false,message:`تعذّر قراءة النسخة: ${e.message}`};}if(data.length<PORTABLE_BACKUP_MAGIC.length+4||!data.subarray(0,PORTABLE_BACKUP_MAGIC.length).equals(PORTABLE_BACKUP_MAGIC))return{valid:false,message:'صيغة النسخة المحمولة غير صالحة.'};const metadataLen=data.readUInt32BE(PORTABLE_BACKUP_MAGIC.length);const metadataStart=PORTABLE_BACKUP_MAGIC.length+4;const dbStart=metadataStart+metadataLen;if(dbStart>data.length)return{valid:false,message:'ملف النسخة المحمولة ناقص.'};let meta;try{meta=JSON.parse(data.subarray(metadataStart,dbStart).toString('utf8'));}catch(_){return{valid:false,message:'بيانات النسخة المحمولة تالفة.'};}const dbBytes=data.subarray(dbStart);if(crypto.createHash('sha256').update(dbBytes).digest('hex')!==meta.dbSha256)return{valid:false,message:'فشل تحقق سلامة قاعدة النسخة المحمولة.'};const salt=Buffer.from(String(meta.salt||''),'base64');if(salt.length<16)return{valid:false,message:'ملح التشفير غير صالح.'};const key=derivePortableKey(secret,salt);const temp=`${dbPath}.portable-restore-${Date.now()}.db`;try{fs.writeFileSync(temp,dbBytes,{mode:0o600});const h=new Database(temp);try{h.pragma("cipher = 'chacha20'");h.key(key);h.pragma('schema_version');h.rekey(encryptionKey);}finally{h.close();}fs.copyFileSync(temp,dbPath);const validation=validateBackupFile(dbPath);if(!validation.valid)return validation;return{valid:true,schemaVersion:Number(meta.schemaVersion||0),appVersion:String(meta.appVersion||'unknown')};}catch(e){return{valid:false,message:`فشل فك واستعادة النسخة المحمولة: ${e.message}`};}finally{try{fs.unlinkSync(temp);}catch(_){}}}
 
 module.exports = {
@@ -5350,6 +5522,8 @@ module.exports = {
   resetUserPassword,
   changeOwnPassword,
   getProfitLoss,
+  getCashMovementsSummary,
+  getBalancesSnapshot,
   bulkImportProducts,
   parseProductsCsv,
   listBundles,
@@ -5414,6 +5588,7 @@ module.exports = {
   listSuppliers,
   createSupplier,
   updateSupplier,
+  paySupplierDebt,
   createPurchaseOrder,
   receivePurchaseOrder,
   listPurchaseOrders,

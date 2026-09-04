@@ -25,6 +25,15 @@ const debtAgingEmpty = document.getElementById('debtAgingEmpty');
 const dailyChart = document.getElementById('dailyChart');
 const dailyEmpty = document.getElementById('dailyEmpty');
 
+const balCash = document.getElementById('balCash');
+const balCashHint = document.getElementById('balCashHint');
+const balSupplier = document.getElementById('balSupplier');
+const balSupplierHint = document.getElementById('balSupplierHint');
+const balAdvances = document.getElementById('balAdvances');
+const balAdvancesHint = document.getElementById('balAdvancesHint');
+const balCustomer = document.getElementById('balCustomer');
+const balCustomerHint = document.getElementById('balCustomerHint');
+
 const deliveryOrderCount = document.getElementById('deliveryOrderCount');
 const deliveryProductsRevenue = document.getElementById('deliveryProductsRevenue');
 const deliveryFeesTotal = document.getElementById('deliveryFeesTotal');
@@ -207,7 +216,7 @@ async function loadReports() {
   if (reportShell) reportShell.setAttribute('aria-busy', 'true');
   document.querySelectorAll('.kpi-card, .report-panel, .pl-card').forEach((el) => el.classList.add('is-loading'));
   try {
-  const [summary, topProducts, daily, delivery, profitLoss, debtAging, prevSummary, prevProfitLoss] = await Promise.all([
+  const [summary, topProducts, daily, delivery, profitLoss, debtAging, prevSummary, prevProfitLoss, cashMovements, balances] = await Promise.all([
     window.api.reports.summary(range),
     window.api.reports.topProducts({ ...range, limit: 10 }),
     window.api.reports.daily(range),
@@ -216,6 +225,8 @@ async function loadReports() {
     window.api.reports.debtAging(),
     window.api.reports.summary(prevRange).catch(() => null),
     window.api.reports.profitLoss(prevRange).catch(() => null),
+    window.api.reports.cashMovements(range),
+    window.api.reports.balances().catch(() => null),
   ]);
 
   renderSummary(summary, prevSummary);
@@ -225,6 +236,8 @@ async function loadReports() {
   renderDeliverySummary(delivery);
   renderProfitLoss(profitLoss, prevProfitLoss);
   renderDebtAging(debtAging);
+  renderCashMovements(cashMovements);
+  renderBalances(balances);
   await loadInvoices();
   if (reportStatus) reportStatus.textContent = `${ts('تم التحديث')}: ${range.from} — ${range.to}`;
   } catch (error) {
@@ -234,6 +247,55 @@ async function loadReports() {
     if (reportShell) reportShell.setAttribute('aria-busy', 'false');
     document.querySelectorAll('.kpi-card, .report-panel, .pl-card').forEach((el) => el.classList.remove('is-loading'));
   }
+}
+
+// قسم "وضعك المالي الآن" — أرقام لحظية بمعزل عن الفترة المحددة بالفلاتر، عكس باقي هذه الصفحة.
+function renderBalances(data) {
+  if (!data) return;
+  if (data.shiftOpen) {
+    balCash.textContent = formatMoney(data.expectedCash);
+    balCashHint.innerHTML = '';
+  } else {
+    balCash.textContent = '—';
+    balCashHint.innerHTML = '<span class="trend-hint">لا يوجد صندوق مفتوح حالياً</span>';
+  }
+  balSupplier.textContent = formatMoney(data.supplierDebt.total);
+  balSupplierHint.innerHTML = data.supplierDebt.count ? `<span class="trend-hint">${formatInt(data.supplierDebt.count)} مورد</span>` : '';
+  balAdvances.textContent = formatMoney(data.employeeAdvances.total);
+  balAdvancesHint.innerHTML = data.employeeAdvances.count ? `<span class="trend-hint">${formatInt(data.employeeAdvances.count)} سلفة</span>` : '';
+  balCustomer.textContent = formatMoney(data.customerDebt.total);
+  balCustomerHint.innerHTML = data.customerDebt.count ? `<span class="trend-hint">${formatInt(data.customerDebt.count)} عميل</span>` : '';
+}
+
+function renderCashMovements(data) {
+  const outEl = document.getElementById('cashMovementsOut');
+  const inEl = document.getElementById('cashMovementsIn');
+  const body = document.getElementById('cashMovementsBody');
+  const empty = document.getElementById('cashMovementsEmpty');
+  if (!data) return;
+  outEl.textContent = formatMoney(data.cashOut);
+  inEl.textContent = formatMoney(data.cashIn);
+  const labels = {
+    payroll_advance: 'سلف موظفين (صرف)',
+    payroll_advance_repayment: 'تسديد سلف موظفين',
+    payroll_advance_reversal: 'إلغاء/تصحيح سلفة',
+    payroll_final_settlement: 'تصفية نهاية خدمة',
+    payroll_salary: 'صرف رواتب',
+    purchase: 'دفعات فواتير شراء',
+    supplier: 'دفعات موردين',
+    customer: 'تحصيل ديون عملاء',
+    void: 'عمليات إلغاء/تصحيح',
+    other: 'حركات أخرى',
+  };
+  if (!data.groups || !data.groups.length) {
+    body.innerHTML = '';
+    empty.classList.remove('hidden');
+    return;
+  }
+  empty.classList.add('hidden');
+  body.innerHTML = data.groups
+    .map((g) => `<tr><td>${labels[g.key] || g.key}</td><td>${g.count}</td><td>${g.type === 'cash_out' ? '-' : '+'}${formatMoney(g.total)}</td></tr>`)
+    .join('');
 }
 
 // شارة اتجاه صغيرة (▲ نسبة% أخضر / ▼ نسبة% أحمر) لمقارنة القيمة الحالية بفترة سابقة مساوية الطول

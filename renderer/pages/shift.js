@@ -46,9 +46,29 @@ async function refresh() {
   document.getElementById('shiftReturnsTotal').textContent = summary.returns.total.toFixed(2);
   document.getElementById('shiftExpectedCash').textContent = summary.expectedCash.toFixed(2);
   lastExpectedCash = summary.expectedCash;
+  renderMovements(summary.movements || []);
 
   actualCashInput.value = summary.expectedCash.toFixed(2);
   updateDifferencePreview();
+}
+
+const movementTypeLabels = { cash_in: 'إدخال نقدي', cash_out: 'إخراج نقدي' };
+function renderMovements(movements) {
+  const body = document.getElementById('shiftMovementsBody');
+  const empty = document.getElementById('shiftMovementsEmpty');
+  if (!movements.length) {
+    body.innerHTML = '';
+    empty.classList.remove('hidden');
+    return;
+  }
+  empty.classList.add('hidden');
+  body.innerHTML = movements
+    .map((m) => {
+      const time = new Date(m.created_at).toLocaleString('ar');
+      const sign = m.type === 'cash_out' ? '-' : '+';
+      return `<tr><td>${time}</td><td>${movementTypeLabels[m.type] || m.type}</td><td>${(m.reason || '').replace(/</g, '&lt;')}</td><td>${sign}${Number(m.amount).toFixed(2)}</td></tr>`;
+    })
+    .join('');
 }
 
 async function onOpenShift(e) {

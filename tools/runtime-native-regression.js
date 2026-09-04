@@ -18,11 +18,12 @@ if (!fs.existsSync(packageJsonPath)) {
 
 let Database;
 try {
-  ({ default: Database } = require(moduleName));
-} catch (error) {
-  try { Database = require(moduleName); } catch (secondError) {
-    fail(`${moduleName} cannot be loaded. Native rebuild is missing or incompatible. ${secondError.message}`);
+  Database = require(moduleName);
+  if (typeof Database !== 'function' && Database && typeof Database.default === 'function') {
+    Database = Database.default;
   }
+} catch (error) {
+  fail(`${moduleName} cannot be loaded. Native rebuild is missing or incompatible. ${error.message}`);
 }
 if (typeof Database !== 'function') fail(`${moduleName} loaded but did not export a Database constructor.`);
 
