@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS app_settings (
 CREATE TABLE IF NOT EXISTS schema_migrations (
   version INTEGER PRIMARY KEY,
   name TEXT NOT NULL,
+  checksum TEXT,
   applied_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -506,3 +507,268 @@ CREATE TABLE IF NOT EXISTS bundle_items (
   product_id INTEGER NOT NULL REFERENCES products(id),
   quantity REAL NOT NULL DEFAULT 1
 );
+
+
+-- تحويلات المخزون بين الفروع — وثيقة مشتركة مع إيصال استلام منفصل لكل فرع.
+CREATE TABLE IF NOT EXISTS branch_directory (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  uuid TEXT UNIQUE NOT NULL,
+  name TEXT NOT NULL,
+  notes TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS inventory_transfers (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, uuid TEXT UNIQUE NOT NULL,
+  source_branch_uuid TEXT NOT NULL, destination_branch_uuid TEXT NOT NULL,
+  local_branch_id INTEGER NOT NULL REFERENCES branches(id),
+  status TEXT NOT NULL DEFAULT 'shipped' CHECK(status IN ('shipped','received','cancelled')),
+  notes TEXT, created_by INTEGER REFERENCES users(id),
+  shipped_at TEXT NOT NULL DEFAULT (datetime('now')), created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')), synced INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS inventory_transfer_items (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, transfer_id INTEGER NOT NULL REFERENCES inventory_transfers(id) ON DELETE CASCADE,
+  product_id INTEGER NOT NULL REFERENCES products(id), product_uuid TEXT NOT NULL, quantity REAL NOT NULL CHECK(quantity > 0), unit_cost REAL NOT NULL DEFAULT 0,
+  UNIQUE(transfer_id, product_uuid)
+);
+CREATE TABLE IF NOT EXISTS inventory_transfer_receipts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, uuid TEXT UNIQUE NOT NULL, transfer_uuid TEXT NOT NULL,
+  source_branch_uuid TEXT NOT NULL, destination_branch_uuid TEXT NOT NULL, local_branch_id INTEGER NOT NULL REFERENCES branches(id),
+  received_by INTEGER REFERENCES users(id), notes TEXT, received_at TEXT NOT NULL DEFAULT (datetime('now')),
+  created_at TEXT NOT NULL DEFAULT (datetime('now')), updated_at TEXT NOT NULL DEFAULT (datetime('now')), synced INTEGER NOT NULL DEFAULT 0,
+  UNIQUE(transfer_uuid)
+);
+CREATE TABLE IF NOT EXISTS inventory_transfer_receipt_items (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, receipt_id INTEGER NOT NULL REFERENCES inventory_transfer_receipts(id) ON DELETE CASCADE,
+  product_uuid TEXT NOT NULL, quantity_received REAL NOT NULL CHECK(quantity_received > 0), UNIQUE(receipt_id, product_uuid)
+);
+
+
+-- =========================
+-- Payroll V2 (current through schema v15)
+-- =========================
+CREATE TABLE IF NOT EXISTS payroll_employees (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  uuid TEXT UNIQUE NOT NULL,
+  branch_id INTEGER NOT NULL REFERENCES branches(id),
+  full_name TEXT NOT NULL,
+  job_title TEXT NOT NULL,
+  pay_type TEXT NOT NULL DEFAULT 'monthly' CHECK(pay_type IN ('monthly','daily','hourly')),
+  pay_rate REAL NOT NULL DEFAULT 0 CHECK(pay_rate >= 0),
+  pay_rate_minor INTEGER NOT NULL DEFAULT 0,
+  is_active INTEGER NOT NULL DEFAULT 1,
+  legacy_user_id INTEGER REFERENCES users(id),
+  terminated_at TEXT,
+  termination_reason TEXT,
+  national_id TEXT,
+  hire_date TEXT,
+  phone TEXT,
+  department TEXT,
+  iban TEXT,
+  country_code TEXT,
+  payroll_notes TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  synced INTEGER NOT NULL DEFAULT 0,
+  UNIQUE(branch_id, legacy_user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_payroll_employees_branch_active
+  ON payroll_employees(branch_id, is_active, full_name);
+
+CREATE TABLE IF NOT EXISTS payroll_months (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  uuid TEXT UNIQUE NOT NULL,
+  branch_id INTEGER NOT NULL REFERENCES branches(id),
+  month_key TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'open' CHECK(status IN ('open','paid')),
+  closed_at TEXT,
+  closed_by INTEGER REFERENCES users(id),
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  synced INTEGER NOT NULL DEFAULT 0,
+  UNIQUE(branch_id, month_key)
+);
+
+CREATE TABLE IF NOT EXISTS payroll_employee_months (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  month_id INTEGER NOT NULL REFERENCES payroll_months(id) ON DELETE CASCADE,
+  employee_id INTEGER NOT NULL REFERENCES payroll_employees(id),
+  pay_type TEXT NOT NULL,
+  pay_rate REAL NOT NULL DEFAULT 0,
+  base_amount REAL NOT NULL DEFAULT 0,
+  base_amount_minor INTEGER NOT NULL DEFAULT 0,
+  regular_hours REAL NOT NULL DEFAULT 0,
+  absence_days REAL NOT NULL DEFAULT 0,
+  absence_deduction REAL NOT NULL DEFAULT 0,
+  bonus_total REAL NOT NULL DEFAULT 0,
+  deduction_total REAL NOT NULL DEFAULT 0,
+  advance_total REAL NOT NULL DEFAULT 0,
+  overtime_total REAL NOT NULL DEFAULT 0,
+  net_salary REAL NOT NULL DEFAULT 0,
+  net_salary_minor INTEGER NOT NULL DEFAULT 0,
+  start_date TEXT,
+  debt_carry REAL NOT NULL DEFAULT 0,
+  debt_carry_minor INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  synced INTEGER NOT NULL DEFAULT 0,
+  UNIQUE(month_id, employee_id)
+);
+CREATE INDEX IF NOT EXISTS idx_payroll_employee_months_month
+  ON payroll_employee_months(month_id);
+
+CREATE TABLE IF NOT EXISTS payroll_transactions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  uuid TEXT UNIQUE NOT NULL,
+  branch_id INTEGER NOT NULL REFERENCES branches(id),
+  month_id INTEGER NOT NULL REFERENCES payroll_months(id) ON DELETE CASCADE,
+  employee_id INTEGER NOT NULL REFERENCES payroll_employees(id),
+  type TEXT NOT NULL CHECK(type IN ('absence','advance','bonus','deduction','overtime','hours')),
+  amount REAL NOT NULL DEFAULT 0 CHECK(amount >= 0),
+  amount_minor INTEGER NOT NULL DEFAULT 0,
+  quantity REAL NOT NULL DEFAULT 1 CHECK(quantity >= 0),
+  event_date TEXT NOT NULL,
+  reason TEXT,
+  created_by INTEGER REFERENCES users(id),
+  cash_movement_id INTEGER REFERENCES cash_movements(id),
+  overtime_multiplier REAL NOT NULL DEFAULT 1.5,
+  overtime_hours REAL NOT NULL DEFAULT 0,
+  synced INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_payroll_transactions_overtime ON payroll_transactions(month_id,employee_id,type,event_date);
+CREATE INDEX IF NOT EXISTS idx_payroll_transactions_month_employee
+  ON payroll_transactions(month_id, employee_id, event_date, id);
+
+CREATE TABLE IF NOT EXISTS payroll_advances (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  uuid TEXT UNIQUE NOT NULL,
+  branch_id INTEGER NOT NULL REFERENCES branches(id),
+  employee_id INTEGER NOT NULL REFERENCES payroll_employees(id),
+  principal REAL NOT NULL CHECK(principal > 0),
+  principal_minor INTEGER NOT NULL DEFAULT 0 CHECK(principal_minor > 0),
+  installment_count INTEGER NOT NULL DEFAULT 1 CHECK(installment_count BETWEEN 1 AND 36),
+  installment_amount REAL NOT NULL CHECK(installment_amount > 0),
+  installment_amount_minor INTEGER NOT NULL DEFAULT 0 CHECK(installment_amount_minor > 0),
+  first_deduction_month TEXT NOT NULL,
+  reason TEXT,
+  cash_movement_id INTEGER REFERENCES cash_movements(id),
+  created_by INTEGER REFERENCES users(id),
+  status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','completed')),
+  synced INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_payroll_advances_branch_employee_status
+  ON payroll_advances(branch_id, employee_id, status, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS payroll_advance_installments (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  advance_id INTEGER NOT NULL REFERENCES payroll_advances(id) ON DELETE CASCADE,
+  month_key TEXT NOT NULL,
+  installment_no INTEGER NOT NULL,
+  amount REAL NOT NULL CHECK(amount > 0),
+  amount_minor INTEGER NOT NULL DEFAULT 0 CHECK(amount_minor > 0),
+  synced INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE(advance_id, installment_no),
+  UNIQUE(advance_id, month_key)
+);
+CREATE INDEX IF NOT EXISTS idx_payroll_advance_installments_month
+  ON payroll_advance_installments(month_key, advance_id);
+
+CREATE TABLE IF NOT EXISTS payroll_payments (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  uuid TEXT UNIQUE NOT NULL,
+  branch_id INTEGER NOT NULL REFERENCES branches(id),
+  month_id INTEGER NOT NULL REFERENCES payroll_months(id),
+  employee_id INTEGER NOT NULL REFERENCES payroll_employees(id),
+  amount REAL NOT NULL CHECK(amount > 0),
+  amount_minor INTEGER NOT NULL DEFAULT 0,
+  method TEXT NOT NULL CHECK(method IN ('cash','bank','other')),
+  payment_date TEXT NOT NULL,
+  reference TEXT,
+  notes TEXT,
+  created_by INTEGER REFERENCES users(id),
+  cash_movement_id INTEGER REFERENCES cash_movements(id),
+  synced INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE(branch_id, uuid)
+);
+CREATE INDEX IF NOT EXISTS idx_payroll_payments_month_employee
+  ON payroll_payments(branch_id, month_id, employee_id, payment_date, id);
+CREATE INDEX IF NOT EXISTS idx_payroll_payments_cash_movement
+  ON payroll_payments(cash_movement_id);
+
+CREATE TABLE IF NOT EXISTS payroll_advance_payments (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  uuid TEXT UNIQUE NOT NULL,
+  branch_id INTEGER NOT NULL REFERENCES branches(id),
+  advance_id INTEGER NOT NULL REFERENCES payroll_advances(id) ON DELETE CASCADE,
+  payment_type TEXT NOT NULL CHECK(payment_type IN ('direct','salary')),
+  amount REAL NOT NULL CHECK(amount > 0),
+  amount_minor INTEGER NOT NULL CHECK(amount_minor > 0),
+  payment_date TEXT NOT NULL,
+  method TEXT,
+  reference TEXT,
+  notes TEXT,
+  cash_movement_id INTEGER REFERENCES cash_movements(id),
+  created_by INTEGER REFERENCES users(id),
+  voided_at TEXT,
+  void_reason TEXT,
+  synced INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_payroll_advance_payments_advance_date
+  ON payroll_advance_payments(advance_id, payment_date, id);
+
+CREATE TABLE IF NOT EXISTS payroll_advance_payment_allocations (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  payment_id INTEGER NOT NULL REFERENCES payroll_advance_payments(id) ON DELETE CASCADE,
+  installment_id INTEGER NOT NULL REFERENCES payroll_advance_installments(id) ON DELETE CASCADE,
+  amount REAL NOT NULL CHECK(amount > 0),
+  amount_minor INTEGER NOT NULL CHECK(amount_minor > 0),
+  synced INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE(payment_id, installment_id)
+);
+CREATE INDEX IF NOT EXISTS idx_payroll_advance_allocations_installment
+  ON payroll_advance_payment_allocations(installment_id);
+
+CREATE TABLE IF NOT EXISTS payroll_final_settlements (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  uuid TEXT UNIQUE NOT NULL,
+  branch_id INTEGER NOT NULL REFERENCES branches(id),
+  employee_id INTEGER NOT NULL REFERENCES payroll_employees(id),
+  month_id INTEGER NOT NULL REFERENCES payroll_months(id),
+  settlement_date TEXT NOT NULL,
+  gross_earned REAL NOT NULL DEFAULT 0,
+  deductions REAL NOT NULL DEFAULT 0,
+  advance_balance REAL NOT NULL DEFAULT 0,
+  additional_compensation REAL NOT NULL DEFAULT 0,
+  net_due REAL NOT NULL DEFAULT 0,
+  paid_amount REAL NOT NULL DEFAULT 0,
+  gross_earned_minor INTEGER NOT NULL DEFAULT 0,
+  deductions_minor INTEGER NOT NULL DEFAULT 0,
+  advance_balance_minor INTEGER NOT NULL DEFAULT 0,
+  additional_compensation_minor INTEGER NOT NULL DEFAULT 0,
+  net_due_minor INTEGER NOT NULL DEFAULT 0,
+  paid_amount_minor INTEGER NOT NULL DEFAULT 0,
+  method TEXT NOT NULL CHECK(method IN ('cash','bank','other')),
+  cash_movement_id INTEGER REFERENCES cash_movements(id),
+  notes TEXT,
+  created_by INTEGER REFERENCES users(id),
+  status TEXT NOT NULL DEFAULT 'paid' CHECK(status IN ('paid','voided')),
+  voided_at TEXT,
+  void_reason TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  synced INTEGER NOT NULL DEFAULT 0,
+  UNIQUE(branch_id, uuid)
+);
+CREATE INDEX IF NOT EXISTS idx_payroll_final_settlements_employee_date
+  ON payroll_final_settlements(branch_id, employee_id, settlement_date DESC, id DESC);
+CREATE INDEX IF NOT EXISTS idx_payroll_final_settlements_month
+  ON payroll_final_settlements(branch_id, month_id, settlement_date DESC);
+
+

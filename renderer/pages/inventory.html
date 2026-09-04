@@ -47,6 +47,7 @@
         <div class="tabs">
           <button id="tabStockBtn" class="tab-btn active">الكميات</button>
           <button id="tabMovementsBtn" class="tab-btn">سجل الحركة</button>
+          <button id="tabTransfersBtn" class="tab-btn">تحويلات الفروع</button>
         </div>
       </div>
 
@@ -91,6 +92,24 @@
       </div>
 
       <!-- تبويب سجل الحركة -->
+      <div id="transfersTab" style="display:none">
+        <div class="page-header" style="margin-bottom:12px">
+          <div>
+            <h2 style="margin:0">تحويلات المخزون بين الفروع</h2>
+            <div class="muted">الشحن يخصم من الفرع المرسل، والاستلام يضيف للمستلم بشكل ذري.</div>
+          </div>
+          <div class="row-actions">
+            <button id="addTransferBranchBtn" class="btn btn-secondary">إضافة فرع</button>
+            <button id="newTransferBtn" class="btn btn-primary">تحويل مخزون</button>
+          </div>
+        </div>
+        <table class="products-table">
+          <thead><tr><th>التاريخ</th><th>الاتجاه</th><th>الفرع المقابل</th><th>الأصناف</th><th>الحالة</th><th></th></tr></thead>
+          <tbody id="transfersTableBody"></tbody>
+        </table>
+        <div id="transfersEmptyState" class="empty-state" style="display:none">لا توجد تحويلات مسجلة.</div>
+      </div>
+
       <div id="movementsTab" style="display:none">
         <table class="products-table">
           <thead>
@@ -106,6 +125,43 @@
         </table>
         <div id="movementsEmptyState" class="empty-state" style="display:none">لا توجد حركات مسجّلة بعد.</div>
       </div>
+    </div>
+  </div>
+
+  <!-- نافذة إنشاء تحويل -->
+  <div id="transferModal" class="modal-overlay hidden">
+    <div class="modal">
+      <h2>تحويل مخزون إلى فرع آخر</h2>
+      <form id="transferForm">
+        <div class="form-grid">
+          <div class="form-field full"><label>الفرع المستلم</label><select id="transferDestination" required></select></div>
+          <div class="form-field"><label>المنتج</label><select id="transferProduct" required></select></div>
+          <div class="form-field"><label>الكمية</label><input id="transferQuantity" type="number" min="0.01" step="0.01" required /></div>
+          <div class="form-field full"><div id="transferAvailableHint" class="muted">—</div></div>
+          <div class="form-field full"><label>ملاحظات</label><input id="transferNotes" type="text" maxlength="500" placeholder="اختياري" /></div>
+        </div>
+        <div class="modal-actions">
+          <button type="button" id="addTransferItemBtn" class="btn btn-secondary">إضافة للصرف</button>
+          <button type="button" id="cancelTransferBtn" class="btn btn-secondary">إلغاء</button>
+          <button type="submit" id="saveTransferBtn" class="btn btn-primary">شحن التحويل</button>
+        </div>
+        <div style="margin-top:14px"><strong>بنود التحويل</strong><div id="transferDraftItems" class="muted" style="margin-top:8px">لم تتم إضافة أصناف.</div></div>
+      </form>
+    </div>
+  </div>
+
+  <!-- نافذة إضافة فرع -->
+  <div id="transferBranchModal" class="modal-overlay hidden">
+    <div class="modal">
+      <h2>إضافة فرع للاستلام</h2>
+      <form id="transferBranchForm">
+        <div class="form-grid">
+          <div class="form-field"><label>معرف الفرع</label><input id="transferBranchUuid" required maxlength="64" pattern="[A-Za-z0-9_-]+" /></div>
+          <div class="form-field"><label>اسم الفرع</label><input id="transferBranchName" required maxlength="120" /></div>
+          <div class="form-field full"><label>ملاحظات</label><input id="transferBranchNotes" maxlength="500" /></div>
+        </div>
+        <div class="modal-actions"><button type="button" id="cancelTransferBranchBtn" class="btn btn-secondary">إلغاء</button><button type="submit" class="btn btn-primary">حفظ الفرع</button></div>
+      </form>
     </div>
   </div>
 

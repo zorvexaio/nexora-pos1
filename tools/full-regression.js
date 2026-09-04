@@ -26,9 +26,15 @@ if (spawnSync(process.execPath, [path.join(root, 'tools', 'security-regression.j
 if (spawnSync(process.execPath, [path.join(root, 'tools', 'payroll-regression.js')], { stdio: 'inherit' }).status !== 0) failed++;
 if (spawnSync(process.execPath, [path.join(root, 'tools', 'deep-regression.js')], { stdio: 'inherit' }).status !== 0) failed++;
 if (spawnSync(process.execPath, [path.join(root, 'tools', 'v0.21-regression.js')], { stdio: 'inherit' }).status !== 0) failed++;
-if (spawnSync(process.execPath, [path.join(root, 'tools', 'users-delete-regression.js')], { stdio: 'inherit' }).status !== 0) failed++;
-
 const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
+const nativeModulePath = path.join(root, 'node_modules', 'better-sqlite3-multiple-ciphers');
+const nativeReady = fs.existsSync(path.join(nativeModulePath, 'package.json')) && fs.readdirSync(nativeModulePath).some((name) => /\.node$/.test(name));
+if (nativeReady) {
+  if (spawnSync(process.execPath, [path.join(root, 'tools', 'users-delete-regression.js')], { stdio: 'inherit' }).status !== 0) failed++;
+} else {
+  console.warn('SKIP runtime regression: better-sqlite3-multiple-ciphers is not installed in this environment. Run npm ci and native/Electron release tests on the release machine.');
+}
+
 for (const [section, dep] of [
   ['dependencies', 'better-sqlite3-multiple-ciphers'],
   ['devDependencies', 'electron'],

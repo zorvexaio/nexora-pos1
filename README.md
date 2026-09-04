@@ -1,8 +1,26 @@
-# Nexora POS — v0.46.0
+# Nexora POS — v0.52.1
+
+## v0.52.1 — Release correction
+
+- توحيد رقم الإصدار في ملفات الحزمة والتوثيق وملف النسخة.
+- تحديث `database/schema.sql` ليشمل مخطط Payroll V2 الحالي حتى schema v15.
+- إضافة تحقق SQLite فعلي لمخطط Payroll V2 بدل الاعتماد على البحث النصي فقط.
+- يتضمن الإصدار تصحيح اتساق الإصدار ومصدر المخطط، وتقوية Payroll V2 مالياً وتشغيلياً، واختبارات التكامل والتصدير والطباعة.
+
+
+## v0.48.3 — Payroll & Advances
+
+- Added explicit salary-payment records with cash/bank/other methods.
+- Cash salary payments are linked to the active register cash-out.
+- Salary payments are capped at the employee remaining net salary.
+- A payroll month closes automatically after all active employees are fully paid.
+- Paid payroll months reject edits to payroll movements.
+- Payroll details expose paid and remaining salary and payment history.
+- Existing employee advances remain deductions from net salary; optional immediate cash advances remain linked to register cash-out.
 
 ## الإصدار الحالي — تحديثات آمنة وحماية بيانات العميل
 
-هذه الحزمة هي الإصدار المرجعي الكامل **v0.46.0**. تضيف مسار تحديث من GitHub Releases لا يستبدل بيانات العميل أو إعداداته.
+هذه الحزمة هي الإصدار المرجعي الكامل **v0.52.1**. وهي إصدار تصحيحي يحافظ على بيانات العميل وإعداداته أثناء التحديث.
 
 - قاعدة البيانات والملفات الدائمة تبقى داخل Electron `userData`، خارج مجلد التثبيت القابل للاستبدال.
 - التحديث يتحقق تلقائياً فقط؛ تنزيله وتثبيته يتطلبان موافقة المدير.
@@ -12,7 +30,7 @@
 
 ## تحقق الإصدار
 
-تم اجتياز اختبارات المصدر والتراجع الثابتة الخاصة بالإصدار، بما فيها فحص 111 ملف JavaScript، اختبارات Payroll V2، Deep Regression، Release Preflight، Runtime Export، Windows Structure، Release Metadata، Client Event Hardening وSecurity Regression.
+تم اجتياز فحوصات المصدر والتراجع الثابتة الخاصة بالإصدار، مع بوابة قبول تفصل صراحةً بين Source/Engineering وNative/Windows/Commercial. لا يُعتبر التشغيل الفعلي أو توقيع Windows مثبتاً من داخل بيئة المصدر.
 
 اختبار SQLite/Electron التنفيذي الكامل يحتاج بيئة Windows/Electron فعلية أو تثبيت الـnative binary المطابق لـ`better-sqlite3-multiple-ciphers`. لذلك لا تعتبر هذه الوثيقة اختبارًا للأجهزة الفعلية أو installer نفسه.
 
@@ -32,7 +50,7 @@
 - Added stable UUID/sync migration for legacy inventory and supplier ledgers.
 - Added a sync mutex to prevent overlapping background/manual sync operations and cursor races.
 - Branch-safe reconstruction of synced foreign keys; user identity is mapped by username without synchronizing password/PIN material.
-- Electron 43.4.1, encrypted SQLite 13.0.3, electron-updater 6.8.9, electron-builder 26.15.7.
+- Electron 44.2.0, encrypted SQLite 13.0.3, electron-updater 6.8.9, electron-builder 26.15.7.
 
 Nexora POS v0.15.0 — Stability hardened
 
@@ -93,7 +111,7 @@ Nexora POS v0.15.0 — Stability hardened
 - تذكرة المطبخ (Kitchen Ticket) لا تعرض أي أسعار — فقط اسم الصنف والكمية — للطباعة الآمنة بالمطبخ.
 - تقرير الربح والخسارة (P&L)، كشف حساب/ديون العملاء، وتفصيل ربح الدليفري لكل مندوب — كلها جاهزة من شاشة التقارير والعملاء.
 
-بعد تحديث الاعتماديات شغّل `npm install` ثم `npm run rebuild` قبل تشغيل Electron محلياً.
+لإعادة بناء البيئة من الصفر استخدم `npm ci` ثم `npm run rebuild`، أو مباشرة `npm run setup` الذي ينفذ التثبيت وإعادة البناء وفحص SQLite native.
 
 بديل محلي لـ Odoo يخدم: المطاعم، المتاجر، السوبر ماركت، متاجر الأزياء.
 
@@ -111,7 +129,7 @@ retail-pos-app/
 ├── database/
 │   ├── schema.sql            # مخطط الجداول الكامل
 │   └── db.js                 # كل عمليات القراءة/الكتابة (مبيعات، تقارير، نسخ احتياطي...)
-├── license/
+├── licensing/
 │   └── license.js            # توليد بصمة الجهاز + التحقق من توقيع ملف الترخيص (Ed25519)
 ├── tools/
 │   ├── generate-license.js   # أداة CLI لتوليد مفاتيح Ed25519 وإصدار ملفات .lic للعملاء
@@ -206,14 +224,14 @@ npm start
   - **ناقص لإكمال هذا البند**: محتوى بقية الشاشات (المنتجات/المخزون/التقارير/العملاء/الطاولات/المستخدمين/الإعدادات/المرتجعات/الوردية) — نفس نمط `data-i18n` / `STATIC_TRANSLATIONS` يُطبَّق تدريجياً
 - [x] **الجزء 6**: المزامنة مع سيرفر مركزي (متعدد الفروع) — `server/sync-server.js` + `database/sync-client.js` + إعدادات الخادم/التفعيل بشاشة الإعدادات (`syncForm`, `syncNowBtn`). البروتوكول موثّق بـ`docs/CENTRAL_SYNC_PROTOCOL.md`.
   - **نطاق التغطية الحالي (v0.22.0)**: `categories, products, restaurant_tables, products, customers, inventory, sales, sale_items, payments, cash_movements, shifts, inventory_movements, suppliers, supplier_ledger, purchase_orders, returns, bundles, customer_ledger, tax_profiles` مع ترتيب اعتماديات صحيح داخل `db.applyRemoteChanges`.
-  - **لا تُزامَن بعد بين الفروع**: الحزم (`bundles`)، الموردون والمشتريات (`suppliers`, `purchase_orders`)، المرتجعات، الطاولات، الورديات، دفتر حساب العميل. توسيع النطاق يحتاج أولاً تحديد **سياسة تعارض البيانات (conflict resolution)** لهذه الجداول — مثلاً هل حالة الطاولة أو الوردية آخر-كتابة-تفوز مقبولة، أم تحتاج قفلاً لكل فرع — قبل التنفيذ، وليس مجرد إضافتها لـ`syncPayload`.
+  - **نطاق المزامنة الحالي فعلياً** يشمل الحزم والموردين والمشتريات والمرتجعات والطاولات والورديات ودفتر العميل والرصيد المتجرّي وملفات الضرائب. لا تُزامَن كلمات المرور/PINs للمستخدمين، ولا تُعامل الرواتب والسجلات المحاسبية ككيانات مزامنة بين الفروع في الإصدار الحالي؛ هذه بيانات تحتاج سياسة مركزية مستقلة قبل ربطها.
 - [x] **وضع داكن/فاتح** — `renderer/common.js` (`setupThemeToggle`) + `renderer/style.css` (`body[data-theme="dark"]`)، محفوظ مركزياً عبر `theme:get`/`theme:set`.
 - [x] **تصدير التقارير Excel/PDF** — `main.js` (`reports:exportExcel`, `reports:exportPdf`) + `database/report-exporter.js` من شاشة التقارير.
 - [x] **تشفير قاعدة البيانات نفسها** — `better-sqlite3-multiple-ciphers` (cipher `chacha20`) بمفتاح عشوائي مخزَّن عبر `safeStorage`؛ الترقية التلقائية من قاعدة قديمة غير مشفّرة تحتفظ بنسخة `pos.db.pre-encryption-backup`.
 - [x] **الحزم/العروض والموردون والمشتريات** (لم تكونا موثّقتين سابقاً رغم وجودهما بالكود):
   - **الحزم** (`pages/bundles.html/js` + جدولا `bundles`, `bundle_items`) — admin/manager: تجميع أكثر من منتج بخصم نسبة أو مبلغ ثابت، تُعرض بالكاشير كخيار حزمة جاهزة.
   - **الموردون والمشتريات** (`pages/suppliers.html/js` + `suppliers`, `supplier_ledger`, `purchase_orders`, `purchase_order_items`) — admin/manager: بيانات مورد ورصيده، أمر شراء بعدة بنود، واستلام أمر الشراء يحدّث المخزون والتكلفة تلقائياً.
-- [ ] **بنود مستقبلية أكبر** (خارج نطاق "نقطة بيع" وتقترب من ERP كامل — راجع قسم "أين تقف مقارنة بأودو" أدناه): محاسبة قيد مزدوج كاملة، تسوية بنكية، رواتب، تصنيع/BOM متقدم، تعدد عملات، امتثال ضريبي محلي. (فواتير الموردين والمشتريات الأساسية أصبحت موجودة — أُزيلت من هذا البند وانتقلت أعلاه.)
+- [ ] **بنود توسعة ERP مستقبلية**: تسوية بنكية، تصنيع/BOM متقدم، تكاملات دفع طرف ثالث، امتثال ضريبي محلي معتمد. **المحاسبة الأساسية والرواتب وتعدد العملات الأساسية موجودة في النسخة الحالية**؛ لكنها ليست بديلاً عن ERP أو اعتماد ضريبي محلي. (فواتير الموردين والمشتريات الأساسية أصبحت موجودة — أُزيلت من هذا البند وانتقلت أعلاه.)
 
 ## قاعدة البيانات (ملخص الجداول)
 `branches, users, categories, products, inventory, restaurant_tables, customers, customer_ledger, suppliers, supplier_ledger, purchase_orders, purchase_order_items, bundles, bundle_items, sales, sale_items, inventory_movements, returns, return_items, shifts, audit_logs, app_settings`
@@ -256,7 +274,7 @@ npm start
 - جلسات الصندوق اختيارية ولا تمنع البيع.
 - تشديد عزل جلسات الصندوق والمرتجعات وواجهات القراءة الحساسة خلف جلسة المستخدم.
 - رفض قيم شراء غير صالحة، مع منع دفع مبلغ يتجاوز إجمالي الشراء.
-- تحديث خط الأساس للتبعيات: Electron 43.4.0، electron-builder 26.15.7، وbetter-sqlite3-multiple-ciphers 13.0.3 (نسخ مستقرة متاحة حتى 22 أغسطس 2026).
+- تحديث خط الأساس للتبعيات: Electron 44.2.0، electron-builder 26.15.7، وbetter-sqlite3-multiple-ciphers 13.0.3 (نسخ مستقرة متاحة حتى 22 أغسطس 2026).
 - يجب إعادة توليد lockfile في بيئة بناء متصلة قبل إصدار installer بعد ترقية التبعيات.
 
 

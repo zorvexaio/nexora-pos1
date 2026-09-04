@@ -1,5 +1,6 @@
 param(
-  [Parameter(Mandatory=$true)][string]$Installer
+  [Parameter(Mandatory=$true)][string]$Installer,
+  [switch]$RequireSignature
 )
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
@@ -8,3 +9,9 @@ $Hash = Get-FileHash -LiteralPath $Installer -Algorithm SHA256
 Write-Host "Installer: $Installer"
 Write-Host "Size: $([math]::Round((Get-Item $Installer).Length/1MB,2)) MB"
 Write-Host "SHA-256: $($Hash.Hash)"
+
+$Signature = Get-AuthenticodeSignature -LiteralPath $Installer
+Write-Host "Authenticode status: $($Signature.Status)"
+if ($RequireSignature -and $Signature.Status -ne 'Valid') {
+  throw "Installer Authenticode signature is not valid: $($Signature.Status)"
+}

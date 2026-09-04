@@ -5,7 +5,13 @@
    conflicting !important wars.
    ========================================================================== */
 
-@import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700;800&display=swap');
+/* ملاحظة: أُزيل استيراد Google Fonts الخارجي (@import) لأنه:
+   1) يخالف سياسة الأمان الفعلية في التطبيق (CSP هنا تسمح فقط بـ style-src/font-src 'self')،
+      أي أن الطلب كان سيُحظَر من المتصفح دائماً ولا يعمل أصلاً.
+   2) يتعارض مع كون التطبيق "offline-first" — نقطة بيع قد تعمل بلا إنترنت في المتجر.
+   البديل الصحيح إن أردنا خطي Cairo/Inter فعلاً: تنزيل ملفات .woff2 ووضعها محلياً تحت
+   assets/fonts/ ثم تعريفها عبر @font-face محلي، وإضافتها إلى السلسلة الاحتياطية بالأسفل.
+   حالياً السلسلة الاحتياطية (Segoe UI/Tahoma/Arial) تدعم العربية بشكل جيد وتُستخدم فعلياً. */
 
 /* ---------------------------------------------------------------------- */
 /* Design tokens                                                          */
@@ -241,7 +247,7 @@ label { display: block; font-size: 12.5px; font-weight: 700; color: var(--text-s
 
 .cart-panel {
   width: 380px; flex-shrink: 0; background: var(--surface); border-inline-start: 1px solid var(--line);
-  display: flex; flex-direction: column; padding: 18px; overflow: hidden;
+  display: flex; flex-direction: column; padding: 18px; overflow-y: auto; overflow-x: hidden;
 }
 .cart-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
 .section-kicker { font-size: 10.5px; font-weight: 800; color: var(--brand-gold); letter-spacing: .12em; }
@@ -314,7 +320,7 @@ label { display: block; font-size: 12.5px; font-weight: 700; color: var(--text-s
 .cart-summary .row.total { font-size: 18px; font-weight: 800; color: var(--text); border-top: 1px solid var(--line); margin-top: 6px; padding-top: 10px; }
 
 .checkout-btn {
-  width: 100%; margin-top: 12px; padding: 15px; border: 0; border-radius: var(--radius);
+  width: 100%; margin-top: 0; padding: 15px; border: 0; border-radius: var(--radius);
   background: linear-gradient(135deg, var(--brand-indigo), var(--brand-indigo-dark)); color: #fff;
   font-size: 16px; font-weight: 800; cursor: pointer; box-shadow: 0 10px 24px rgba(67, 56, 202, .32);
   transition: transform .12s ease;
@@ -322,6 +328,15 @@ label { display: block; font-size: 12.5px; font-weight: 700; color: var(--text-s
 .checkout-btn:hover:not(:disabled) { transform: translateY(-1px); }
 .checkout-btn:disabled { background: var(--line-strong); box-shadow: none; cursor: not-allowed; color: var(--text-faint); }
 .checkout-hint { text-align: center; font-size: 11px; color: var(--text-faint); margin-top: 6px; }
+/* شريط ثابت أسفل قسم السلة يحتوي زر إتمام البيع: يبقى ظاهراً دائماً مهما طال
+   محتوى السلة (خيارات توصيل/ملاحظة/خصم) أو صغر ارتفاع نافذة التطبيق، بدل أن
+   يُقتطع خارج الشاشة بدون أي طريقة للوصول إليه. الخلفية معتّمة (نفس خلفية
+   اللوحة) حتى لا يظهر محتوى السلة من خلفه أثناء التمرير. الحجم الطبيعي للخط
+   يبقى كما هو دائماً، ولا يصغر عند تصغير النافذة. */
+.checkout-sticky-footer {
+  position: sticky; bottom: 0; z-index: 3; background: var(--surface);
+  padding-top: 12px; margin-top: 4px; flex-shrink: 0;
+}
 
 .business-picker { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 10px 0; }
 .business-option {
@@ -604,7 +619,6 @@ table.products-table, table.audit-table {
   .products-grid { max-height: 52vh; }
   .cart-panel { width: 100%; min-height: 430px; flex: 0 0 auto; overflow: visible; border-inline-start: none; border-top: 1px solid var(--line); }
   .cart-items { max-height: 42vh; flex: 0 1 auto; }
-  .checkout-btn { position: sticky; bottom: 10px; z-index: 2; }
 }
 @media (max-width: 560px) {
   .topbar-right { width: 100%; justify-content: space-between; margin-inline-start: 0; }

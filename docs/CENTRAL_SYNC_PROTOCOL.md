@@ -30,3 +30,8 @@ Request shape: `{ branch, cursor, changes }` with `Authorization: Bearer <branch
 The reference server is intentionally small so it can be replaced by an existing ERP/API with the same contract (keep the per-branch auth model and the ownership rules above if you do).
 
 Inventory in different branches stays separated by branch UUID. The current desktop UI keeps operating even if the server is unavailable; unsent records remain marked for the next sync.
+
+
+## تحويلات المخزون بين الفروع (v0.49.0)
+
+`inventory_transfers` مملوك للفرع المرسل و`inventory_transfer_receipts` مملوك للفرع المستلم، مع `source_branch_uuid` و`destination_branch_uuid` للتوجيه والتحقق من الملكية. الاستلام يزيد المخزون في الفرع المستلم ذريًا، والإلغاء قبل المزامنة فقط يعيد الكمية للفرع المرسل.

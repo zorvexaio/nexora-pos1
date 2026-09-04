@@ -1,0 +1,73 @@
+{
+  "generatedAt": "2026-09-04T18:01:29.445Z",
+  "version": "0.52.1",
+  "mode": "source",
+  "checks": [
+    {
+      "id": "source-version",
+      "status": "PASS",
+      "detail": "package version=0.52.1",
+      "blocking": true
+    },
+    {
+      "id": "node-engine",
+      "status": "PASS",
+      "detail": "required=>=22.12.0",
+      "blocking": true
+    },
+    {
+      "id": "migration-chain",
+      "status": "PASS",
+      "detail": "schema journal is v2..v15 and schema.sql contains Payroll V2",
+      "blocking": true
+    },
+    {
+      "id": "engineering-source-suite",
+      "status": "PASS",
+      "detail": "source regression suite passed",
+      "blocking": true
+    },
+    {
+      "id": "core-sha256",
+      "status": "PASS",
+      "detail": "6 manifest entries",
+      "blocking": true
+    },
+    {
+      "id": "native-runtime",
+      "status": "BLOCKED",
+      "detail": "native module is not installed; run npm run setup",
+      "blocking": false
+    },
+    {
+      "id": "windows-signing-config",
+      "status": "BLOCKED",
+      "detail": "not configured in this environment",
+      "blocking": false
+    },
+    {
+      "id": "revocation-config",
+      "status": "BLOCKED",
+      "detail": "NEXORA_REVOCATION_LIST_URL is not configured",
+      "blocking": false
+    },
+    {
+      "id": "license-key",
+      "status": "PASS",
+      "detail": "Ed25519 public key parses",
+      "blocking": true
+    },
+    {
+      "id": "windows-runtime",
+      "status": "BLOCKED",
+      "detail": "requires Windows machine: installer execution, printing, barcode, update and rollback",
+      "blocking": false
+    },
+    {
+      "id": "installer-signature",
+      "status": "BLOCKED",
+      "detail": "requires signed EXE and Get-AuthenticodeSignature on Windows",
+      "blocking": false
+    }
+  ]
+}

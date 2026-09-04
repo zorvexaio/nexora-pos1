@@ -20,19 +20,22 @@ Require-Command npm
 $nodeMajor = [int](node -p "process.versions.node.split('.')[0]")
 if ($nodeMajor -lt 22) { throw "Node.js 22+ is required. Detected: $(node -v)" }
 
-Write-Host "[1/6] Installing pinned dependencies..." -ForegroundColor Yellow
-npm install --no-audit --no-fund
+Write-Host "[1/7] Installing pinned dependencies..." -ForegroundColor Yellow
+npm ci --no-audit --no-fund
 
-Write-Host "[2/6] Rebuilding native SQLite dependency..." -ForegroundColor Yellow
+Write-Host "[2/7] Rebuilding native SQLite dependency..." -ForegroundColor Yellow
 npm run rebuild
 
-Write-Host "[3/6] Running complete verification suite..." -ForegroundColor Yellow
+Write-Host "[3/7] Running native SQLite runtime probe..." -ForegroundColor Yellow
+npm run verify:native
+
+Write-Host "[4/7] Running complete verification suite..." -ForegroundColor Yellow
 npm run check
 
-Write-Host "[4/6] Running release preflight..." -ForegroundColor Yellow
-node tools/release-preflight.js
+Write-Host "[5/7] Running signed-release preflight..." -ForegroundColor Yellow
+node tools/release-preflight.js --windows-signed
 
-Write-Host "[5/6] Building Windows NSIS installer..." -ForegroundColor Yellow
+Write-Host "[6/7] Building Windows NSIS installer..." -ForegroundColor Yellow
 npm run dist:win
 
 $Dist = Join-Path $Root 'dist'
@@ -40,9 +43,12 @@ if (-not (Test-Path $Dist)) { throw "Dist directory was not created: $Dist" }
 $Exe = Get-ChildItem $Dist -File -Filter '*.exe' | Sort-Object Length -Descending | Select-Object -First 1
 if (-not $Exe) { throw "No Windows .exe installer was produced under '$Dist'." }
 
-Write-Host "[6/6] Verifying installer artifact..." -ForegroundColor Yellow
+Write-Host "[7/7] Verifying signed installer artifact..." -ForegroundColor Yellow
 Write-Host "Installer: $($Exe.FullName)"
 Write-Host "Size: $([math]::Round($Exe.Length / 1MB, 2)) MB"
+$Sig = Get-AuthenticodeSignature -LiteralPath $Exe.FullName
+if ($Sig.Status -ne 'Valid') { throw "Installer Authenticode signature is not valid: $($Sig.Status)" }
+Write-Host "Authenticode: Valid" -ForegroundColor Green
 
 $Sha = Get-FileHash $Exe.FullName -Algorithm SHA256
 $ShaPath = "$($Exe.FullName).sha256"

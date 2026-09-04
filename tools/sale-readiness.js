@@ -11,7 +11,7 @@ function check(ok, label, detail = '') { if (!ok) failures.push(`${label}${detai
 function warn(ok, label, detail = '') { if (!ok) warnings.push(`${label}${detail ? ` — ${detail}` : ''}`); }
 function read(rel) { return fs.readFileSync(path.join(root, rel), 'utf8'); }
 
-check(/^0\.45\./.test(pkg.version), 'Release version must be 0.45.x', pkg.version);
+check(/^0\.(?:48|49|50|51|52)\./.test(pkg.version), 'Release version must be supported 0.48.x/0.49.x/0.50.x/0.51.x/0.52.x', pkg.version);
 check(read('VERSION').trim() === pkg.version, 'VERSION matches package.json');
 check(read('docs/VERSION.txt').trim() === `Nexora POS v${pkg.version}`, 'docs/VERSION.txt matches package.json');
 check(pkg.build?.appId === 'com.zorvexa.nexorapos', 'Stable application ID configured');

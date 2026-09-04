@@ -30,7 +30,7 @@ const { execFileSync } = require('child_process');
 // ------------------------------------------------------------------
 const PUBLIC_KEY_PEM = "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEA3yhTh9PCgRfdl43H+pgxKZwDBImduwTd9XWQmGzpGtg=\n-----END PUBLIC KEY-----\n";
 
-const REVOCATION_LIST_URL = '';
+const REVOCATION_LIST_URL = String(process.env.NEXORA_REVOCATION_LIST_URL || '').trim();
 
 const LICENSE_FILE_NAME = 'license.lic';
 const CRL_FILE_NAME = 'pos-crl.json';
@@ -147,7 +147,7 @@ function getOrCreateFallbackId(userDataPath) {
 function getDeviceFingerprint(userDataPath) {
   const stableId = readOsStableId();
   const raw = stableId || getOrCreateFallbackId(userDataPath || getDefaultUserDataPath());
-  const hash = crypto.createHash('sha256').update(`${raw}|${os.hostname()}|${process.platform}`).digest('hex').toUpperCase();
+  const hash = crypto.createHash('sha256').update(`${raw}|${process.platform}`).digest('hex').toUpperCase();
   const groups = hash.slice(0, 16).match(/.{1,4}/g);
   return groups.join('-');
 }

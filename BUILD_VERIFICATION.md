@@ -1,37 +1,82 @@
-# Nexora POS v0.45.12 — Final Release Verification
+# Nexora POS v0.52.1 — Build & Release Verification
 
-## Release
-- Version: `0.45.12`
-- `VERSION` = `0.45.12`
-- `package.json` = `0.45.12`
-- `package-lock.json` = `0.45.12`
+## حالة الإصدار
+**Engineering Source Release / Release Candidate — غير مثبت تجارياً بعد.**
 
-## Payroll V2
-- Payroll workers are independent from `users`.
-- New payroll workers do not receive login credentials/PINs.
-- No Payroll V2 open/approve/pay lifecycle is exposed.
-- Transactions: absence, advance, deduction, overtime, bonus.
-- Net salary is recalculated after movement changes.
-- Duplicate absence on the same employee/date is rejected.
-- Inactive workers retain historical payroll records.
+هذه الوثيقة تفصل بوضوح بين فحص المصدر وبين اختبار التشغيل الحقيقي. لا يكفي نجاح `node --check` أو regression source scripts لإثبات عمل Electron/SQLite native أو Windows installer.
 
-## Startup hotfix
-The legacy payroll-worker migration now binds exactly eight values for:
-`uuid, branch_id, full_name, job_title, pay_type, pay_rate, is_active, legacy_user_id`.
+### البيئة المرجعية
+- Version: `0.52.1`
+- Node.js build requirement: `>=22.12.0`
+- Electron: `44.2.0`
+- Encrypted SQLite: `better-sqlite3-multiple-ciphers 13.0.3`
+- Updater: `electron-updater 6.8.9`
+- Builder: `electron-builder 26.15.7`
+- Schema target: `15`
+- Immutable migration journal: `v2..v15` (14 migrations)
 
-This removes the reported `Too many parameter values were provided` startup failure.
+## ما تم إثباته في بيئة المصدر الحالية
+- `npm run test:engineering` = PASS لفحوصات المصدر والمنطق والـsecurity/financial/regression.
+- `npm run test:migrations` = PASS.
+- Core SHA256 manifest = PASS.
+- JavaScript syntax = PASS.
+- CSP/Electron security preflight = PASS.
+- `npm run test:acceptance` = PASS مع BLOCKED gates غير محلية موضحة أدناه.
 
-## Automated validation completed
-- `node tools/payroll-regression.js` — PASS (18/18)
-- `node tools/deep-regression.js` — PASS (15/15)
-- `node tools/full-regression.js` — PASS (111 JS files syntax-checked)
-- `node tools/release-preflight.js` — PASS
-- `node tools/windows-structure-regression.js` — PASS
-- `node tools/release-metadata-regression.js` — PASS
-- `node tools/runtime-export-regression.js` — PASS
-- `node tools/client-event-hardening-regression.js` — PASS
-- `node tools/security-regression.js` — PASS
-- `node tools/v0.21-regression.js` — PASS (18/18)
+## ما لا يُعتبر مثبتاً هنا
+- `better-sqlite3-multiple-ciphers` native ABI داخل Electron.
+- فتح/تعديل قاعدة البيانات المشفرة داخل Electron الحقيقي.
+- Windows NSIS installer execution.
+- Authenticode signature وSmartScreen.
+- طابعة حرارية، قارئ باركود، cash drawer.
+- auto-update من build مثبت سابقاً مع حفظ بيانات العميل.
+- مزامنة جهازين/فرعين عبر endpoint إنتاجي.
 
-## Environment limitation
-A full real SQLite/Electron process test could not be executed in this Linux validation environment because the native `better-sqlite3-multiple-ciphers` runtime binary is not available. The source-level regression covers the exact binding mismatch that caused the reported startup error, but this does not replace a final Windows installer/device test.
+## الأوامر الصحيحة
+### فحص المصدر
+```powershell
+npm ci --no-audit --no-fund
+npm run test:engineering
+npm run test:migrations
+npm run test:acceptance
+```
+
+### فحص native + Payroll Runtime
+```powershell
+npm run test:engineering:native
+```
+هذا الأمر **يجب** أن يعمل على جهاز اتصال حقيقي بالشبكة أو cache مكتمل للاعتماديات.
+
+### فحص أمان التبعيات
+```powershell
+npm run test:dependencies
+```
+
+### بوابة البيع التجاري
+```powershell
+npm run test:commercial-gate
+```
+هذه البوابة يجب أن تفشل حتى يتم توفير native runtime + شهادة توقيع Windows + endpoint إبطال تراخيص إنتاجي.
+
+## Windows Release
+```powershell
+$env:CSC_LINK = '<certificate-path-or-url>'
+$env:CSC_KEY_PASSWORD = '<certificate-password>'
+$env:NEXORA_REVOCATION_LIST_URL = 'https://<your-domain>/pos-crl.json'
+
+npm run release:win
+```
+
+بعد البناء يجب أن تكون نتيجة `Get-AuthenticodeSignature` للـEXE هي `Valid`.
+
+**ممنوع شحن `node_modules` الفارغة أو أي مفتاح توقيع خاص داخل الأرشيف.**
+
+## v0.48.3 Payroll Verification
+- Payroll lifecycle regression: PASS.
+- Salary payment capped at remaining net salary: PASS.
+- Cash salary requires open register shift: PASS.
+- Paid month blocks payroll mutations: PASS.
+- Payment history exposed through main/preload: PASS.
+- Full engineering regression: PASS.
+- Runtime limitation remains: native Electron/SQLite, Windows installer, signing, printer and updater require the real Windows release machine.
+

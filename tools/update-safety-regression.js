@@ -16,7 +16,7 @@ assert.match(main, /autoUpdater\.autoDownload\s*=\s*false/, 'Updates must never 
 assert.match(main, /autoUpdater\.autoInstallOnAppQuit\s*=\s*false/, 'Updates must not install on ordinary quit.');
 assert.match(main, /createUpgradeSnapshot\(`app-update-from-v\$\{app\.getVersion\(\)\}`\)/, 'Install must create a recovery snapshot first.');
 assert.match(main, /app\.getPath\('userData'\)/, 'Customer data must live outside the installation directory.');
-assert.match(db, /CURRENT_SCHEMA_VERSION\s*=\s*1/, 'A numeric schema version is required.');
+assert.match(db, /CURRENT_SCHEMA_VERSION\s*=\s*(?:10|11|12|13|14|15)/, 'A supported numeric schema version is required.');
 assert.match(db, /CREATE TABLE IF NOT EXISTS schema_migrations/, 'Migration journal creation is required.');
 assert.match(db, /db\.transaction\(\(\)\s*=>/, 'Schema changes must be transactional.');
 assert.match(db, /createUpgradeSnapshot/, 'Schema/application upgrades must snapshot data.');

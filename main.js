@@ -5,13 +5,16 @@ const fs = require('fs');
 const crypto = require('crypto');
 const { autoUpdater } = require('electron-updater');
 const license = require('./licensing/license');
-const { exportWorkbook } = require('./database/report-exporter');
+const { exportWorkbook, exportPayrollWorkbook } = require('./database/report-exporter');
 const { syncNow } = require('./database/sync-client');
 const { createSyncServer } = require('./server/sync-server');
 const { startBeacon, startListener, getLocalIPv4Addresses } = require('./server/lan-discovery');
 const { getOrCreateServerCert } = require('./server/lan-tls');
 const { pinnedRequest } = require('./server/pinned-request');
 const { captureWindowAndPrintNetwork } = require('./lib/network-print');
+const { assertPermission, permissionsForRole } = require('./core/permissions');
+const { FiscalizationRegistry } = require('./fiscalization');
+const fiscalizationRegistry = new FiscalizationRegistry();
 const PACKAGE_CONFIG = JSON.parse(fs.readFileSync(path.join(__dirname, 'package.json'), 'utf8'));
 
 // ملاحظة مهمة: electron-builder يحذف قسم "build" بالكامل (وبالتالي "publish")
@@ -409,6 +412,47 @@ function autoSendKitchen(saleId) {
   return printAutomatically('kitchen-ticket.html', saleId, 'kitchen_auto_print', 'kitchen_printer_name', 'kitchen', enabled, 'kitchen');
 }
 
+// نسخ احتياطي تلقائي يومي: لأن الاعتماد على ضغط زر يدوي من صاحب المحل يعني
+// عملياً "لا نسخ احتياطي على الإطلاق" في أغلب الحالات - وفقدان القرص الصلب
+// أو سرقة الجهاز كان سيعني ضياع كل تاريخ المبيعات والعملاء والرواتب نهائياً.
+// نحتفظ بآخر 14 نسخة فقط (تدوير تلقائي) حتى لا تمتلئ مساحة القرص بمرور الوقت.
+const AUTO_BACKUP_RETENTION_DAYS = 14;
+function getBusinessLocalDate() {
+  const profile = db?.getGlobalProfile?.();
+  const timeZone = profile?.timezone || 'UTC';
+  try {
+    return new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+  } catch (_) {
+    return new Date().toISOString().slice(0, 10);
+  }
+}
+async function runAutoBackupIfDue() {
+  try {
+    if (!db) return;
+    const today = getBusinessLocalDate(); // تاريخ المتجر المحلي، لا UTC
+    const lastRun = db.getSetting('last_auto_backup_date', '');
+    if (lastRun === today) return; // اتعملت نسخة اليوم بالفعل
+    const backupsDir = path.join(app.getPath('userData'), 'auto-backups');
+    fs.mkdirSync(backupsDir, { recursive: true });
+    const destPath = path.join(backupsDir, `pos-backup-${today}.db`);
+    await db.backupTo(destPath);
+    db.setSetting('last_auto_backup_date', today);
+    db.logAudit({ userId: null, action: 'auto_backup_created', entityType: 'backup', entityId: destPath });
+    // تنظيف النسخ الأقدم من فترة الاحتفاظ
+    const cutoff = Date.now() - AUTO_BACKUP_RETENTION_DAYS * 24 * 60 * 60 * 1000;
+    for (const file of fs.readdirSync(backupsDir)) {
+      if (!file.startsWith('pos-backup-') || !file.endsWith('.db')) continue;
+      const filePath = path.join(backupsDir, file);
+      try {
+        const stat = fs.statSync(filePath);
+        if (stat.mtimeMs < cutoff) fs.unlinkSync(filePath);
+      } catch (_) { /* تجاهل ملف لا يمكن قراءته/حذفه، لا نوقف بقية التنظيف */ }
+    }
+  } catch (error) {
+    try { db?.logAudit({ userId: null, action: 'auto_backup_failed', entityType: 'backup', level: 'error', details: { reason: error.message } }); } catch (_) {}
+  }
+}
+
 function startBackgroundSync() {
   if (syncTimer) clearInterval(syncTimer);
   if (!db || !db.getSyncConfig().enabled) return;
@@ -640,6 +684,11 @@ app.whenReady().then(() => {
   try {
     db = require('./database/db');
     db.init(); // إنشاء الجداول إن لم تكن موجودة
+    // نسخة احتياطية تلقائية يومية (انظر runAutoBackupIfDue أعلاه لسبب أهميتها).
+    // لا ننتظرها (لا await) حتى لا تؤخر إقلاع التطبيق؛ وتُعاد المحاولة كل ساعتين
+    // (بدل مرة واحدة فقط عند الإقلاع) تحسباً لتطبيق يظل مفتوحاً لأيام متتالية.
+    runAutoBackupIfDue();
+    setInterval(runAutoBackupIfDue, 2 * 60 * 60 * 1000).unref?.();
   } catch (err) {
     closeSplashWindow();
 
@@ -897,6 +946,7 @@ ipcMain.handle('auth:logout', (event) => {
 });
 
 ipcMain.handle('auth:currentUser', () => currentUser);
+ipcMain.handle('auth:permissions', () => { requireAccountReady(); return permissionsForRole(currentUser.role); });
 ipcMain.handle('auth:changeOwnPassword', (_event, payload) => {
   if (!currentUser) throw new Error('يجب تسجيل الدخول أولاً.');
   const result = db.changeOwnPassword(currentUser.id, payload.currentPassword, payload.newPassword);
@@ -920,12 +970,14 @@ function requireLicenseForAuth() {
   if (!licenseState.valid) return licenseState;
   return null;
 }
-function requireAdmin() {
+function requirePermission(permission) {
   requireAccountReady();
-  if (!currentUser || currentUser.role !== 'admin') {
-    throw new Error('هذه العملية تتطلب صلاحية المدير العام');
-  }
+  if (!currentUser) throw new Error('يجب تسجيل الدخول أولاً.');
+  try { assertPermission(currentUser.role, permission); }
+  catch (_) { throw new Error(`لا تملك الصلاحية المطلوبة: ${permission}`); }
+  return true;
 }
+function requireAdmin() { return requirePermission('users.manage'); }
 ipcMain.handle('users:list', () => {
   requireAdmin();
   return db.listUsers();
@@ -956,12 +1008,7 @@ ipcMain.handle('users:clearPin', (_event, userId) => {
   return db.clearUserPin(userId);
 });
 
-function requireManagerOrAdmin() {
-  requireAccountReady();
-  if (!currentUser || !['admin', 'manager'].includes(currentUser.role)) {
-    throw new Error('هذه العملية تتطلب صلاحية مدير');
-  }
-}
+function requireManagerOrAdmin() { return requirePermission('management.access'); }
 
 /* ---------------- جلسة الصندوق الاختيارية ---------------- */
 ipcMain.handle('shift:current', () => { requireAccountReady(); return db.getOpenShift(); });
@@ -972,16 +1019,20 @@ ipcMain.handle('shift:list', (_event, filters) => { requireManagerOrAdmin(); ret
 
 /* ---------------- الموظفون والرواتب ---------------- */
 ipcMain.handle('payroll:employees', () => { requireAdmin(); return db.listPayrollV2Employees(true); });
-ipcMain.handle('payroll:addEmployee', (_event, { fullName, jobTitle, payType, payRate }) => {
+ipcMain.handle('payroll:addEmployee', (_event, { fullName, jobTitle, payType, payRate, meta }) => {
   requireAdmin();
-  const result = db.addPayrollV2Employee(fullName, jobTitle, payType, payRate);
+  const result = db.addPayrollV2Employee(fullName, jobTitle, payType, payRate, meta || {});
   if (result.success) db.logAudit({ userId: currentUser.id, action: 'payroll_employee_created', entityType: 'payroll_employee', entityId: result.id, details: { fullName, jobTitle, payType, payRate } });
   return result;
 });
-ipcMain.handle('payroll:updateEmployee', (_event, { employeeId, fullName, jobTitle, payType, payRate }) => { requireAdmin(); return db.updatePayrollV2Employee(employeeId, fullName, jobTitle, payType, payRate); });
+ipcMain.handle('payroll:updateEmployee', (_event, { employeeId, fullName, jobTitle, payType, payRate, meta }) => { requireAdmin(); return db.updatePayrollV2Employee(employeeId, fullName, jobTitle, payType, payRate, meta || {}); });
 ipcMain.handle('payroll:setEmployeeActive', (_event, { employeeId, isActive }) => { requireAdmin(); return db.setPayrollV2EmployeeActive(employeeId, isActive); });
 ipcMain.handle('payroll:deleteEmployee', (_event, { employeeId }) => { requireAdmin(); const result = db.deletePayrollV2Employee(employeeId); if (result?.success) db.logAudit({ userId: currentUser.id, action: 'payroll_employee_deleted', entityType: 'payroll_employee', entityId: employeeId }); return result; });
+ipcMain.handle('payroll:settings', (_event, payload) => { requireAdmin(); return payload && payload.save ? db.savePayrollSettings(payload) : db.getPayrollSettings(); });
 ipcMain.handle('payroll:month', (_event, monthKey) => { requireAdmin(); return db.getPayrollV2Month(monthKey); });
+ipcMain.handle('payroll:report', (_event, monthKey) => { requireAdmin(); return db.getPayrollV2Report(monthKey); });
+ipcMain.handle('payroll:exportReport', async (_event, monthKey) => { requireAdmin(); const report=db.getPayrollV2Report(monthKey); const choice=await dialog.showSaveDialog(mainWindow,{title:'تصدير مسير الرواتب',defaultPath:`payroll-${report.monthKey}.xlsx`,filters:[{name:'Excel',extensions:['xlsx']}]}); if(choice.canceled||!choice.filePath)return{success:false,canceled:true}; exportPayrollWorkbook(choice.filePath,report); return{success:true,path:choice.filePath}; });
+
 ipcMain.handle('payroll:employee', (_event, { monthId, employeeId }) => { requireAdmin(); return db.getPayrollV2Employee(monthId, employeeId); });
 ipcMain.handle('payroll:addTransaction', (_event, payload) => {
   requireAdmin();
@@ -995,6 +1046,40 @@ ipcMain.handle('payroll:setStartDate', (_event, { monthId, employeeId, startDate
   requireAdmin();
   const result = db.setPayrollEmployeeMonthStartDate(monthId, employeeId, startDate);
   if (result.success) db.logAudit({ userId: currentUser.id, action: 'payroll_start_date_set', entityType: 'payroll_employee', entityId: employeeId, details: { monthId, startDate } });
+  return result;
+});
+ipcMain.handle('payroll:payEmployee', (_event, payload) => {
+  requireAdmin();
+  const result = db.recordPayrollPayment({ ...payload, createdBy: currentUser.id });
+  db.logAudit({ userId: currentUser.id, action: 'payroll_salary_paid', entityType: 'payroll_payment', entityId: result.id, details: { monthId: payload.monthId, employeeId: payload.employeeId, amount: payload.amount, method: payload.method, cashMovementId: result.cashMovementId || null } });
+  return result;
+});
+ipcMain.handle('payroll:advances', (_event, { employeeId } = {}) => { requireAdmin(); return db.listPayrollAdvances(employeeId); });
+ipcMain.handle('payroll:createAdvance', (_event, payload) => {
+  requireAdmin();
+  const result=db.createPayrollAdvance({ ...payload, createdBy: currentUser.id });
+  db.logAudit({ userId: currentUser.id, action:'payroll_advance_created', entityType:'payroll_advance', entityId:result.id, details:{ employeeId:payload.employeeId, amount:payload.amount, installmentCount:payload.installmentCount, firstDeductionMonth:payload.firstDeductionMonth, paidFromRegister:!!payload.paidFromRegister } });
+  return result;
+});
+ipcMain.handle('payroll:advancePayments', (_event, advanceId) => { requireAdmin(); return db.listPayrollAdvancePayments(advanceId); });
+ipcMain.handle('payroll:repayAdvance', (_event, payload) => { requireAdmin(); const result=db.repayPayrollAdvance({ ...payload, createdBy: currentUser.id }); db.logAudit({ userId: currentUser.id, action:'payroll_advance_repaid', entityType:'payroll_advance_payment', entityId:result.id, details:{ advanceId:payload.advanceId, amount:payload.amount, paidFromRegister:!!payload.paidFromRegister } }); return result; });
+ipcMain.handle('payroll:settleAdvance', (_event, payload) => { requireAdmin(); const result=db.settlePayrollAdvance(payload?.advanceId, { ...payload, createdBy: currentUser.id }); db.logAudit({ userId: currentUser.id, action:'payroll_advance_settled', entityType:'payroll_advance', entityId:payload?.advanceId, details:{ amount:result.amount, paidFromRegister:!!payload?.paidFromRegister } }); return result; });
+ipcMain.handle('payroll:payments', (_event, { monthId, employeeId } = {}) => { requireAdmin(); return db.listPayrollPayments(monthId, employeeId); });
+ipcMain.handle('payroll:finalSettlement', (_event, payload) => { requireAdmin(); const result=db.settleEmployeeFinalPayroll({ ...payload, createdBy: currentUser.id }); db.logAudit({ userId: currentUser.id, action:'payroll_final_settlement', entityType:'payroll_final_settlement', entityId:result.id, details:{ employeeId:payload?.employeeId, monthId:payload?.monthId, settlementDate:payload?.settlementDate, netDue:result.netDue, advanceSettled:result.advanceSettled, method:payload?.method } }); return result; });
+ipcMain.handle('payroll:finalSettlements', (_event, { employeeId } = {}) => { requireAdmin(); return db.listPayrollFinalSettlements(employeeId); });
+ipcMain.handle('payroll:voidFinalSettlement', (_event, { settlementId, reason } = {}) => { requireAdmin(); const result=db.voidPayrollFinalSettlement(settlementId, reason, currentUser.id); if(result?.success) db.logAudit({ userId:currentUser.id, action:'payroll_final_settlement_voided', entityType:'payroll_final_settlement', entityId:settlementId, details:{reason} }); return result; });
+function buildPayrollSlipHtml(state, month, profile={}) {
+  const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const e=state.employee||{}; const p=(state.payments||[]).slice(-1)[0]||{};
+  return `<!doctype html><html dir="rtl"><head><meta charset="utf-8"><title>قسيمة راتب</title><style>body{font-family:Arial,sans-serif;padding:36px;color:#111}h1{margin:0}h2{margin:6px 0 20px}.meta{color:#666;margin-bottom:18px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.cell{border:1px solid #ddd;padding:9px}table{width:100%;border-collapse:collapse;margin-top:20px}th,td{border:1px solid #ddd;padding:10px;text-align:right}.total{font-weight:700;font-size:18px}</style></head><body><h1>${esc(profile.business_name||'Nexora POS')}</h1><h2>قسيمة راتب</h2><div class="meta">الفترة: ${esc(month.month_key)} · تاريخ الصرف: ${esc(p.payment_date||'—')}</div><div class="grid"><div class="cell"><b>العامل</b><br>${esc(e.full_name)}</div><div class="cell"><b>الوظيفة</b><br>${esc(e.job_title)}</div><div class="cell"><b>الهوية / الإقامة</b><br>${esc(e.national_id||'—')}</div><div class="cell"><b>IBAN</b><br>${esc(e.iban||'—')}</div></div><table><tr><th>البيان</th><th>القيمة</th></tr><tr><td>الأساسي</td><td>${esc(e.base_amount||0)}</td></tr><tr><td>خصم الغياب</td><td>${esc(e.absence_deduction||0)}</td></tr><tr><td>الخصومات</td><td>${esc(e.deduction_total||0)}</td></tr><tr><td>المكافآت</td><td>${esc(e.bonus_total||0)}</td></tr><tr><td>الإضافي</td><td>${esc(e.overtime_total||0)}</td></tr><tr><td>السلف</td><td>${esc(e.advance_total||0)}</td></tr><tr><td>الدين المرحّل</td><td>${esc(e.debt_carry||0)}</td></tr><tr class="total"><td>صافي الراتب</td><td>${esc(e.net_salary||0)}</td></tr><tr><td>المدفوع في هذه الدفعة</td><td>${esc(p.amount||0)}</td></tr><tr><td>طريقة الدفع</td><td>${esc(p.method||'—')}</td></tr></table></body></html>`;
+}
+ipcMain.handle('payroll:printSlip', async (_event,{monthId,employeeId}={})=>{requireAdmin();const state=db.getPayrollV2Employee(Number(monthId),Number(employeeId));const month=db.getPayrollV2Month(state.employee?.month_key||String(new Date().toISOString()).slice(0,7));const html=buildPayrollSlipHtml(state,month,db.getGlobalProfile()||{});const win=new BrowserWindow({show:false,webPreferences:{contextIsolation:true,nodeIntegration:false,sandbox:true}});try{await win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);return await new Promise(resolve=>win.webContents.print({silent:false,printBackground:true},(success,failureReason)=>resolve({success,reason:failureReason||null})));}finally{win.destroy();}});
+ipcMain.handle('payroll:exportSlipPdf', async (_event,{monthId,employeeId}={})=>{requireAdmin();const state=db.getPayrollV2Employee(Number(monthId),Number(employeeId));const month=db.getPayrollV2Month(state.employee?.month_key||String(new Date().toISOString()).slice(0,7));const html=buildPayrollSlipHtml(state,month,db.getGlobalProfile()||{});const choice=await dialog.showSaveDialog(mainWindow,{title:'حفظ قسيمة الراتب PDF',defaultPath:`payslip-${employeeId}-${month.month_key}.pdf`,filters:[{name:'PDF',extensions:['pdf']}]});if(choice.canceled||!choice.filePath)return{success:false,canceled:true};const win=new BrowserWindow({show:false,webPreferences:{contextIsolation:true,nodeIntegration:false,sandbox:true}});try{await win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);const pdf=await win.webContents.printToPDF({printBackground:true,pageSize:'A4'});fs.writeFileSync(choice.filePath,pdf);return{success:true,path:choice.filePath};}finally{win.destroy();}});
+
+ipcMain.handle('payroll:reopenMonth', (_event, { monthId, reason } = {}) => {
+  requireAdmin();
+  const result = db.reopenPayrollMonth(monthId, reason, currentUser.id);
+  if (result.success) db.logAudit({ userId: currentUser.id, action: 'payroll_month_reopened', entityType: 'payroll_month', entityId: monthId, details: { reason } });
   return result;
 });
 
@@ -1286,6 +1371,11 @@ ipcMain.handle('lan:disconnect', () => {
 /* ---------------- النسخ الاحتياطي والاستعادة ---------------- */
 // حماية: هاتان العمليتان خطيرتان جداً (نسخ/استبدال كامل بيانات المحل) — تتطلبان صلاحية admin
 // بالعملية الرئيسية أيضاً، وليس فقط بإخفاء الزر بالواجهة عن الكاشير.
+ipcMain.handle('backup:autoStatus', () => {
+  requireAccountReady();
+  const lastDate = db.getSetting('last_auto_backup_date', '');
+  return { lastDate: lastDate || null, retentionDays: AUTO_BACKUP_RETENTION_DAYS };
+});
 ipcMain.handle('backup:create', async () => {
   requireAdmin();
   const result = await dialog.showSaveDialog(mainWindow, {
@@ -1297,6 +1387,42 @@ ipcMain.handle('backup:create', async () => {
   await db.backupTo(result.filePath);
   db.logAudit({ userId: currentUser.id, action: 'backup_created', entityType: 'backup', entityId: result.filePath });
   return { success: true, path: result.filePath };
+});
+
+ipcMain.handle('backup:createPortable', async (_event, passphrase) => {
+  requirePermission('backup.manage');
+  const secret = String(passphrase || '');
+  if (secret.length < 12) throw new Error('كلمة مرور النسخة المحمولة يجب ألا تقل عن 12 محرفاً.');
+  const result = await dialog.showSaveDialog(mainWindow, { title: 'حفظ النسخة المحمولة المشفّرة', defaultPath: `nexora-portable-backup-${new Date().toISOString().slice(0,10)}.nxbak`, filters: [{ name: 'Nexora Portable Backup', extensions: ['nxbak'] }] });
+  if (result.canceled || !result.filePath) return { success: false, canceled: true };
+  const backup = await db.createPortableBackup(result.filePath, secret);
+  db.logAudit({ userId: currentUser.id, action: 'portable_backup_created', entityType: 'backup', entityId: result.filePath });
+  return backup;
+});
+
+ipcMain.handle('backup:restorePortable', async (_event, passphrase) => {
+  requirePermission('backup.manage');
+  const secret = String(passphrase || '');
+  if (secret.length < 12) throw new Error('كلمة مرور النسخة المحمولة غير صالحة.');
+  const result = await dialog.showOpenDialog(mainWindow, { title: 'استعادة نسخة Nexora المحمولة', properties: ['openFile'], filters: [{ name: 'Nexora Portable Backup', extensions: ['nxbak'] }] });
+  if (result.canceled || result.filePaths.length === 0) return { success: false, canceled: true };
+  const confirmed = await dialog.showMessageBox(mainWindow, { type: 'warning', buttons: ['إلغاء', 'استعادة'], defaultId: 0, cancelId: 0, message: 'ستُستبدل قاعدة البيانات الحالية. هل تريد المتابعة؟' });
+  if (confirmed.response !== 1) return { success: false, canceled: true };
+  const currentDb = db.getDbPath();
+  const safetyPath = `${currentDb}.pre-portable-restore-${Date.now()}.db`;
+  await db.backupTo(safetyPath);
+  db.logAudit({ userId: currentUser.id, action: 'portable_restore_started', entityType: 'backup', entityId: result.filePaths[0], details: { safetyPath } });
+  db.closeDatabase();
+  try {
+    const restored = db.restorePortableBackup(result.filePaths[0], secret);
+    if (!restored.valid) throw new Error(restored.message);
+  } catch (error) {
+    try { fs.copyFileSync(safetyPath, currentDb); } catch (_) {}
+    throw new Error(`فشلت استعادة النسخة المحمولة: ${error.message}`);
+  }
+  await dialog.showMessageBox(mainWindow, { type: 'info', message: 'تم التحقق من النسخة المحمولة بنجاح. سيعاد تشغيل التطبيق الآن.' });
+  app.relaunch(); app.exit(0);
+  return { success: true, safetyPath };
 });
 
 ipcMain.handle('backup:restore', async () => {
@@ -1598,11 +1724,56 @@ ipcMain.handle('inventory:adjust', (_event, payload) => {
   return result;
 });
 ipcMain.handle('inventory:movements', (_event, filters) => { requireManagerOrAdmin(); return db.listInventoryMovements(filters); });
+ipcMain.handle('inventory:transferBranches', () => { requireManagerOrAdmin(); return db.listTransferBranches(); });
+ipcMain.handle('inventory:addTransferBranch', (_event, payload) => {
+  requireAdmin();
+  const result = db.upsertTransferBranch(payload || {});
+  db.logAudit({ userId: currentUser.id, action: 'inventory_transfer_branch_saved', entityType: 'branch_directory', entityId: result.uuid, details: { name: result.name } });
+  return result;
+});
+ipcMain.handle('inventory:createTransfer', (_event, payload = {}) => {
+  requireManagerOrAdmin();
+  const result = db.createInventoryTransfer({ ...(payload || {}), createdBy: currentUser.id });
+  db.logAudit({ userId: currentUser.id, action: 'inventory_transfer_shipped', entityType: 'inventory_transfer', entityId: result.uuid, details: { destinationBranchUuid: result.destination_branch_uuid, items: result.items.map(i => ({ productUuid: i.product_uuid, quantity: i.quantity })) } });
+  return result;
+});
+ipcMain.handle('inventory:transfers', (_event, filters) => { requireManagerOrAdmin(); return db.listInventoryTransfers(filters || {}); });
+ipcMain.handle('inventory:getTransfer', (_event, transferUuid) => { requireManagerOrAdmin(); return db.getInventoryTransferByUuid(transferUuid); });
+ipcMain.handle('inventory:receiveTransfer', (_event, payload = {}) => {
+  requireManagerOrAdmin();
+  const result = db.receiveInventoryTransfer({ ...(payload || {}), receivedBy: currentUser.id });
+  db.logAudit({ userId: currentUser.id, action: 'inventory_transfer_received', entityType: 'inventory_transfer', entityId: result.uuid, details: { receiptUuid: result.receipt?.uuid || null } });
+  return result;
+});
+ipcMain.handle('inventory:cancelTransfer', (_event, transferUuid) => {
+  requireManagerOrAdmin();
+  const result = db.cancelInventoryTransfer(transferUuid);
+  db.logAudit({ userId: currentUser.id, action: 'inventory_transfer_cancelled', entityType: 'inventory_transfer', entityId: result.uuid });
+  return result;
+});
 
 // التقارير — كلها مقيّدة بمدير/مدير عام فقط (نفس صفحة reports.html بالواجهة)
 // كانت هذه القنوات الأربع بلا أي فحص صلاحية بالخلفية رغم أن الصفحة محجوبة عن الكاشير
 // بالواجهة فقط — أي طرف يستدعي القناة مباشرة (بدون المرور بالواجهة) كان يقدر يسحب
 // تقارير المبيعات/الأرباح والخسائر/الدليفري كاملة. تم تصحيحها لتطابق reports:debtAging.
+ipcMain.handle('accounting:accounts', () => { requireManagerOrAdmin(); return db.listAccountingAccounts(); });
+ipcMain.handle('accounting:createAccount', (_event, input) => { requireAdmin(); const result = db.createAccountingAccount(input || {}); db.logAudit({ userId: currentUser.id, action: 'accounting_account_created', entityType: 'accounting_account', entityId: result.id }); return result; });
+ipcMain.handle('accounting:postEntry', (_event, input) => { requireAdmin(); const result = db.postJournalEntry({ ...(input || {}), createdBy: currentUser.id }); if (result) db.logAudit({ userId: currentUser.id, action: 'accounting_entry_posted', entityType: 'journal_entry', entityId: result.id }); return result; });
+ipcMain.handle('accounting:journals', (_event, range) => { requireManagerOrAdmin(); return db.listJournalEntries(range || {}); });
+ipcMain.handle('sync:conflicts', () => { requireAdmin(); return db.listSyncConflicts(); });
+ipcMain.handle('backup:manifests', () => { requireAdmin(); return db.listBackupManifests(); });
+ipcMain.handle('fiscalization:providers', () => { requireManagerOrAdmin(); return ['generic']; });
+ipcMain.handle('fiscalization:issue', async (_event, payload = {}) => {
+  requireManagerOrAdmin();
+  const saleId = Number(payload.saleId);
+  if (!Number.isInteger(saleId) || saleId <= 0) throw new Error('معرّف الفاتورة غير صالح.');
+  const sale = db.getSale(saleId, db.getCurrentBranch().id);
+  if (!sale) throw new Error('الفاتورة غير موجودة في الفرع الحالي.');
+  const provider = String(payload.provider || db.getGlobalProfile()?.fiscalization_provider || 'generic').toLowerCase();
+  const result = await fiscalizationRegistry.get(provider).issueInvoice(sale);
+  return db.saveFiscalDocument({ saleId, provider, status: result.accepted ? 'submitted' : 'pending', externalId: result.externalId || null, externalNumber: result.externalNumber || null, requestPayload: sale, responsePayload: result, issuedAt: result.accepted ? new Date().toISOString() : null });
+});
+ipcMain.handle('fiscalization:list', (_event, filters) => { requireManagerOrAdmin(); return db.listFiscalDocuments(filters || {}); });
 ipcMain.handle('reports:summary', (_event, range) => { requireManagerOrAdmin(); return db.getSalesSummary(range); });
 ipcMain.handle('reports:topProducts', (_event, range) => { requireManagerOrAdmin(); return db.getTopProducts(range); });
 ipcMain.handle('reports:daily', (_event, range) => { requireManagerOrAdmin(); return db.getDailySales(range); });

@@ -5,6 +5,7 @@ const crypto = require('crypto');
 const { spawnSync } = require('child_process');
 
 const root = path.resolve(__dirname, '..');
+const requireWindowsSigning = process.argv.includes('--windows-signed');
 
 const windowsStructure = path.join(root, 'tools', 'windows-structure-regression.js');
 const windowsStructureResult = spawnSync(process.execPath, [windowsStructure], { cwd: root, encoding: 'utf8' });
@@ -57,7 +58,12 @@ const disallowedRootArtifacts = fs.readdirSync(root).filter((name) =>
 );
 if (disallowedRootArtifacts.length) fail(`test/build artifacts must not ship: ${disallowedRootArtifacts.join(', ')}`);
 if (pkg.dependencies['better-sqlite3-multiple-ciphers'] !== '13.0.3') fail('unexpected SQLite native dependency version');
-if (pkg.devDependencies.electron !== '43.4.1') fail('unexpected Electron version');
+if (pkg.devDependencies.electron !== '44.2.0') fail('unexpected Electron version');
+if (requireWindowsSigning) {
+  const signingConfigured = Boolean(process.env.CSC_LINK || process.env.WIN_CSC_LINK || process.env.CSC_KEY_PASSWORD);
+  if (!signingConfigured) fail('Windows release signing is not configured. Set CSC_LINK/WIN_CSC_LINK and CSC_KEY_PASSWORD for a commercial installer.');
+  ok('Windows code-signing configuration is present');
+}
 ok(`version ${pkg.version}`);
 ok('license public key is real and parseable');
 ok('Windows/macOS/Linux icon assets are present');

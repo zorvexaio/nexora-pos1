@@ -58,4 +58,25 @@ function reportHtml(report) {
   const rows = dataSets(report).map(([title, values]) => `<section><h2>${xml(title)}</h2><table>${values.map((row, i) => `<tr>${row.map((v) => `<${i ? 'td' : 'th'}>${xml(v)}</${i ? 'td' : 'th'}>`).join('')}</tr>`).join('')}</table></section>`).join('');
   return `<!doctype html><html dir="rtl" lang="ar"><head><meta charset="utf-8"><style>@page{size:A4 landscape;margin:14mm}body{font-family:Arial,sans-serif;color:#172033;direction:rtl}h1{color:#1d4ed8}section{break-inside:avoid;margin:16px 0}h2{font-size:16px;background:#eef4ff;padding:8px}table{width:100%;border-collapse:collapse}th,td{border:1px solid #cbd5e1;padding:7px;text-align:right}th{background:#2563eb;color:#fff}</style></head><body><h1>تقرير المبيعات</h1><p>الفترة: ${xml(report.range.from)} - ${xml(report.range.to)}</p>${rows}</body></html>`;
 }
-module.exports = { exportWorkbook, reportHtml };
+
+function exportPayrollWorkbook(filePath, report) {
+  const rows = [
+    ['مسير الرواتب', report.monthKey],
+    ['الحالة', report.status],
+    [],
+    ['الموظف','الوظيفة','الهوية/الإقامة','القسم','طريقة الأجر','الأجر','الأساسي','الغياب','خصم الغياب','المكافآت','الخصومات','السلف','الإضافي','الصافي','الدين المرحّل','المدفوع','المتبقي','الحالة'],
+    ...report.rows.map(r=>[r.fullName,r.jobTitle,r.nationalId,r.department,r.payType,r.payRate,r.base,r.absence,r.absenceDeduction,r.bonuses,r.deductions,r.advances,r.overtime,r.net,r.debtCarry,r.paid,r.remaining,r.status])
+  ];
+  const sheets=[['مسير الرواتب',rows]];
+  const entries=[
+    ['[Content_Types].xml', `<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>`],
+    ['_rels/.rels', `<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`],
+    ['xl/workbook.xml', `<?xml version="1.0" encoding="UTF-8"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="مسير الرواتب" sheetId="1" r:id="rId1"/></sheets></workbook>`],
+    ['xl/_rels/workbook.xml.rels', `<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`],
+    ['xl/styles.xml', `<?xml version="1.0" encoding="UTF-8"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="1"><font><sz val="11"/><name val="Arial"/></font></fonts><fills count="1"><fill><patternFill patternType="none"/></fill></fills><borders count="1"><border/></borders><cellStyleXfs count="1"><xf/></cellStyleXfs><cellXfs count="1"><xf xfId="0" applyAlignment="1"><alignment horizontal="right"/></xf></cellXfs></styleSheet>`],
+    ['xl/worksheets/sheet1.xml', sheetXml(rows)]
+  ];
+  fs.writeFileSync(filePath, zip(entries));
+}
+
+module.exports = { exportWorkbook, reportHtml, exportPayrollWorkbook };

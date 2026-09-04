@@ -5,6 +5,8 @@ const Database = require('better-sqlite3-multiple-ciphers');
 const { app, safeStorage } = require('electron');
 const { parseWeightedBarcode, buildWeightedBarcode } = require('./weighted-barcode');
 const { parseGs1 } = require('./gs1-barcode');
+const money = require('../core/money');
+const accounting = require('../finance/accounting');
 
 // قاعدة البيانات تُخزَّن في مجلد بيانات المستخدم (يبقى بعد تحديث التطبيق).
 // لا تحفظ أي بيانات عميل داخل مجلد التثبيت أو داخل asar، لأن المثبّت يستبدلهما بالكامل.
@@ -12,7 +14,7 @@ const userDataPath = app.getPath('userData');
 const dbPath = path.join(userDataPath, 'pos.db');
 const keyPath = path.join(userDataPath, 'pos.db.key');
 const databaseExistedBeforeOpen = fs.existsSync(dbPath) && fs.statSync(dbPath).size > 0;
-const CURRENT_SCHEMA_VERSION = 1;
+const CURRENT_SCHEMA_VERSION = 15;
 
 function getEncryptionKey() {
   if (!safeStorage.isEncryptionAvailable()) {
@@ -167,8 +169,13 @@ function init() {
     db.exec(`CREATE TABLE IF NOT EXISTS schema_migrations (
       version INTEGER PRIMARY KEY,
       name TEXT NOT NULL,
+      checksum TEXT,
       applied_at TEXT NOT NULL DEFAULT (datetime('now'))
     )`);
+    // Databases created by pre-v0.48.2 releases do not have a migration checksum.
+    // Add it before applying the versioned migration journal so future changes to an
+    // already-published migration are detected instead of silently changing history.
+    addColumnIfMissing('schema_migrations', 'checksum TEXT');
 
     for (const stmt of tableStatements) db.exec(stmt);
 
@@ -179,21 +186,463 @@ function init() {
 
     for (const stmt of otherStatements) db.exec(stmt);
 
+    const versionedMigrations = [
+      [2, 'financial-minor-units-v2', migrateFinancialMinorUnits],
+      [3, 'accounting-core-v3', migrateAccountingCore],
+      [4, 'permissions-matrix-v4', migratePermissionsMatrix],
+      [5, 'sync-engine-journal-v5', migrateSyncEngineJournal],
+      [6, 'backup-integrity-v6', migrateBackupIntegrity],
+      [7, 'fiscalization-adapters-v7', migrateFiscalization],
+      [8, 'commercial-hardening-v8', migrateCommercialHardening],
+      [9, 'migration-journal-integrity-v9', migrateMigrationJournalIntegrity],
+      [10, 'payroll-lifecycle-v10', migratePayrollLifecycle],
+      [11, 'inventory-transfer-workflow-v11', migrateInventoryTransferWorkflow],
+      [12, 'payroll-advances-v12', migratePayrollAdvances],
+      [13, 'payroll-advance-repayments-v13', migratePayrollAdvanceRepayments],
+      [14, 'payroll-termination-final-settlement-v14', migratePayrollTermination],
+      [15, 'payroll-commercial-hardening-v15', migratePayrollCommercialV15],
+    ];
+    for (const [version, name, migration] of versionedMigrations) applyVersionedMigration(version, name, migration);
+    assertMigrationJournalIntegrity(versionedMigrations);
+
     assertRuntimeSchemaCompatibility();
     seedDefaultAdminIfEmpty();
-    applyVersionedMigration(CURRENT_SCHEMA_VERSION, 'baseline-reconciliation-v1', () => {});
     db.pragma(`user_version = ${CURRENT_SCHEMA_VERSION}`);
   })();
 }
 
 // نقطة التوسعة الوحيدة للترقيات الجديدة. لا تعدّل ترحيلة منشورة؛ أضف رقماً أعلى
 // وترحيلة idempotent أو تحويل بيانات واضحاً حتى تبقى كل قاعدة قابلة للترقية تدريجياً.
+function migrationChecksum(migration) {
+  return crypto.createHash('sha256').update(String(migration)).digest('hex');
+}
+
 function applyVersionedMigration(version, name, migration) {
-  const existing = db.prepare('SELECT version FROM schema_migrations WHERE version=?').get(Number(version));
-  if (existing) return false;
+  const numericVersion = Number(version);
+  const checksum = migrationChecksum(migration);
+  const existing = db.prepare('SELECT version, name, checksum FROM schema_migrations WHERE version=?').get(numericVersion);
+  if (existing) {
+    if (String(existing.name) !== String(name)) {
+      throw new Error(`Migration journal name mismatch for v${numericVersion}: stored=${existing.name}, expected=${name}.`);
+    }
+    if (existing.checksum && String(existing.checksum) !== checksum) {
+      throw new Error(`Migration v${numericVersion} was modified after publication; checksum mismatch.`);
+    }
+    if (!existing.checksum) {
+      db.prepare('UPDATE schema_migrations SET checksum=? WHERE version=?').run(checksum, numericVersion);
+    }
+    return false;
+  }
   migration();
-  db.prepare('INSERT INTO schema_migrations(version, name) VALUES (?, ?)').run(Number(version), String(name));
+  db.prepare('INSERT INTO schema_migrations(version, name, checksum) VALUES (?, ?, ?)').run(numericVersion, String(name), checksum);
   return true;
+}
+
+function migrateInventoryTransferWorkflow() {
+  db.exec(`CREATE TABLE IF NOT EXISTS branch_directory (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    uuid TEXT UNIQUE NOT NULL,
+    name TEXT NOT NULL,
+    notes TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  )`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_branch_directory_name ON branch_directory(name)`);
+
+  db.exec(`CREATE TABLE IF NOT EXISTS inventory_transfers (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    uuid TEXT UNIQUE NOT NULL,
+    source_branch_uuid TEXT NOT NULL,
+    destination_branch_uuid TEXT NOT NULL,
+    local_branch_id INTEGER NOT NULL REFERENCES branches(id),
+    status TEXT NOT NULL DEFAULT 'shipped' CHECK(status IN ('shipped','received','cancelled')),
+    notes TEXT,
+    created_by INTEGER REFERENCES users(id),
+    shipped_at TEXT NOT NULL DEFAULT (datetime('now')),
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    synced INTEGER NOT NULL DEFAULT 0,
+    UNIQUE(uuid)
+  )`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_inventory_transfers_local_status ON inventory_transfers(local_branch_id,status,created_at DESC)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_inventory_transfers_route ON inventory_transfers(source_branch_uuid,destination_branch_uuid,created_at DESC)`);
+
+  db.exec(`CREATE TABLE IF NOT EXISTS inventory_transfer_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    transfer_id INTEGER NOT NULL REFERENCES inventory_transfers(id) ON DELETE CASCADE,
+    product_id INTEGER NOT NULL REFERENCES products(id),
+    product_uuid TEXT NOT NULL,
+    quantity REAL NOT NULL CHECK(quantity > 0),
+    unit_cost REAL NOT NULL DEFAULT 0,
+    UNIQUE(transfer_id, product_uuid)
+  )`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_inventory_transfer_items_transfer ON inventory_transfer_items(transfer_id)`);
+
+  db.exec(`CREATE TABLE IF NOT EXISTS inventory_transfer_receipts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    uuid TEXT UNIQUE NOT NULL,
+    transfer_uuid TEXT NOT NULL,
+    source_branch_uuid TEXT NOT NULL,
+    destination_branch_uuid TEXT NOT NULL,
+    local_branch_id INTEGER NOT NULL REFERENCES branches(id),
+    received_by INTEGER REFERENCES users(id),
+    notes TEXT,
+    received_at TEXT NOT NULL DEFAULT (datetime('now')),
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    synced INTEGER NOT NULL DEFAULT 0,
+    UNIQUE(transfer_uuid)
+  )`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_inventory_transfer_receipts_local ON inventory_transfer_receipts(local_branch_id,received_at DESC)`);
+
+  db.exec(`CREATE TABLE IF NOT EXISTS inventory_transfer_receipt_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    receipt_id INTEGER NOT NULL REFERENCES inventory_transfer_receipts(id) ON DELETE CASCADE,
+    product_uuid TEXT NOT NULL,
+    quantity_received REAL NOT NULL CHECK(quantity_received > 0),
+    UNIQUE(receipt_id, product_uuid)
+  )`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_inventory_transfer_receipt_items_receipt ON inventory_transfer_receipt_items(receipt_id)`);
+
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_inventory_transfers_synced ON inventory_transfers(local_branch_id,synced,created_at)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_inventory_transfer_receipts_synced ON inventory_transfer_receipts(local_branch_id,synced,created_at)`);
+}
+
+function migratePayrollAdvances() {
+  db.exec(`CREATE TABLE IF NOT EXISTS payroll_advances (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    uuid TEXT UNIQUE NOT NULL,
+    branch_id INTEGER NOT NULL REFERENCES branches(id),
+    employee_id INTEGER NOT NULL REFERENCES payroll_employees(id),
+    principal REAL NOT NULL CHECK(principal > 0),
+    principal_minor INTEGER NOT NULL DEFAULT 0 CHECK(principal_minor > 0),
+    installment_count INTEGER NOT NULL DEFAULT 1 CHECK(installment_count BETWEEN 1 AND 36),
+    installment_amount REAL NOT NULL CHECK(installment_amount > 0),
+    installment_amount_minor INTEGER NOT NULL DEFAULT 0 CHECK(installment_amount_minor > 0),
+    first_deduction_month TEXT NOT NULL,
+    reason TEXT,
+    cash_movement_id INTEGER REFERENCES cash_movements(id),
+    created_by INTEGER REFERENCES users(id),
+    status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','completed')),
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  )`);
+  db.exec(`CREATE TABLE IF NOT EXISTS payroll_advance_installments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    advance_id INTEGER NOT NULL REFERENCES payroll_advances(id) ON DELETE CASCADE,
+    month_key TEXT NOT NULL,
+    installment_no INTEGER NOT NULL,
+    amount REAL NOT NULL CHECK(amount > 0),
+    amount_minor INTEGER NOT NULL DEFAULT 0 CHECK(amount_minor > 0),
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(advance_id, installment_no),
+    UNIQUE(advance_id, month_key)
+  )`);
+  db.exec('CREATE INDEX IF NOT EXISTS idx_payroll_advances_branch_employee_status ON payroll_advances(branch_id,employee_id,status,created_at DESC)');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_payroll_advance_installments_month ON payroll_advance_installments(month_key,advance_id)');
+}
+
+function migratePayrollAdvanceRepayments() {
+  db.exec(`CREATE TABLE IF NOT EXISTS payroll_advance_payments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    uuid TEXT UNIQUE NOT NULL,
+    branch_id INTEGER NOT NULL REFERENCES branches(id),
+    advance_id INTEGER NOT NULL REFERENCES payroll_advances(id) ON DELETE CASCADE,
+    payment_type TEXT NOT NULL CHECK(payment_type IN ('direct','salary')),
+    amount REAL NOT NULL CHECK(amount > 0),
+    amount_minor INTEGER NOT NULL CHECK(amount_minor > 0),
+    payment_date TEXT NOT NULL,
+    method TEXT,
+    reference TEXT,
+    notes TEXT,
+    cash_movement_id INTEGER REFERENCES cash_movements(id),
+    created_by INTEGER REFERENCES users(id),
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  )`);
+  db.exec(`CREATE TABLE IF NOT EXISTS payroll_advance_payment_allocations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    payment_id INTEGER NOT NULL REFERENCES payroll_advance_payments(id) ON DELETE CASCADE,
+    installment_id INTEGER NOT NULL REFERENCES payroll_advance_installments(id) ON DELETE CASCADE,
+    amount REAL NOT NULL CHECK(amount > 0),
+    amount_minor INTEGER NOT NULL CHECK(amount_minor > 0),
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(payment_id, installment_id)
+  )`);
+  db.exec('CREATE INDEX IF NOT EXISTS idx_payroll_advance_payments_advance_date ON payroll_advance_payments(advance_id,payment_date,id)');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_payroll_advance_allocations_installment ON payroll_advance_payment_allocations(installment_id)');
+}
+
+function migratePayrollTermination() {
+  addColumnIfMissing('payroll_employees', `terminated_at TEXT`);
+  addColumnIfMissing('payroll_employees', `termination_reason TEXT`);
+  db.exec(`CREATE TABLE IF NOT EXISTS payroll_final_settlements (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    uuid TEXT UNIQUE NOT NULL,
+    branch_id INTEGER NOT NULL REFERENCES branches(id),
+    employee_id INTEGER NOT NULL REFERENCES payroll_employees(id),
+    month_id INTEGER NOT NULL REFERENCES payroll_months(id),
+    settlement_date TEXT NOT NULL,
+    gross_earned REAL NOT NULL DEFAULT 0,
+    deductions REAL NOT NULL DEFAULT 0,
+    advance_balance REAL NOT NULL DEFAULT 0,
+    additional_compensation REAL NOT NULL DEFAULT 0,
+    net_due REAL NOT NULL DEFAULT 0,
+    paid_amount REAL NOT NULL DEFAULT 0,
+    gross_earned_minor INTEGER NOT NULL DEFAULT 0,
+    deductions_minor INTEGER NOT NULL DEFAULT 0,
+    advance_balance_minor INTEGER NOT NULL DEFAULT 0,
+    additional_compensation_minor INTEGER NOT NULL DEFAULT 0,
+    net_due_minor INTEGER NOT NULL DEFAULT 0,
+    paid_amount_minor INTEGER NOT NULL DEFAULT 0,
+    method TEXT NOT NULL CHECK(method IN ('cash','bank','other')),
+    cash_movement_id INTEGER REFERENCES cash_movements(id),
+    notes TEXT,
+    created_by INTEGER REFERENCES users(id),
+    status TEXT NOT NULL DEFAULT 'paid' CHECK(status IN ('paid','voided')),
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(branch_id, uuid)
+  );`);
+  db.exec('CREATE INDEX IF NOT EXISTS idx_payroll_final_settlements_employee_date ON payroll_final_settlements(branch_id,employee_id,settlement_date DESC,id DESC)');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_payroll_final_settlements_month ON payroll_final_settlements(branch_id,month_id,settlement_date DESC)');
+}
+
+function migratePayrollCommercialV15() {
+  // Employee master-data needed for payroll documents, banking and future jurisdiction adapters.
+  for (const def of [
+    ['payroll_employees', `national_id TEXT`],
+    ['payroll_employees', `hire_date TEXT`],
+    ['payroll_employees', `phone TEXT`],
+    ['payroll_employees', `department TEXT`],
+    ['payroll_employees', `iban TEXT`],
+    ['payroll_employees', `country_code TEXT`],
+    ['payroll_employees', `payroll_notes TEXT`],
+    ['payroll_employees', `synced INTEGER NOT NULL DEFAULT 0`],
+    ['payroll_months', `synced INTEGER NOT NULL DEFAULT 0`],
+    ['payroll_employee_months', `synced INTEGER NOT NULL DEFAULT 0`],
+    ['payroll_transactions', `synced INTEGER NOT NULL DEFAULT 0`],
+    ['payroll_advances', `synced INTEGER NOT NULL DEFAULT 0`],
+    ['payroll_advance_installments', `synced INTEGER NOT NULL DEFAULT 0`],
+    ['payroll_advance_payments', `synced INTEGER NOT NULL DEFAULT 0`],
+    ['payroll_advance_payment_allocations', `synced INTEGER NOT NULL DEFAULT 0`],
+    ['payroll_payments', `synced INTEGER NOT NULL DEFAULT 0`],
+    ['payroll_final_settlements', `synced INTEGER NOT NULL DEFAULT 0`],
+    ['payroll_employee_months', `debt_carry_minor INTEGER NOT NULL DEFAULT 0`],
+    ['payroll_employee_months', `debt_carry REAL NOT NULL DEFAULT 0`],
+    ['payroll_transactions', `amount_minor INTEGER NOT NULL DEFAULT 0`],
+    ['payroll_transactions', `overtime_multiplier REAL NOT NULL DEFAULT 1.5`],
+    ['payroll_transactions', `overtime_hours REAL NOT NULL DEFAULT 0`],
+    ['payroll_final_settlements', `voided_at TEXT`],
+    ['payroll_final_settlements', `void_reason TEXT`],
+    ['payroll_advance_payments', `voided_at TEXT`],
+    ['payroll_advance_payments', `void_reason TEXT`],
+  ]) addColumnIfMissing(def[0], def[1]);
+
+  // Fixed-point backfill for payroll transactions and historical employee rates.
+  const unit = Number(getGlobalProfile()?.currency_minor_unit || 2);
+  backfillMinorColumn('payroll_transactions', 'amount', 'amount_minor', unit);
+  backfillMinorColumn('payroll_employees', 'pay_rate', 'pay_rate_minor', unit);
+  backfillMinorColumn('payroll_employee_months', 'base_amount', 'base_amount_minor', unit);
+  backfillMinorColumn('payroll_employee_months', 'net_salary', 'net_salary_minor', unit);
+  backfillMinorColumn('payroll_employee_months', 'debt_carry', 'debt_carry_minor', unit);
+
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_payroll_employees_national_id ON payroll_employees(branch_id,national_id);`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_payroll_transactions_overtime ON payroll_transactions(month_id,employee_id,type,event_date);`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_payroll_final_settlements_status ON payroll_final_settlements(branch_id,status,settlement_date DESC);`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_payroll_advance_payments_active ON payroll_advance_payments(advance_id,voided_at,payment_date);`);
+  db.prepare(`UPDATE payroll_employee_months SET debt_carry=COALESCE(debt_carry,0), debt_carry_minor=COALESCE(debt_carry_minor,0)`).run();
+}
+
+function migrateMigrationJournalIntegrity() {
+  db.exec('CREATE INDEX IF NOT EXISTS idx_schema_migrations_applied_at ON schema_migrations(applied_at)');
+}
+
+// Payroll lifecycle v10: a month can be paid only through an immutable payment record.
+// Advances remain deductions from the final net salary, while an advance paid from the
+// register also creates a real cash-out. Once an employee/month is fully paid, payroll
+// mutations are blocked so historical payroll cannot silently change.
+function migratePayrollLifecycle() {
+  addColumnIfMissing('payroll_months', `status TEXT NOT NULL DEFAULT 'open'`);
+  addColumnIfMissing('payroll_months', `closed_at TEXT`);
+  addColumnIfMissing('payroll_months', `closed_by INTEGER REFERENCES users(id)`);
+  db.exec(`CREATE TABLE IF NOT EXISTS payroll_payments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, uuid TEXT UNIQUE NOT NULL, branch_id INTEGER NOT NULL REFERENCES branches(id),
+    month_id INTEGER NOT NULL REFERENCES payroll_months(id), employee_id INTEGER NOT NULL REFERENCES payroll_employees(id),
+    amount REAL NOT NULL CHECK(amount > 0), amount_minor INTEGER NOT NULL DEFAULT 0,
+    method TEXT NOT NULL CHECK(method IN ('cash','bank','other')), payment_date TEXT NOT NULL,
+    reference TEXT, notes TEXT, created_by INTEGER REFERENCES users(id),
+    cash_movement_id INTEGER REFERENCES cash_movements(id), created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(branch_id, uuid)
+  );`);
+  db.exec('CREATE INDEX IF NOT EXISTS idx_payroll_payments_month_employee ON payroll_payments(branch_id,month_id,employee_id,payment_date,id)');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_payroll_payments_cash_movement ON payroll_payments(cash_movement_id)');
+  const unit = Number(getGlobalProfile()?.currency_minor_unit || 2);
+  const rows = db.prepare('SELECT rowid, amount FROM payroll_payments').all();
+  const update = db.prepare('UPDATE payroll_payments SET amount_minor=? WHERE rowid=?');
+  for (const row of rows) update.run(money.toMinor(Number(row.amount || 0), unit), row.rowid);
+  db.prepare("UPDATE payroll_months SET status=CASE WHEN status IN ('open','paid') THEN status ELSE 'open' END").run();
+}
+
+function assertMigrationJournalIntegrity(versionedMigrations) {
+  const current = Number(db.pragma('user_version', { simple: true }) || 0);
+  const rows = db.prepare('SELECT version, name, checksum FROM schema_migrations ORDER BY version').all();
+  const byVersion = new Map(rows.map((r) => [Number(r.version), r]));
+  for (const [version, name, migration] of versionedMigrations) {
+    const row = byVersion.get(Number(version));
+    if (!row) throw new Error(`Migration journal is incomplete: missing v${version}.`);
+    if (String(row.name) !== String(name)) throw new Error(`Migration journal name mismatch at v${version}.`);
+    if (!row.checksum) throw new Error(`Migration journal checksum missing at v${version}.`);
+    if (String(row.checksum) !== migrationChecksum(migration)) throw new Error(`Migration journal checksum mismatch at v${version}.`);
+  }
+  if (current > CURRENT_SCHEMA_VERSION) {
+    throw new Error(`Database schema v${current} is newer than this application v${CURRENT_SCHEMA_VERSION}.`);
+  }
+}
+
+function addColumnIfMissing(table, columnDef) {
+  const columnName = String(columnDef).trim().split(/\s+/)[0];
+  const existing = db.prepare(`PRAGMA table_info(${table})`).all();
+  if (existing.some((col) => col.name === columnName)) return false;
+  db.exec(`ALTER TABLE ${table} ADD COLUMN ${columnDef}`);
+  return true;
+}
+
+function backfillMinorColumn(table, sourceColumn, targetColumn, minorUnit = null) {
+  const unit = minorUnit == null ? Number(getGlobalProfile()?.currency_minor_unit || 2) : Number(minorUnit);
+  const rows = db.prepare(`SELECT rowid AS __rowid__, ${sourceColumn} AS value FROM ${table}`).all();
+  const update = db.prepare(`UPDATE ${table} SET ${targetColumn}=? WHERE rowid=?`);
+  for (const row of rows) update.run(money.toMinor(Number(row.value || 0), unit), row.__rowid__);
+}
+
+function migrateFinancialMinorUnits() {
+  const specs = [
+    ['products', 'price_minor INTEGER NOT NULL DEFAULT 0'], ['products', 'cost_minor INTEGER NOT NULL DEFAULT 0'],
+    ['inventory', 'unit_cost_minor INTEGER NOT NULL DEFAULT 0'],
+    ['sales', 'subtotal_minor INTEGER NOT NULL DEFAULT 0'], ['sales', 'tax_total_minor INTEGER NOT NULL DEFAULT 0'],
+    ['sales', 'discount_total_minor INTEGER NOT NULL DEFAULT 0'], ['sales', 'bundle_discount_total_minor INTEGER NOT NULL DEFAULT 0'],
+    ['sales', 'delivery_fee_minor INTEGER NOT NULL DEFAULT 0'], ['sales', 'grand_total_minor INTEGER NOT NULL DEFAULT 0'],
+    ['sales', 'cash_amount_minor INTEGER NOT NULL DEFAULT 0'], ['sales', 'card_amount_minor INTEGER NOT NULL DEFAULT 0'],
+    ['sales', 'change_due_minor INTEGER NOT NULL DEFAULT 0'], ['sales', 'due_amount_minor INTEGER NOT NULL DEFAULT 0'],
+    ['sale_items', 'unit_price_minor INTEGER NOT NULL DEFAULT 0'], ['sale_items', 'line_total_minor INTEGER NOT NULL DEFAULT 0'],
+    ['sale_items', 'cost_at_sale_minor INTEGER NOT NULL DEFAULT 0'], ['payment_transactions', 'amount_minor INTEGER NOT NULL DEFAULT 0'],
+    ['cash_movements', 'amount_minor INTEGER NOT NULL DEFAULT 0'], ['customers', 'balance_minor INTEGER NOT NULL DEFAULT 0'],
+    ['customers', 'store_credit_balance_minor INTEGER NOT NULL DEFAULT 0'], ['customer_ledger', 'amount_minor INTEGER NOT NULL DEFAULT 0'],
+    ['customer_ledger', 'balance_after_minor INTEGER NOT NULL DEFAULT 0'], ['supplier_ledger', 'amount_minor INTEGER NOT NULL DEFAULT 0'],
+    ['supplier_ledger', 'balance_after_minor INTEGER NOT NULL DEFAULT 0'], ['returns', 'total_refunded_minor INTEGER NOT NULL DEFAULT 0'],
+    ['return_items', 'refund_amount_minor INTEGER NOT NULL DEFAULT 0'], ['shifts', 'opening_amount_minor INTEGER NOT NULL DEFAULT 0'],
+    ['shifts', 'expected_cash_minor INTEGER NOT NULL DEFAULT 0'], ['shifts', 'actual_cash_minor INTEGER NOT NULL DEFAULT 0'],
+    ['shifts', 'cash_difference_minor INTEGER NOT NULL DEFAULT 0'], ['purchase_orders', 'total_minor INTEGER NOT NULL DEFAULT 0'],
+    ['purchase_orders', 'paid_amount_minor INTEGER NOT NULL DEFAULT 0'], ['purchase_order_items', 'unit_cost_minor INTEGER NOT NULL DEFAULT 0'],
+    ['payroll_employees', 'pay_rate_minor INTEGER NOT NULL DEFAULT 0'], ['payroll_employee_months', 'base_amount_minor INTEGER NOT NULL DEFAULT 0'],
+    ['payroll_employee_months', 'net_salary_minor INTEGER NOT NULL DEFAULT 0'],
+  ];
+  for (const [table, columnDef] of specs) addColumnIfMissing(table, columnDef);
+  const pairs = [
+    ['products','price','price_minor'], ['products','cost','cost_minor'], ['inventory','unit_cost','unit_cost_minor'],
+    ['sales','subtotal','subtotal_minor'], ['sales','tax_total','tax_total_minor'], ['sales','discount_total','discount_total_minor'],
+    ['sales','bundle_discount_total','bundle_discount_total_minor'], ['sales','delivery_fee','delivery_fee_minor'], ['sales','grand_total','grand_total_minor'],
+    ['sales','cash_amount','cash_amount_minor'], ['sales','card_amount','card_amount_minor'], ['sales','change_due','change_due_minor'], ['sales','due_amount','due_amount_minor'],
+    ['sale_items','unit_price','unit_price_minor'], ['sale_items','line_total','line_total_minor'], ['sale_items','cost_at_sale','cost_at_sale_minor'],
+    ['payment_transactions','amount','amount_minor'], ['cash_movements','amount','amount_minor'], ['customers','balance','balance_minor'],
+    ['customers','store_credit_balance','store_credit_balance_minor'], ['customer_ledger','amount','amount_minor'], ['customer_ledger','balance_after','balance_after_minor'],
+    ['supplier_ledger','amount','amount_minor'], ['supplier_ledger','balance_after','balance_after_minor'], ['returns','total_refunded','total_refunded_minor'],
+    ['return_items','refund_amount','refund_amount_minor'], ['shifts','opening_amount','opening_amount_minor'], ['shifts','expected_cash','expected_cash_minor'],
+    ['shifts','actual_cash','actual_cash_minor'], ['shifts','cash_difference','cash_difference_minor'], ['purchase_orders','total','total_minor'],
+    ['purchase_orders','paid_amount','paid_amount_minor'], ['purchase_order_items','unit_cost','unit_cost_minor'], ['payroll_employees','pay_rate','pay_rate_minor'],
+    ['payroll_employee_months','base_amount','base_amount_minor'], ['payroll_employee_months','net_salary','net_salary_minor'],
+  ];
+  for (const [table, source, target] of pairs) backfillMinorColumn(table, source, target);
+
+  // Compatibility triggers: legacy code paths still write REAL fields. Keep the new
+  // minor-unit columns synchronized until every writer is migrated to fixed-point APIs.
+  const multiplier = `(CASE COALESCE((SELECT currency_minor_unit FROM organization_profile LIMIT 1), 2)
+    WHEN 0 THEN 1 WHEN 1 THEN 10 WHEN 2 THEN 100 WHEN 3 THEN 1000 WHEN 4 THEN 10000 WHEN 5 THEN 100000 WHEN 6 THEN 1000000 ELSE 100 END)`;
+  const triggerSpecs = [
+    ['products', [['price','price_minor'],['cost','cost_minor']]],
+    ['inventory', [['unit_cost','unit_cost_minor']]],
+    ['sales', [['subtotal','subtotal_minor'],['tax_total','tax_total_minor'],['discount_total','discount_total_minor'],['bundle_discount_total','bundle_discount_total_minor'],['delivery_fee','delivery_fee_minor'],['grand_total','grand_total_minor'],['cash_amount','cash_amount_minor'],['card_amount','card_amount_minor'],['change_due','change_due_minor'],['due_amount','due_amount_minor']]],
+    ['sale_items', [['unit_price','unit_price_minor'],['line_total','line_total_minor'],['cost_at_sale','cost_at_sale_minor']]],
+    ['payment_transactions', [['amount','amount_minor']]],
+    ['cash_movements', [['amount','amount_minor']]],
+    ['customers', [['balance','balance_minor'],['store_credit_balance','store_credit_balance_minor']]],
+    ['customer_ledger', [['amount','amount_minor'],['balance_after','balance_after_minor']]],
+    ['supplier_ledger', [['amount','amount_minor'],['balance_after','balance_after_minor']]],
+    ['returns', [['total_refunded','total_refunded_minor']]],
+    ['return_items', [['refund_amount','refund_amount_minor']]],
+    ['shifts', [['opening_amount','opening_amount_minor'],['expected_cash','expected_cash_minor'],['actual_cash','actual_cash_minor'],['cash_difference','cash_difference_minor']]],
+    ['purchase_orders', [['total','total_minor'],['paid_amount','paid_amount_minor']]],
+    ['purchase_order_items', [['unit_cost','unit_cost_minor']]],
+    ['payroll_employees', [['pay_rate','pay_rate_minor']]],
+    ['payroll_employee_months', [['base_amount','base_amount_minor'],['net_salary','net_salary_minor']]],
+  ];
+  for (const [table, fields] of triggerSpecs) {
+    const assignments = fields.map(([source, target]) => `${target}=CAST(ROUND(NEW.${source} * ${multiplier}) AS INTEGER)`).join(', ');
+    const names = fields.map(([source]) => source).join(', ');
+    db.exec(`CREATE TRIGGER IF NOT EXISTS trg_${table}_money_minor_ai AFTER INSERT ON ${table} BEGIN UPDATE ${table} SET ${assignments} WHERE rowid=NEW.rowid; END;`);
+    db.exec(`CREATE TRIGGER IF NOT EXISTS trg_${table}_money_minor_au AFTER UPDATE OF ${names} ON ${table} BEGIN UPDATE ${table} SET ${assignments} WHERE rowid=NEW.rowid; END;`);
+    // Also mirror writes made by the new fixed-point paths back into the legacy REAL
+    // columns. This keeps old readers compatible without allowing the legacy fields
+    // to remain stale after a minor-unit update. WHEN prevents recursive churn.
+    for (const [source, target] of fields) {
+      db.exec(`CREATE TRIGGER IF NOT EXISTS trg_${table}_${target}_to_${source} AFTER UPDATE OF ${target} ON ${table}
+        WHEN ROUND(CAST(NEW.${target} AS REAL) / ${multiplier}, 9) <> ROUND(CAST(NEW.${source} AS REAL), 9)
+        BEGIN UPDATE ${table} SET ${source}=CAST(NEW.${target} AS REAL) / ${multiplier} WHERE rowid=NEW.rowid; END;`);
+    }
+  }
+}
+
+function migrateAccountingCore() {
+  db.exec(`CREATE TABLE IF NOT EXISTS accounting_accounts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, uuid TEXT UNIQUE NOT NULL, branch_id INTEGER NOT NULL REFERENCES branches(id),
+    code TEXT NOT NULL, name TEXT NOT NULL, account_type TEXT NOT NULL CHECK(account_type IN ('asset','liability','equity','revenue','expense')),
+    currency_code TEXT NOT NULL DEFAULT 'USD', opening_balance_minor INTEGER NOT NULL DEFAULT 0, is_active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')), updated_at TEXT NOT NULL DEFAULT (datetime('now')), synced INTEGER NOT NULL DEFAULT 0,
+    UNIQUE(branch_id, code)
+  );
+  CREATE TABLE IF NOT EXISTS accounting_journal_entries (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, uuid TEXT UNIQUE NOT NULL, branch_id INTEGER NOT NULL REFERENCES branches(id),
+    reference_type TEXT, reference_id TEXT, memo TEXT, currency_code TEXT NOT NULL, entry_date TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'posted' CHECK(status IN ('draft','posted','void')), created_by INTEGER REFERENCES users(id),
+    created_at TEXT NOT NULL DEFAULT (datetime('now')), synced INTEGER NOT NULL DEFAULT 0
+  );
+  CREATE TABLE IF NOT EXISTS accounting_journal_lines (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, entry_id INTEGER NOT NULL REFERENCES accounting_journal_entries(id) ON DELETE CASCADE,
+    account_id INTEGER NOT NULL REFERENCES accounting_accounts(id), debit_minor INTEGER NOT NULL DEFAULT 0, credit_minor INTEGER NOT NULL DEFAULT 0, memo TEXT
+  );
+  CREATE TABLE IF NOT EXISTS accounting_periods (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, branch_id INTEGER NOT NULL REFERENCES branches(id), period_key TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'open' CHECK(status IN ('open','locked')), locked_at TEXT, locked_by INTEGER REFERENCES users(id), UNIQUE(branch_id, period_key)
+  );
+  CREATE INDEX IF NOT EXISTS idx_accounting_accounts_branch_type ON accounting_accounts(branch_id, account_type);
+  CREATE INDEX IF NOT EXISTS idx_accounting_entries_branch_date ON accounting_journal_entries(branch_id, entry_date);
+  CREATE INDEX IF NOT EXISTS idx_accounting_lines_account ON accounting_journal_lines(account_id);`);
+  const branch = getCurrentBranch();
+  const currency = String(getGlobalProfile()?.currency_code || 'USD').toUpperCase();
+  const defaults = [['1000','Cash','asset'],['1100','Bank','asset'],['1200','Accounts Receivable','asset'],['1300','Inventory','asset'],['2000','Accounts Payable','liability'],['2100','Tax Payable','liability'],['2200','Customer Store Credit','liability'],['3000','Owner Equity','equity'],['4000','Sales Revenue','revenue'],['4100','Delivery Revenue','revenue'],['5000','Cost of Goods Sold','expense'],['6000','Operating Expenses','expense']];
+  const insert = db.prepare('INSERT OR IGNORE INTO accounting_accounts(uuid,branch_id,code,name,account_type,currency_code) VALUES(?,?,?,?,?,?)');
+  for (const row of defaults) insert.run(uuid(), branch.id, row[0], row[1], row[2], currency);
+}
+
+function migratePermissionsMatrix() {
+  db.exec(`CREATE TABLE IF NOT EXISTS permissions (id INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT UNIQUE NOT NULL, description TEXT NOT NULL); CREATE TABLE IF NOT EXISTS role_permissions (role TEXT NOT NULL, permission_id INTEGER NOT NULL REFERENCES permissions(id) ON DELETE CASCADE, PRIMARY KEY(role, permission_id));`);
+  const { PERMISSIONS } = require('../core/permissions'); const ip=db.prepare('INSERT OR IGNORE INTO permissions(code,description) VALUES(?,?)'); const gp=db.prepare('SELECT id FROM permissions WHERE code=?'); const ir=db.prepare('INSERT OR IGNORE INTO role_permissions(role,permission_id) VALUES(?,?)');
+  for (const code of Object.keys(PERMISSIONS)) { ip.run(code,code); const id=gp.get(code)?.id; for (const role of PERMISSIONS[code]) ir.run(role,id); }
+}
+
+function migrateSyncEngineJournal() {
+  db.exec(`CREATE TABLE IF NOT EXISTS sync_outbox (id INTEGER PRIMARY KEY AUTOINCREMENT, event_id TEXT UNIQUE NOT NULL, branch_id INTEGER NOT NULL REFERENCES branches(id), entity_type TEXT NOT NULL, entity_uuid TEXT, operation TEXT NOT NULL CHECK(operation IN ('create','update','delete','event')), payload_json TEXT NOT NULL, payload_checksum TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','sent','failed')), attempts INTEGER NOT NULL DEFAULT 0, last_error TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now')), sent_at TEXT); CREATE TABLE IF NOT EXISTS sync_inbox (event_id TEXT PRIMARY KEY, branch_id INTEGER NOT NULL REFERENCES branches(id), payload_checksum TEXT NOT NULL, received_at TEXT NOT NULL DEFAULT (datetime('now')), applied_at TEXT, status TEXT NOT NULL DEFAULT 'received', error TEXT); CREATE TABLE IF NOT EXISTS sync_conflicts (id INTEGER PRIMARY KEY AUTOINCREMENT, branch_id INTEGER NOT NULL REFERENCES branches(id), entity_type TEXT NOT NULL, entity_uuid TEXT, conflict_type TEXT NOT NULL, local_checksum TEXT, remote_checksum TEXT, resolution TEXT, details_json TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now')), resolved_at TEXT); CREATE INDEX IF NOT EXISTS idx_sync_outbox_pending ON sync_outbox(branch_id,status,created_at); CREATE INDEX IF NOT EXISTS idx_sync_conflicts_open ON sync_conflicts(branch_id,resolved_at,created_at);`);
+}
+
+function migrateBackupIntegrity() {
+  db.exec(`CREATE TABLE IF NOT EXISTS backup_manifests (id INTEGER PRIMARY KEY AUTOINCREMENT, uuid TEXT UNIQUE NOT NULL, kind TEXT NOT NULL CHECK(kind IN ('local','portable','restore')), path TEXT, file_size INTEGER, sha256 TEXT NOT NULL, schema_version INTEGER NOT NULL, created_at TEXT NOT NULL DEFAULT (datetime('now')), created_by INTEGER REFERENCES users(id), verified_at TEXT, verification_status TEXT NOT NULL DEFAULT 'verified', synced INTEGER NOT NULL DEFAULT 0); CREATE INDEX IF NOT EXISTS idx_backup_manifests_created ON backup_manifests(created_at DESC);`);
+}
+
+function migrateFiscalization() {
+  db.exec(`CREATE TABLE IF NOT EXISTS fiscal_documents (id INTEGER PRIMARY KEY AUTOINCREMENT, uuid TEXT UNIQUE NOT NULL, branch_id INTEGER NOT NULL REFERENCES branches(id), sale_id INTEGER REFERENCES sales(id), provider TEXT NOT NULL, document_type TEXT NOT NULL DEFAULT 'invoice', status TEXT NOT NULL DEFAULT 'pending', external_id TEXT, external_number TEXT, request_payload TEXT, response_payload TEXT, error_message TEXT, issued_at TEXT, cancelled_at TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now')), updated_at TEXT NOT NULL DEFAULT (datetime('now')), synced INTEGER NOT NULL DEFAULT 0); CREATE INDEX IF NOT EXISTS idx_fiscal_documents_sale ON fiscal_documents(sale_id); CREATE INDEX IF NOT EXISTS idx_fiscal_documents_status ON fiscal_documents(branch_id,status);`);
+}
+
+function migrateCommercialHardening() {
+  db.exec(`CREATE TABLE IF NOT EXISTS financial_locks (entity_type TEXT NOT NULL, entity_id TEXT NOT NULL, branch_id INTEGER NOT NULL REFERENCES branches(id), locked_at TEXT NOT NULL DEFAULT (datetime('now')), locked_by INTEGER REFERENCES users(id), reason TEXT, PRIMARY KEY(entity_type, entity_id)); CREATE INDEX IF NOT EXISTS idx_financial_locks_branch ON financial_locks(branch_id,entity_type); CREATE INDEX IF NOT EXISTS idx_sales_branch_created_status ON sales(branch_id, created_at, status); CREATE INDEX IF NOT EXISTS idx_inventory_branch_updated ON inventory(branch_id, updated_at); CREATE INDEX IF NOT EXISTS idx_audit_branch_action_created ON audit_logs(branch_id, action, created_at);`);
 }
 
 // يقسّم نص schema.sql إلى عبارات SQL منفصلة (كل عبارة تنتهي بفاصلة منقوطة في نهاية سطر)
@@ -511,6 +960,31 @@ function runMigrations() {
   // فهارس تُسرّع تقارير المبيعات مع نمو حجم البيانات (بحث/تجميع حسب التاريخ والمنتج)
   db.exec(`CREATE INDEX IF NOT EXISTS idx_sales_created_at ON sales(created_at)`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_sale_items_product_id ON sale_items(product_id)`);
+  // فهارس المزامنة (sync): كانت هذه الأعمدة (synced) بلا أي فهرس على أي جدول،
+  // فكل دورة مزامنة (كل 5 ثوانٍ لجهاز "طرفية" LAN!) كانت تفحص الجدول كاملاً
+  // سطراً سطراً في 18 استعلاماً مختلفاً - وهذا الفحص يعمل بشكل متزامن (synchronous)
+  // على خيط العملية الرئيسية الوحيد في Electron، فيُجمّد التطبيق بأكمله (كل
+  // النوافذ، كل حقول الإدخال) لحظياً في كل دورة، وتزداد المدة كلما كبرت
+  // قاعدة البيانات مع الوقت. هذا كان على الأغلب السبب الرئيسي للتجمد المتكرر
+  // "في أوقات عشوائية" الذي أبلغ عنه المستخدم.
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_categories_synced ON categories(synced)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_products_synced ON products(synced)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_customers_branch_synced ON customers(branch_id, synced)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_customer_ledger_branch_synced ON customer_ledger(branch_id, synced)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_store_credit_ledger_branch_synced ON store_credit_ledger(branch_id, synced)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_inventory_branch_synced ON inventory(branch_id, synced)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_sales_branch_synced ON sales(branch_id, synced)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_payment_transactions_branch_synced ON payment_transactions(branch_id, synced)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_cash_movements_branch_synced ON cash_movements(branch_id, synced)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_shifts_branch_synced ON shifts(branch_id, synced)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_inventory_movements_branch_synced ON inventory_movements(branch_id, synced)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_suppliers_branch_synced ON suppliers(branch_id, synced)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_supplier_ledger_branch_synced ON supplier_ledger(branch_id, synced)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_purchase_orders_branch_synced ON purchase_orders(branch_id, synced)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_returns_branch_synced ON returns(branch_id, synced)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_restaurant_tables_branch_synced ON restaurant_tables(branch_id, synced)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_bundles_branch_synced ON bundles(branch_id, synced)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_tax_profiles_branch_synced ON tax_profiles(branch_id, synced)`);
   tryAddColumn('users', `must_change_password INTEGER NOT NULL DEFAULT 0`);
   // بيع بالوزن (خضار/فواكه): كود PLU + علامة "بيع بالوزن" لكل منتج
   tryAddColumn('products', `is_weighted INTEGER NOT NULL DEFAULT 0`);
@@ -1442,46 +1916,12 @@ function deleteBundle(id) {
 // مخزون كافٍ فقط للمنتجات "بكمية محددة" (track_inventory=1). المنتجات "المفتوحة" (بدون تتبع
 // كمية — خدمات، أصناف بلا حدّ مخزون) تُستثنى بالكامل من هذا التحقق مهما كانت الكمية المطلوبة.
 function priceItemsFromDatabase(items, branchId) {
-  const getPrice = db.prepare(
-    `SELECT p.id, p.price, p.cost, COALESCE(i.unit_cost, p.cost, 0) AS branch_cost, p.tax_rate, p.tax_profile_id, p.name, p.track_inventory, COALESCE(i.quantity, 0) AS available,
-            tp.code AS tax_profile_code, tp.rate AS profile_rate, tp.is_inclusive AS profile_inclusive
-     FROM products p
-     LEFT JOIN inventory i ON i.product_id = p.id AND i.branch_id = ?
-     LEFT JOIN tax_profiles tp ON tp.id = p.tax_profile_id AND tp.branch_id = ? AND tp.is_active = 1
-     WHERE p.id = ?`
-  );
-  const global = getGlobalProfile();
-  let subtotal = 0;
-  let taxTotal = 0;
-  const priced = [];
-  const requestedByProduct = new Map();
-  for (const item of items || []) {
-    const productId = Number(item.productId);
-    const quantity = Number(item.quantity);
-    if (!Number.isInteger(productId) || productId <= 0) throw new Error('معرّف المنتج غير صالح.');
-    if (!(Number.isFinite(quantity) && quantity > 0)) throw new Error('كمية غير صالحة في السلة');
-    requestedByProduct.set(productId, (requestedByProduct.get(productId) || 0) + quantity);
-  }
-  for (const [productId, requestedQty] of requestedByProduct) {
-    const product = getPrice.get(branchId, branchId, productId);
-    if (!product) throw new Error('منتج غير موجود ضمن السلة');
-    if (product.track_inventory && product.available < requestedQty) {
-      throw new Error(`الكمية المتوفرة من "${product.name}" غير كافية (المتوفر: ${product.available}). ` +
-        `فعّل "بيع مفتوح بدون تتبّع كمية" لهذا الصنف إن لم ترد التحقق من كميته.`);
-    }
-  }
-  for (const item of items || []) {
-    const product = getPrice.get(branchId, branchId, Number(item.productId));
-    const unitPrice = Number(product.price);
-    const taxRate = product.profile_rate == null ? Number(product.tax_rate || 0) : Number(product.profile_rate);
-    const inclusive = product.profile_rate != null ? Number(product.profile_inclusive) === 1 : global.tax_mode === 'inclusive';
-    const lineGross = unitPrice * Number(item.quantity);
-    const lineTax = inclusive ? lineGross - (lineGross / (1 + taxRate / 100)) : lineGross * (taxRate / 100);
-    subtotal += inclusive ? (lineGross - lineTax) : lineGross;
-    taxTotal += lineTax;
-    priced.push({ productId: item.productId, quantity: Number(item.quantity), unitPrice, taxRate, taxProfileId: product.tax_profile_id || null, taxProfileCode: product.tax_profile_code || null, taxInclusive: inclusive, lineTotal: lineGross, notes: item.notes || null, costAtSale: Math.max(0, Number(product.branch_cost ?? product.cost ?? 0)), trackInventory: Boolean(product.track_inventory) });
-  }
-  return { priced, subtotal, taxTotal };
+  const getPrice = db.prepare(`SELECT p.id, p.price, p.cost, COALESCE(i.unit_cost, p.cost, 0) AS branch_cost, p.tax_rate, p.tax_profile_id, p.name, p.track_inventory, COALESCE(i.quantity, 0) AS available, tp.code AS tax_profile_code, tp.rate AS profile_rate, tp.is_inclusive AS profile_inclusive FROM products p LEFT JOIN inventory i ON i.product_id=p.id AND i.branch_id=? LEFT JOIN tax_profiles tp ON tp.id=p.tax_profile_id AND tp.branch_id=? AND tp.is_active=1 WHERE p.id=?`);
+  const global=getGlobalProfile(); const minorUnit=Number(global?.currency_minor_unit ?? 2); let subtotalMinor=0; let taxTotalMinor=0; const priced=[]; const requestedByProduct=new Map();
+  for(const item of items||[]){ const productId=Number(item.productId); const quantity=Number(item.quantity); if(!Number.isInteger(productId)||productId<=0) throw new Error('معرّف المنتج غير صالح.'); if(!(Number.isFinite(quantity)&&quantity>0)) throw new Error('كمية غير صالحة في السلة'); requestedByProduct.set(productId,(requestedByProduct.get(productId)||0)+quantity); }
+  for(const [productId,requestedQty] of requestedByProduct){ const product=getPrice.get(branchId,branchId,productId); if(!product) throw new Error('منتج غير موجود ضمن السلة'); if(product.track_inventory&&product.available<requestedQty) throw new Error(`الكمية المتوفرة من "${product.name}" غير كافية (المتوفر: ${product.available}). فعّل "بيع مفتوح بدون تتبّع كمية" لهذا الصنف إن لم ترد التحقق من كميته.`); }
+  for(const item of items||[]){ const product=getPrice.get(branchId,branchId,Number(item.productId)); const unitPriceMinor=money.toMinor(product.price,minorUnit); const unitCostMinor=money.toMinor(Math.max(0,Number(product.branch_cost??product.cost??0)),minorUnit); const taxRate=product.profile_rate==null?Number(product.tax_rate||0):Number(product.profile_rate); const inclusive=product.profile_rate!=null?Number(product.profile_inclusive)===1:global.tax_mode==='inclusive'; const lineGrossMinor=money.multiplyMinorQuantity(unitPriceMinor,Number(item.quantity)); const lineTaxMinor=money.taxMinor(lineGrossMinor,taxRate,inclusive); const lineNetMinor=inclusive?Math.max(0,lineGrossMinor-lineTaxMinor):lineGrossMinor; subtotalMinor+=lineNetMinor; taxTotalMinor+=lineTaxMinor; priced.push({productId:item.productId,quantity:Number(item.quantity),unitPrice:money.fromMinor(unitPriceMinor,minorUnit),unitPriceMinor,taxRate,taxProfileId:product.tax_profile_id||null,taxProfileCode:product.tax_profile_code||null,taxInclusive:inclusive,lineTotal:money.fromMinor(lineGrossMinor,minorUnit),lineTotalMinor:lineGrossMinor,notes:item.notes||null,costAtSale:money.fromMinor(unitCostMinor,minorUnit),costAtSaleMinor:unitCostMinor,trackInventory:Boolean(product.track_inventory)}); }
+  return {priced,subtotalMinor,taxTotalMinor,subtotal:money.fromMinor(subtotalMinor,minorUnit),taxTotal:money.fromMinor(taxTotalMinor,minorUnit),minorUnit};
 }
 
 // يتحقق أن الخصم الإجمالي المطلوب لا يتجاوز حد الكاشير، إلا بموافقة مدير/مدير عام
@@ -1638,6 +2078,72 @@ function validatePaymentAmounts(total, paymentMethod, cashAmount, cardAmount, ch
   if (Math.abs(cash + card - t) > 0.01 || change > 0.01) throw new Error('مبالغ الدفع المختلط غير متطابقة مع إجمالي الفاتورة.');
 }
 
+function validatePaymentAmountsMinor(totalMinor, paymentMethod, cashMinor, cardMinor, changeMinor) {
+  const total = Number(totalMinor);
+  const cash = Number(cashMinor) || 0;
+  const card = Number(cardMinor) || 0;
+  const change = Number(changeMinor) || 0;
+  if (!Number.isInteger(total) || total < 0) throw new Error('إجمالي الفاتورة غير صالح.');
+  if (!['cash', 'card', 'mixed', 'credit', 'store_credit'].includes(paymentMethod)) throw new Error('طريقة الدفع غير صالحة.');
+  if ([cash, card, change].some((n) => !Number.isInteger(n) || n < 0)) throw new Error('بيانات الدفع غير صالحة.');
+  if (paymentMethod === 'store_credit') {
+    if (cash !== 0 || card !== 0 || change !== 0) throw new Error('رصيد المتجر لا يقبل نقداً أو بطاقة في نفس العملية.');
+    return;
+  }
+  if (paymentMethod === 'credit') {
+    if (cash !== 0 || card !== 0 || change !== 0) throw new Error('البيع الآجل لا يقبل دفعة نقدية أو بطاقة في نفس العملية.');
+    return;
+  }
+  if (paymentMethod === 'cash') {
+    if (cash < total) throw new Error('المبلغ النقدي غير كافٍ لتغطية إجمالي الفاتورة.');
+    if (cash - total !== change) throw new Error('الباقي النقدي غير مطابق للمبلغ المستلم.');
+    return;
+  }
+  if (paymentMethod === 'card') {
+    if (card !== total || cash !== 0 || change !== 0) throw new Error('مبلغ البطاقة غير متطابق مع إجمالي الفاتورة.');
+    return;
+  }
+  if (cash + card !== total || change !== 0) throw new Error('مبالغ الدفع المختلط غير متطابقة مع إجمالي الفاتورة.');
+}
+
+function postSaleAccountingInTransaction(sale, saleId, branchId) {
+  const accountRows = db.prepare('SELECT id,code FROM accounting_accounts WHERE branch_id=? AND is_active=1 AND code IN (?,?,?,?,?,?,?,?,?)').all(branchId, '1000','1100','1200','1300','2100','2200','4000','4100','5000');
+  const byCode = new Map(accountRows.map((row) => [String(row.code), Number(row.id)]));
+  const requireAccount = (code) => { const id = byCode.get(code); if (!id) throw new Error(`الحساب المحاسبي ${code} غير موجود.`); return id; };
+  const revenueMinor = Math.max(0, Number(sale.subtotalMinor || 0) - Number(sale.discountTotalMinor || 0) - Number(sale.bundleDiscountTotalMinor || 0));
+  const taxMinor = Math.max(0, Number(sale.taxTotalMinor || 0));
+  const deliveryMinor = Math.max(0, Number(sale.deliveryFeeMinor || 0));
+  const costMinor = sale.items.reduce((sum, item) => sum + money.multiplyMinorQuantity(Number(item.costAtSaleMinor || 0), Number(item.quantity || 0)), 0);
+  const lines = [];
+  const totalDebit = Number(sale.grandTotalMinor || 0);
+  if (sale.paymentMethod === 'mixed') {
+    if (Number(sale.cashAmountMinor || 0) > 0) lines.push({ accountId: requireAccount('1000'), debitMinor: Number(sale.cashAmountMinor), creditMinor: 0, memo: `Cash settlement ${sale.invoiceNumber}` });
+    if (Number(sale.cardAmountMinor || 0) > 0) lines.push({ accountId: requireAccount('1100'), debitMinor: Number(sale.cardAmountMinor), creditMinor: 0, memo: `Card settlement ${sale.invoiceNumber}` });
+  } else {
+    let settlementAccountCode = '1000';
+    if (sale.paymentMethod === 'card') settlementAccountCode = '1100';
+    else if (sale.paymentMethod === 'credit') settlementAccountCode = '1200';
+    else if (sale.paymentMethod === 'store_credit') settlementAccountCode = '2200';
+    if (totalDebit > 0) lines.push({ accountId: requireAccount(settlementAccountCode), debitMinor: totalDebit, creditMinor: 0, memo: `Settlement ${sale.invoiceNumber}` });
+  }
+  if (revenueMinor > 0) lines.push({ accountId: requireAccount('4000'), debitMinor: 0, creditMinor: revenueMinor, memo: `Sales revenue ${sale.invoiceNumber}` });
+  if (deliveryMinor > 0) lines.push({ accountId: requireAccount('4100'), debitMinor: 0, creditMinor: deliveryMinor, memo: `Delivery revenue ${sale.invoiceNumber}` });
+  if (taxMinor > 0) lines.push({ accountId: requireAccount('2100'), debitMinor: 0, creditMinor: taxMinor, memo: `Tax payable ${sale.invoiceNumber}` });
+  if (costMinor > 0) {
+    lines.push({ accountId: requireAccount('5000'), debitMinor: costMinor, creditMinor: 0, memo: `COGS ${sale.invoiceNumber}` });
+    lines.push({ accountId: requireAccount('1300'), debitMinor: 0, creditMinor: costMinor, memo: `Inventory ${sale.invoiceNumber}` });
+  }
+  // Revenue/tax settlement plus COGS/inventory form one balanced journal only when both sides match.
+  // The settlement debit is the gross sale total; the revenue side is net of discounts plus tax and delivery.
+  // COGS creates an equal additional debit/credit pair.
+  const operatingLines = lines;
+  const operatingDebit = operatingLines.reduce((n, l) => n + Number(l.debitMinor || 0), 0);
+  const operatingCredit = operatingLines.reduce((n, l) => n + Number(l.creditMinor || 0), 0);
+  if (operatingDebit !== operatingCredit) throw new Error(`القيد المحاسبي غير متوازن للفواتير ${sale.invoiceNumber}.`);
+  const entry = insertPostedJournalEntry({ branchId, memo: `Sale ${sale.invoiceNumber}`, referenceType: 'sale', referenceId: saleId, lines: operatingLines, createdBy: sale.userId || null });
+  return entry;
+}
+
 // عملية بيع كاملة داخل transaction واحدة: تسجيل الفاتورة + البنود + خصم المخزون
 const createSaleTx = db.transaction((sale) => {
   const branch = getCurrentBranch();
@@ -1665,16 +2171,20 @@ const createSaleTx = db.transaction((sale) => {
   }
   const saleUuid = uuid();
 
-  const { priced, subtotal, taxTotal } = priceItemsFromDatabase(sale.items, branch.id);
+  const { priced, subtotal, taxTotal, subtotalMinor, taxTotalMinor, minorUnit } = priceItemsFromDatabase(sale.items, branch.id);
   assertCreditSaleAllowed(sale);
   const bundleDiscountTotal = calculateBundleDiscountFromDatabase(priced, sale.bundleIds, branch.id);
-  const { discountTotal, discountType, discountValue, discountApprovedBy } = assertDiscountAllowed(
-    subtotal, sale.discountType, sale.discountValue, sale.discountApprovedBy
-  );
+  const { discountTotal, discountType, discountValue, discountApprovedBy } = assertDiscountAllowed(subtotal, sale.discountType, sale.discountValue, sale.discountApprovedBy);
+  const discountTotalMinor = money.toMinor(discountTotal, minorUnit);
+  const bundleDiscountTotalMinor = money.toMinor(bundleDiscountTotal, minorUnit);
   const rawDeliveryFee = Number(sale.deliveryFee) || 0;
   if (!Number.isFinite(rawDeliveryFee) || rawDeliveryFee < 0) throw new Error('رسوم التوصيل غير صالحة.');
-  const deliveryFee = rawDeliveryFee;
-  const grandTotal = Math.max(0, subtotal + taxTotal - discountTotal - bundleDiscountTotal + deliveryFee);
+  const deliveryFeeMinor = money.toMinor(rawDeliveryFee, minorUnit);
+  const grandTotalMinor = Math.max(0, subtotalMinor + taxTotalMinor - discountTotalMinor - bundleDiscountTotalMinor + deliveryFeeMinor);
+  const grandTotal = money.fromMinor(grandTotalMinor, minorUnit);
+  const deliveryFee = money.fromMinor(deliveryFeeMinor, minorUnit);
+  const discountTotalMajor = money.fromMinor(discountTotalMinor, minorUnit);
+  const bundleDiscountTotalMajor = money.fromMinor(bundleDiscountTotalMinor, minorUnit);
   const notes = String(sale.notes || '').trim().slice(0, 500) || null;
   // وقت التسليم: فاضي/غير موجود = "الآن" (فوري). لو الكاشير حدد وقت مستقبلي، لازم
   // يكون تاريخ/وقت صالح فعلاً، وإلا نرفضه بدل ما نخزّن قيمة تالفة تكسر شاشة المطبخ.
@@ -1685,59 +2195,96 @@ const createSaleTx = db.transaction((sale) => {
     deliveryTime = d.toISOString();
   }
 
-  sale = { ...sale, subtotal, taxTotal, discountTotal, discountType, discountValue, discountApprovedBy, bundleDiscountTotal, grandTotal, deliveryFee, notes, deliveryTime, items: priced };
-  validatePaymentAmounts(grandTotal, sale.paymentMethod || 'cash', sale.cashAmount, sale.cardAmount, sale.changeDue);
+  const paymentMethod = sale.paymentMethod || 'cash';
+  const cashAmountMinor = money.toMinor(sale.cashAmount || 0, minorUnit);
+  const cardAmountMinor = money.toMinor(sale.cardAmount || 0, minorUnit);
+  const changeDueMinor = money.toMinor(sale.changeDue || 0, minorUnit);
+  const dueAmountMinor = paymentMethod === 'credit' ? grandTotalMinor : 0;
+  validatePaymentAmountsMinor(grandTotalMinor, paymentMethod, cashAmountMinor, cardAmountMinor, changeDueMinor);
+  // Legacy major-unit validation remains as a compatibility guard for older callers.
+  validatePaymentAmounts(grandTotal, paymentMethod, money.fromMinor(cashAmountMinor, minorUnit), money.fromMinor(cardAmountMinor, minorUnit), money.fromMinor(changeDueMinor, minorUnit));
+  const cashAmount = money.fromMinor(cashAmountMinor, minorUnit);
+  const cardAmount = money.fromMinor(cardAmountMinor, minorUnit);
+  const changeDue = money.fromMinor(changeDueMinor, minorUnit);
+  const dueAmount = money.fromMinor(dueAmountMinor, minorUnit);
 
-  const dueAmount = sale.paymentMethod === 'credit' ? grandTotal : 0;
+  sale = { ...sale, subtotal, taxTotal, discountTotal: discountTotalMajor, discountType, discountValue, discountApprovedBy, bundleDiscountTotal: bundleDiscountTotalMajor, grandTotal, deliveryFee, notes, deliveryTime, items: priced, subtotalMinor, taxTotalMinor, discountTotalMinor, bundleDiscountTotalMinor, deliveryFeeMinor, grandTotalMinor, minorUnit, cashAmount, cashAmountMinor, cardAmount, cardAmountMinor, changeDue, changeDueMinor, dueAmount, dueAmountMinor };
+
   const invoiceNumber = nextInvoiceNumber();
-  const saleInfo = db
-    .prepare(
-      `INSERT INTO sales (uuid, branch_id, user_id, customer_id, table_id, shift_id, order_type, delivery_fee, delivery_person, notes, delivery_time,
-                           subtotal, tax_total, discount_total, discount_type, discount_value, discount_approved_by,
-                           bundle_discount_total, grand_total, payment_method, cash_amount, card_amount, change_due, due_amount, exchange_rate, invoice_number, payment_reference, payment_provider, payment_currency, client_request_id, status)
-       VALUES (@uuid, @branch_id, @user_id, @customer_id, @table_id, @shift_id, @order_type, @delivery_fee, @delivery_person, @notes, @delivery_time,
-               @subtotal, @tax_total, @discount_total, @discount_type, @discount_value, @discount_approved_by,
-               @bundle_discount_total, @grand_total, @payment_method, @cash_amount, @card_amount, @change_due, @due_amount, @exchange_rate, @invoice_number, @payment_reference, @payment_provider, @payment_currency, @client_request_id, 'completed')`
+  sale.invoiceNumber = invoiceNumber;
+  const saleInfo = db.prepare(`
+    INSERT INTO sales (
+      uuid, branch_id, user_id, customer_id, table_id, shift_id, order_type,
+      delivery_fee, delivery_fee_minor, delivery_person, notes, delivery_time,
+      subtotal, subtotal_minor, tax_total, tax_total_minor,
+      discount_total, discount_total_minor, discount_type, discount_value, discount_approved_by,
+      bundle_discount_total, bundle_discount_total_minor,
+      grand_total, grand_total_minor, payment_method,
+      cash_amount, cash_amount_minor, card_amount, card_amount_minor,
+      change_due, change_due_minor, due_amount, due_amount_minor,
+      exchange_rate, invoice_number, payment_reference, payment_provider, payment_currency,
+      client_request_id, loyalty_points_awarded, status
+    ) VALUES (
+      @uuid, @branch_id, @user_id, @customer_id, @table_id, @shift_id, @order_type,
+      @delivery_fee, @delivery_fee_minor, @delivery_person, @notes, @delivery_time,
+      @subtotal, @subtotal_minor, @tax_total, @tax_total_minor,
+      @discount_total, @discount_total_minor, @discount_type, @discount_value, @discount_approved_by,
+      @bundle_discount_total, @bundle_discount_total_minor,
+      @grand_total, @grand_total_minor, @payment_method,
+      @cash_amount, @cash_amount_minor, @card_amount, @card_amount_minor,
+      @change_due, @change_due_minor, @due_amount, @due_amount_minor,
+      @exchange_rate, @invoice_number, @payment_reference, @payment_provider, @payment_currency,
+      @client_request_id, @loyalty_points_awarded, 'completed'
     )
-    .run({
-      uuid: saleUuid,
-      branch_id: branch.id,
-      user_id: sale.userId || null,
-      customer_id: sale.customerId || null,
-      table_id: sale.tableId || null,
-      shift_id: sale.shiftId || null,
-      order_type: sale.orderType || 'in_store',
-      delivery_fee: sale.deliveryFee,
-      delivery_person: sale.deliveryPerson || null,
-      notes: sale.notes,
-      delivery_time: sale.deliveryTime,
-      subtotal: sale.subtotal,
-      tax_total: sale.taxTotal,
-      discount_total: sale.discountTotal || 0,
-      discount_type: sale.discountType || null,
-      discount_value: sale.discountValue || 0,
-      discount_approved_by: sale.discountApprovedBy || null,
-      bundle_discount_total: sale.bundleDiscountTotal || 0,
-      grand_total: sale.grandTotal,
-      payment_method: sale.paymentMethod || 'cash',
-      cash_amount: sale.cashAmount || 0,
-      card_amount: sale.cardAmount || 0,
-      change_due: sale.changeDue || 0,
-      due_amount: dueAmount,
-      exchange_rate: Math.max(0.000001, Number(sale.exchangeRate) || 1),
-      invoice_number: invoiceNumber,
-      payment_reference: String(sale.paymentReference || '').trim() || null,
-      payment_provider: String(sale.paymentProvider || '').trim() || null,
-      payment_currency: String(sale.paymentCurrency || getGlobalProfile().currency_code).trim().toUpperCase(),
-      client_request_id: clientRequestId || null,
-      loyalty_points_awarded: sale.customerId ? Math.floor(sale.grandTotal / 10) : 0,
-    });
+  `).run({
+    uuid: saleUuid,
+    branch_id: branch.id,
+    user_id: sale.userId || null,
+    customer_id: sale.customerId || null,
+    table_id: sale.tableId || null,
+    shift_id: sale.shiftId || null,
+    order_type: sale.orderType || 'in_store',
+    delivery_fee: deliveryFee,
+    delivery_fee_minor: deliveryFeeMinor,
+    delivery_person: sale.deliveryPerson || null,
+    notes: sale.notes,
+    delivery_time: sale.deliveryTime,
+    subtotal,
+    subtotal_minor: subtotalMinor,
+    tax_total: taxTotal,
+    tax_total_minor: taxTotalMinor,
+    discount_total: discountTotalMajor,
+    discount_total_minor: discountTotalMinor,
+    discount_type: sale.discountType || null,
+    discount_value: sale.discountValue || 0,
+    discount_approved_by: sale.discountApprovedBy || null,
+    bundle_discount_total: bundleDiscountTotalMajor,
+    bundle_discount_total_minor: bundleDiscountTotalMinor,
+    grand_total: grandTotal,
+    grand_total_minor: grandTotalMinor,
+    payment_method: paymentMethod,
+    cash_amount: cashAmount,
+    cash_amount_minor: cashAmountMinor,
+    card_amount: cardAmount,
+    card_amount_minor: cardAmountMinor,
+    change_due: changeDue,
+    change_due_minor: changeDueMinor,
+    due_amount: dueAmount,
+    due_amount_minor: dueAmountMinor,
+    exchange_rate: Math.max(0.000001, Number(sale.exchangeRate) || 1),
+    invoice_number: invoiceNumber,
+    payment_reference: String(sale.paymentReference || '').trim() || null,
+    payment_provider: String(sale.paymentProvider || '').trim() || null,
+    payment_currency: String(sale.paymentCurrency || getGlobalProfile().currency_code).trim().toUpperCase(),
+    client_request_id: clientRequestId || null,
+    loyalty_points_awarded: sale.customerId ? Math.floor(grandTotal / 10) : 0,
+  });
 
   const saleId = saleInfo.lastInsertRowid;
 
   const insertItem = db.prepare(
-    `INSERT INTO sale_items (uuid, sale_id, product_id, quantity, unit_price, tax_rate, tax_profile_id, tax_inclusive, discount, line_total, notes, cost_at_sale)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO sale_items (uuid, sale_id, product_id, quantity, unit_price, unit_price_minor, tax_rate, tax_profile_id, tax_inclusive, discount, line_total, line_total_minor, notes, cost_at_sale, cost_at_sale_minor)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   );
   const updateStock = db.prepare(
     `UPDATE inventory SET quantity = quantity - ?, updated_at = datetime('now'), synced = 0
@@ -1755,13 +2302,16 @@ const createSaleTx = db.transaction((sale) => {
       item.productId,
       item.quantity,
       item.unitPrice,
+      item.unitPriceMinor,
       item.taxRate || 0,
       item.taxProfileId || null,
       item.taxInclusive ? 1 : 0,
       item.discount || 0,
       item.lineTotal,
+      item.lineTotalMinor,
       item.notes || null,
-      item.costAtSale || 0
+      item.costAtSale || 0,
+      item.costAtSaleMinor
     );
     if (item.trackInventory) {
       const stockResult = updateStock.run(item.quantity, branch.id, item.productId);
@@ -1769,6 +2319,9 @@ const createSaleTx = db.transaction((sale) => {
       logMovement.run(uuid(), branch.id, item.productId, -item.quantity, saleId, item.costAtSale || 0);
     }
   }
+
+  postSaleAccountingInTransaction(sale, saleId, branch.id);
+  recordSyncOutboxEvent({ entityType: 'sale', entityUuid: saleUuid, operation: 'create', payload: { id: saleId, uuid: saleUuid, invoiceNumber } });
 
   if (sale.paymentMethod === 'store_credit') {
     if (!sale.customerId) throw new Error('الدفع برصيد المتجر يتطلب اختيار عميل.');
@@ -1781,15 +2334,15 @@ const createSaleTx = db.transaction((sale) => {
   // دفتر مدفوعات عالمي: يسجل طريقة/عملة/مبلغ العملية فقط ولا يخزن PAN أو بيانات البطاقة الحساسة.
   const paymentCurrency = String(sale.paymentCurrency || getGlobalProfile().currency_code).trim().toUpperCase();
   if (!/^[A-Z]{3}$/.test(paymentCurrency)) throw new Error('رمز عملة الدفع غير صالح. استخدم رمز ISO من 3 أحرف.');
-  const insertPayment = db.prepare(`INSERT INTO payment_transactions(uuid,branch_id,sale_id,shift_id,method,currency_code,amount,exchange_rate,provider,provider_reference,external_id,masked_descriptor,created_by) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`);
-  if (sale.paymentMethod === 'store_credit') insertPayment.run(uuid(), branch.id, saleId, sale.shiftId || null, 'store_credit', paymentCurrency, -sale.grandTotal, 1, null, null, null, null, sale.userId || null);
+  const insertPayment = db.prepare(`INSERT INTO payment_transactions(uuid,branch_id,sale_id,shift_id,method,currency_code,amount,amount_minor,exchange_rate,provider,provider_reference,external_id,masked_descriptor,created_by) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
+  if (sale.paymentMethod === 'store_credit') insertPayment.run(uuid(), branch.id, saleId, sale.shiftId || null, 'store_credit', paymentCurrency, -sale.grandTotal, -grandTotalMinor, 1, null, null, null, null, sale.userId || null);
   // تسجّل sales.cash_amount المبلغ المستلَم فعلياً، أما دفتر المدفوعات وحساب
   // الصندوق فيسجّلان الصافي الذي بقي في الصندوق بعد إعادة الباقي للعميل.
-  else if (sale.paymentMethod === 'cash') insertPayment.run(uuid(), branch.id, saleId, sale.shiftId || null, 'cash', paymentCurrency, sale.grandTotal, 1, null, null, null, null, sale.userId || null);
-  else if (sale.paymentMethod === 'card') insertPayment.run(uuid(), branch.id, saleId, sale.shiftId || null, 'card', paymentCurrency, sale.grandTotal, 1, sale.paymentProvider || null, sale.paymentReference || null, null, null, sale.userId || null);
+  else if (sale.paymentMethod === 'cash') insertPayment.run(uuid(), branch.id, saleId, sale.shiftId || null, 'cash', paymentCurrency, sale.grandTotal, grandTotalMinor, 1, null, null, null, null, sale.userId || null);
+  else if (sale.paymentMethod === 'card') insertPayment.run(uuid(), branch.id, saleId, sale.shiftId || null, 'card', paymentCurrency, sale.grandTotal, grandTotalMinor, 1, sale.paymentProvider || null, sale.paymentReference || null, null, null, sale.userId || null);
   else if (sale.paymentMethod === 'mixed') {
-    if (Number(sale.cashAmount) > 0) insertPayment.run(uuid(), branch.id, saleId, sale.shiftId || null, 'cash', paymentCurrency, Number(sale.cashAmount), 1, null, null, null, null, sale.userId || null);
-    if (Number(sale.cardAmount) > 0) insertPayment.run(uuid(), branch.id, saleId, sale.shiftId || null, 'card', paymentCurrency, Number(sale.cardAmount), 1, sale.paymentProvider || null, sale.paymentReference || null, null, null, sale.userId || null);
+    if (Number(sale.cashAmount) > 0) insertPayment.run(uuid(), branch.id, saleId, sale.shiftId || null, 'cash', paymentCurrency, sale.cashAmount, cashAmountMinor, 1, null, null, null, null, sale.userId || null);
+    if (Number(sale.cardAmount) > 0) insertPayment.run(uuid(), branch.id, saleId, sale.shiftId || null, 'card', paymentCurrency, sale.cardAmount, cardAmountMinor, 1, sale.paymentProvider || null, sale.paymentReference || null, null, null, sale.userId || null);
   }
 
   // نقاط ولاء: نقطة واحدة لكل 10 وحدات عملة من إجمالي الفاتورة (قابلة للتعديل لاحقاً)
@@ -1860,6 +2413,157 @@ function getSale(id, branchId = null) {
 
   return { ...sale, items, branch };
 }
+
+/* ---------------- تحويلات المخزون بين الفروع ---------------- */
+function listTransferBranches() {
+  const current = getCurrentBranch();
+  return db.prepare(`
+    SELECT uuid, name, notes, CASE WHEN uuid=? THEN 1 ELSE 0 END AS is_current
+    FROM branch_directory
+    WHERE uuid <> ?
+    UNION ALL
+    SELECT uuid, name, address AS notes, 1 AS is_current
+    FROM branches WHERE uuid=?
+    ORDER BY is_current DESC, name
+  `).all(current.uuid, current.uuid, current.uuid);
+}
+
+function upsertTransferBranch({ branchUuid, name, notes = null }) {
+  const current = getCurrentBranch();
+  const cleanUuid = String(branchUuid || '').trim();
+  const cleanName = String(name || '').trim();
+  if (!/^[A-Za-z0-9_-]{8,200}$/.test(cleanUuid)) throw new Error('معرّف الفرع غير صالح.');
+  if (!cleanName || cleanName.length > 160) throw new Error('اسم الفرع مطلوب وطوله غير صالح.');
+  if (cleanUuid === current.uuid) throw new Error('لا يمكن إضافة الفرع الحالي كفرع مستلم.');
+  db.prepare(`INSERT INTO branch_directory(uuid,name,notes,updated_at) VALUES(?,?,?,datetime('now'))
+    ON CONFLICT(uuid) DO UPDATE SET name=excluded.name,notes=excluded.notes,updated_at=datetime('now')`)
+    .run(cleanUuid, cleanName, notes ? String(notes).trim().slice(0,500) : null);
+  return db.prepare('SELECT * FROM branch_directory WHERE uuid=?').get(cleanUuid);
+}
+
+function getInventoryTransferByUuid(transferUuid) {
+  const branch = getCurrentBranch();
+  const transfer = db.prepare(`SELECT t.*, sb.name AS source_branch_name, dbb.name AS destination_branch_name,
+    u.full_name AS created_by_name,
+    CASE WHEN EXISTS(SELECT 1 FROM inventory_transfer_receipts r WHERE r.transfer_uuid=t.uuid) THEN 'received' ELSE t.status END AS effective_status
+    FROM inventory_transfers t
+    LEFT JOIN branches sb ON sb.uuid=t.source_branch_uuid
+    LEFT JOIN branches dbb ON dbb.uuid=t.destination_branch_uuid
+    LEFT JOIN users u ON u.id=t.created_by
+    WHERE t.uuid=? AND t.local_branch_id=?`).get(String(transferUuid||''), branch.id);
+  if (!transfer) return null;
+  const items = db.prepare(`SELECT ti.*,p.name AS product_name,p.unit FROM inventory_transfer_items ti JOIN products p ON p.id=ti.product_id WHERE ti.transfer_id=? ORDER BY ti.id`).all(transfer.id);
+  const receipt = db.prepare(`SELECT r.*,u.full_name AS received_by_name FROM inventory_transfer_receipts r LEFT JOIN users u ON u.id=r.received_by WHERE r.transfer_uuid=?`).get(transfer.uuid) || null;
+  const receiptItems = receipt ? db.prepare('SELECT * FROM inventory_transfer_receipt_items WHERE receipt_id=? ORDER BY id').all(receipt.id) : [];
+  return { ...transfer, items, receipt: receipt ? { ...receipt, items: receiptItems } : null };
+}
+
+function listInventoryTransfers(filters = {}) {
+  const branch = getCurrentBranch();
+  let sql = `SELECT t.*, sb.name AS source_branch_name, dbb.name AS destination_branch_name,
+    CASE WHEN EXISTS(SELECT 1 FROM inventory_transfer_receipts r WHERE r.transfer_uuid=t.uuid) THEN 'received' ELSE t.status END AS effective_status
+    FROM inventory_transfers t
+    LEFT JOIN branches sb ON sb.uuid=t.source_branch_uuid
+    LEFT JOIN branches dbb ON dbb.uuid=t.destination_branch_uuid
+    WHERE t.local_branch_id=?`;
+  const params=[branch.id];
+  if (filters.status) sql += ' AND (CASE WHEN EXISTS(SELECT 1 FROM inventory_transfer_receipts r WHERE r.transfer_uuid=t.uuid) THEN \'received\' ELSE t.status END)=?', params.push(String(filters.status));
+  sql += ' ORDER BY t.created_at DESC LIMIT 500';
+  const rows=db.prepare(sql).all(...params);
+  return rows.map((row)=>({ ...row, items: db.prepare(`SELECT ti.product_uuid,ti.quantity,p.name AS product_name,p.unit FROM inventory_transfer_items ti JOIN products p ON p.id=ti.product_id WHERE ti.transfer_id=? ORDER BY ti.id`).all(row.id) }));
+}
+
+const createInventoryTransferTx = db.transaction((payload = {}) => {
+  const branch=getCurrentBranch();
+  const destinationBranchUuid=String(payload.destinationBranchUuid||'').trim();
+  if (!destinationBranchUuid || destinationBranchUuid === branch.uuid) throw new Error('فرع الاستلام غير صالح.');
+  const destination=db.prepare('SELECT uuid,name FROM branch_directory WHERE uuid=?').get(destinationBranchUuid);
+  if (!destination) throw new Error('فرع الاستلام غير موجود في قائمة الفروع المعروفة. أضفه أولاً من إعدادات التحويلات.');
+  const rawItems=Array.isArray(payload.items)?payload.items:[];
+  if (!rawItems.length) throw new Error('أضف منتجاً واحداً على الأقل للتحويل.');
+
+  const merged=new Map();
+  for (const raw of rawItems) {
+    const productId=Number(raw.productId); const quantity=Number(raw.quantity);
+    if (!Number.isInteger(productId) || productId<=0 || !Number.isFinite(quantity) || quantity<=0) throw new Error('بيانات منتج أو كمية غير صالحة.');
+    merged.set(productId,(merged.get(productId)||0)+quantity);
+  }
+
+  const transferUuid=uuid();
+  const result=db.prepare(`INSERT INTO inventory_transfers(uuid,source_branch_uuid,destination_branch_uuid,local_branch_id,status,notes,created_by,shipped_at,updated_at,synced)
+    VALUES(?,?,?,?,?,?,?,?,datetime('now'),0)`).run(transferUuid,branch.uuid,destinationBranchUuid,branch.id,'shipped',payload.notes?String(payload.notes).trim().slice(0,1000):null,payload.createdBy||null,new Date().toISOString());
+  const transferId=result.lastInsertRowid;
+  const stockStmt=db.prepare('SELECT i.quantity,i.unit_cost FROM inventory i WHERE i.branch_id=? AND i.product_id=?');
+  const productStmt=db.prepare('SELECT id,uuid,name,is_active,track_inventory FROM products WHERE id=?');
+  const updateStock=db.prepare(`UPDATE inventory SET quantity=quantity-?,updated_at=datetime('now'),synced=0 WHERE branch_id=? AND product_id=? AND quantity>=?`);
+  const itemStmt=db.prepare('INSERT INTO inventory_transfer_items(transfer_id,product_id,product_uuid,quantity,unit_cost) VALUES(?,?,?,?,?)');
+  const movementStmt=db.prepare(`INSERT INTO inventory_movements(uuid,branch_id,product_id,change_qty,reason,ref_id,notes,unit_cost_after,synced) VALUES(?,?,?,?,?,?,?,?,0)`);
+  for (const [productId,quantity] of merged.entries()) {
+    const product=productStmt.get(productId);
+    if (!product || !product.is_active || !product.track_inventory) throw new Error(`المنتج رقم ${productId} غير صالح للتحويل.`);
+    const stock=stockStmt.get(branch.id,productId);
+    const available=Number(stock?.quantity||0);
+    if (available < quantity) throw new Error(`المخزون غير كافٍ للصنف: ${product.name}. المتاح ${available}.`);
+    const changed=updateStock.run(quantity,branch.id,productId,quantity);
+    if (!changed.changes) throw new Error(`تعذر حجز كمية الصنف: ${product.name}.`);
+    itemStmt.run(transferId,productId,product.uuid,quantity,Number(stock?.unit_cost||product.cost||0));
+    movementStmt.run(uuid(),branch.id,productId,-quantity,'transfer_out',transferId,`تحويل إلى الفرع ${destination.name}`,Number(stock?.unit_cost||product.cost||0));
+  }
+  return transferId;
+});
+function createInventoryTransfer(payload={}) { const id=createInventoryTransferTx(payload); const row=db.prepare('SELECT uuid FROM inventory_transfers WHERE id=?').get(id); return getInventoryTransferByUuid(row.uuid); }
+const receiveInventoryTransferTx = db.transaction((payload = {}) => {
+  const branch=getCurrentBranch();
+  const transferUuid=String(payload.transferUuid||'').trim();
+  const transfer=db.prepare('SELECT * FROM inventory_transfers WHERE uuid=? AND local_branch_id=?').get(transferUuid,branch.id);
+  if (!transfer) throw new Error('التحويل غير موجود على هذا الفرع.');
+  if (transfer.destination_branch_uuid !== branch.uuid) throw new Error('هذا الفرع ليس فرع الاستلام.');
+  const exists=db.prepare('SELECT id FROM inventory_transfer_receipts WHERE transfer_uuid=?').get(transferUuid);
+  if (exists) throw new Error('تم استلام هذا التحويل مسبقاً.');
+  if (transfer.status === 'cancelled') throw new Error('لا يمكن استلام تحويل ملغى.');
+  const items=db.prepare('SELECT ti.*,p.name,p.is_active,p.track_inventory FROM inventory_transfer_items ti JOIN products p ON p.uuid=ti.product_uuid WHERE ti.transfer_id=?').all(transfer.id);
+  if (!items.length) throw new Error('التحويل لا يحتوي أصنافاً.');
+  const receiptUuid=uuid();
+  const receiptId=db.prepare(`INSERT INTO inventory_transfer_receipts(uuid,transfer_uuid,source_branch_uuid,destination_branch_uuid,local_branch_id,received_by,notes,synced)
+    VALUES(?,?,?,?,?,?,?,0)`).run(receiptUuid,transfer.source_branch_uuid,transfer.destination_branch_uuid,branch.id,payload.receivedBy||null,payload.notes?String(payload.notes).trim().slice(0,1000):null).lastInsertRowid;
+  const upsertInv=db.prepare(`INSERT INTO inventory(branch_id,product_id,quantity,unit_cost,min_quantity,updated_at,synced) VALUES(?,?,?,?,0,datetime('now'),0)
+    ON CONFLICT(branch_id,product_id) DO UPDATE SET quantity=inventory.quantity+excluded.quantity,unit_cost=CASE WHEN excluded.unit_cost>0 THEN excluded.unit_cost ELSE inventory.unit_cost END,updated_at=datetime('now'),synced=0`);
+  const receiptItem=db.prepare('INSERT INTO inventory_transfer_receipt_items(receipt_id,product_uuid,quantity_received) VALUES(?,?,?)');
+  const movement=db.prepare(`INSERT INTO inventory_movements(uuid,branch_id,product_id,change_qty,reason,ref_id,notes,unit_cost_after,synced) VALUES(?,?,?,?,?,?,?,?,0)`);
+  for(const item of items){
+    if(!item.is_active || !item.track_inventory) throw new Error(`الصنف ${item.name} لم يعد صالحاً للاستلام.`);
+    const qty=Number(item.quantity); if(!(qty>0)) continue;
+    upsertInv.run(branch.id,item.product_id,qty,Number(item.unit_cost||0));
+    receiptItem.run(receiptId,item.product_uuid,qty);
+    movement.run(uuid(),branch.id,item.product_id,qty,'transfer_in',receiptId,`استلام تحويل ${transferUuid}`,Number(item.unit_cost||0));
+  }
+  db.prepare(`UPDATE inventory_transfers SET status='received',updated_at=datetime('now') WHERE id=?`).run(transfer.id);
+  return receiptUuid;
+});
+function receiveInventoryTransfer(payload={}) {
+  receiveInventoryTransferTx(payload);
+  return getInventoryTransferByUuid(payload.transferUuid);
+}
+
+function cancelInventoryTransfer(transferUuid) {
+  const branch=getCurrentBranch();
+  return db.transaction(()=>{
+    const transfer=db.prepare('SELECT * FROM inventory_transfers WHERE uuid=? AND local_branch_id=?').get(String(transferUuid||''),branch.id);
+    if(!transfer) throw new Error('التحويل غير موجود.');
+    if(transfer.source_branch_uuid!==branch.uuid) throw new Error('لا يمكن إلغاء تحويل ليس مرسلاً من هذا الفرع.');
+    if(transfer.status!=='shipped') throw new Error('لا يمكن إلغاء تحويل تم استلامه أو إلغاؤه سابقاً.');
+    if(Number(transfer.synced)!==0) throw new Error('تم إرسال التحويل إلى المزامنة؛ لا يمكن إلغاؤه الآن. أنشئ تحويلاً عكسياً بدلاً من تعديل السجل التاريخي.');
+    if(db.prepare('SELECT 1 FROM inventory_transfer_receipts WHERE transfer_uuid=?').get(transfer.uuid)) throw new Error('لا يمكن إلغاء تحويل تم استلامه.');
+    const items=db.prepare('SELECT * FROM inventory_transfer_items WHERE transfer_id=?').all(transfer.id);
+    for(const item of items){
+      db.prepare('UPDATE inventory SET quantity=quantity+?,updated_at=datetime(\'now\'),synced=0 WHERE branch_id=? AND product_id=?').run(item.quantity,branch.id,item.product_id);
+      db.prepare(`INSERT INTO inventory_movements(uuid,branch_id,product_id,change_qty,reason,ref_id,notes,unit_cost_after,synced) VALUES(?,?,?,?,?,?,?,?,0)`).run(uuid(),branch.id,item.product_id,item.quantity,'transfer_cancel',transfer.id,`إلغاء تحويل ${transfer.uuid}`,item.unit_cost);
+    }
+    db.prepare(`UPDATE inventory_transfers SET status='cancelled',updated_at=datetime('now'),synced=0 WHERE id=?`).run(transfer.id);
+    return getInventoryTransferByUuid(transfer.uuid);
+  })();
+}
+
 
 /* ---------------- المخزون ---------------- */
 // قائمة كل المنتجات التي تتبّع المخزون مع كمياتها، مرتبة بحيث تظهر المنتجات المنخفضة أولاً
@@ -3117,6 +3821,22 @@ function daysElapsedInPayrollPeriod(monthKey, startDateValue) {
   const days = Math.round((asOf - start) / msPerDay) + 1;
   return Math.max(0, Math.min(dim, days));
 }
+function payrollDaysElapsedThrough(monthKey, startDateValue, asOfDateValue) {
+  const [year, month] = normalizePayrollMonth(monthKey).split('-').map(Number);
+  const dim = daysInPayrollMonth(monthKey);
+  const periodStart = new Date(year, month - 1, 1);
+  const periodEnd = new Date(year, month - 1, dim);
+  let start = parsePayrollDateLocal(startDateValue) || periodStart;
+  if (start < periodStart) start = periodStart;
+  if (start > periodEnd) return 0;
+  let asOf = parsePayrollDateLocal(asOfDateValue) || payrollTodayLocal();
+  if (asOf < start) return 0;
+  if (asOf > periodEnd) asOf = periodEnd;
+  const msPerDay = 24 * 60 * 60 * 1000;
+  const days = Math.round((asOf - start) / msPerDay) + 1;
+  return Math.max(0, Math.min(dim, days));
+}
+
 function payrollMonth(monthId) {
   const b = getCurrentBranch();
   const row = db.prepare('SELECT * FROM payroll_months WHERE id=? AND branch_id=?').get(Number(monthId), b.id);
@@ -3149,7 +3869,7 @@ function getOrCreatePayrollMonth(monthKey, createdBy=null) {
       if (existing.has(Number(e.id))) continue;
       const type = ['monthly','daily','hourly'].includes(e.pay_type) ? e.pay_type : 'monthly';
       const rate = Math.max(0, Number(e.pay_rate || 0));
-      const createdLocal = String(e.created_at || '').slice(0, 10); // 'YYYY-MM-DD' من 'YYYY-MM-DD HH:MM:SS'
+      const createdLocal = String(e.hire_date || e.created_at || '').slice(0, 10); // YYYY-MM-DD
       const startDate = createdLocal > periodStartStr ? createdLocal : periodStartStr;
       insert.run(month.id,e.id,type,rate,0,startDate);
     }
@@ -3157,15 +3877,37 @@ function getOrCreatePayrollMonth(monthKey, createdBy=null) {
   tx();
   return month;
 }
-function recalcPayrollEmployeeMonth(monthId, employeeId) {
+function payrollMultiplyDivideMinor(valueMinor, quantity, multiplier = 1, divisor = 1) {
+  const value = BigInt(Math.trunc(Number(valueMinor || 0)));
+  const q = BigInt(Math.max(0, Math.trunc(Number(money.toMinor(String(Number(quantity || 0)), 6)) || 0)));
+  const m = BigInt(Math.max(0, Math.trunc(Number(money.toMinor(String(Number(multiplier || 0)), 6)) || 0)));
+  const divisorScaled = BigInt(Math.max(1, Math.trunc(Number(money.toMinor(String(Number(divisor || 1)), 6)) || 0)));
+  const d = divisorScaled * 1000000n;
+  const numerator = value * q * m;
+  if (numerator === 0n) return 0;
+  return Number((numerator + d / 2n) / d);
+}
+function payrollRatioMinor(valueMinor, numerator, denominator) {
+  return payrollMultiplyDivideMinor(valueMinor, numerator, 1, denominator);
+}
+
+function recalcPayrollEmployeeMonth(monthId, employeeId, options = {}) {
   const b = getCurrentBranch(); const month = payrollMonth(monthId);
   const em = db.prepare(`SELECT m.*,e.full_name,e.job_title,e.pay_type employee_pay_type,e.pay_rate employee_pay_rate,e.is_active
     FROM payroll_employee_months m JOIN payroll_employees e ON e.id=m.employee_id
     WHERE m.month_id=? AND m.employee_id=? AND e.branch_id=?`).get(Number(monthId),Number(employeeId),b.id);
   if (!em) throw new Error('العامل غير موجود في هذا الشهر.');
-  const tx = db.prepare(`SELECT type,COALESCE(SUM(amount),0) amount,COALESCE(SUM(quantity),0) quantity
+  const tx = db.prepare(`SELECT type,COALESCE(SUM(amount),0) amount,COALESCE(SUM(quantity),0) quantity,COALESCE(SUM(overtime_hours),0) overtime_hours,AVG(COALESCE(overtime_multiplier,1.5)) overtime_multiplier
     FROM payroll_transactions WHERE month_id=? AND employee_id=? AND branch_id=? GROUP BY type`).all(month.id,em.employee_id,b.id);
   const sums = Object.fromEntries(tx.map(x=>[x.type,{amount:Number(x.amount||0),quantity:Number(x.quantity||0)}]));
+  const scheduledAdvanceMinor = Number(db.prepare(`
+    SELECT COALESCE(SUM(i.amount_minor - COALESCE((SELECT SUM(CASE WHEN p.payment_type='direct' THEN pa.amount_minor ELSE 0 END) FROM payroll_advance_payment_allocations pa JOIN payroll_advance_payments p ON p.id=pa.payment_id WHERE p.voided_at IS NULL AND pa.installment_id=i.id),0)),0) amount_minor
+    FROM payroll_advance_installments i
+    JOIN payroll_advances a ON a.id=i.advance_id
+    WHERE a.branch_id=? AND a.employee_id=? AND a.status='active' AND i.month_key=?
+  `).get(b.id, em.employee_id, month.month_key)?.amount_minor || 0);
+  const unit = Number(getGlobalProfile()?.currency_minor_unit || 2);
+  const scheduledAdvance = money.fromMinor(scheduledAdvanceMinor, unit);
   const absDays = sums.absence?.quantity || 0;
   // ساعات العمل الفعلية لهذا الشهر = مجموع سجلات "ساعات يوم" التي أدخلها المدير يوماً بيوم
   // (نوع الحركة 'hours'، حيث quantity = عدد الساعات في ذلك اليوم). إن لم تُسجَّل أي حركة
@@ -3174,47 +3916,60 @@ function recalcPayrollEmployeeMonth(monthId, employeeId) {
   const loggedHours = sums.hours?.quantity || 0;
   const hoursForPay = loggedHours > 0 ? loggedHours : Number(em.regular_hours||0);
   const type = em.pay_type;
-  const rate = Number(em.pay_rate||0);
+  const rateMinor = Number(em.pay_rate_minor || money.toMinor(Number(em.pay_rate||0),unit));
   const dim = daysInPayrollMonth(month.month_key);
-  // الأساس (base) يُحتسب تلقائياً يوماً بيوم من تاريخ الالتحاق (start_date) وحتى اليوم
-  // الحالي — لا كراتب شهر كامل من أول يوم. مثال: راتب 30,000 ÷ 30 يوماً × 3 أيام عمل = 3,000.
-  // هذا يتحدّث تلقائياً في كل مرة تُفتح فيها الصفحة أو تُحمَّل بيانات الشهر (بدون أي إدخال يدوي).
-  const elapsedDays = daysElapsedInPayrollPeriod(month.month_key, em.start_date);
-  const base = type==='hourly' ? hoursForPay*rate
-    : type==='monthly' ? (rate/dim)*elapsedDays
-    : type==='daily' ? rate*elapsedDays
-    : Number(em.base_amount||0);
-  const absenceDeduction = type==='monthly' ? absDays*(rate/dim) : type==='daily' ? absDays*rate : 0;
-  const bonus = sums.bonus?.amount || 0, deduction=sums.deduction?.amount || 0, advance=sums.advance?.amount || 0, overtime=sums.overtime?.amount || 0;
-  const net = Math.max(0, base - absenceDeduction - advance - deduction + bonus + overtime);
+  const elapsedDays = options.asOfDate ? payrollDaysElapsedThrough(month.month_key, em.start_date, options.asOfDate) : daysElapsedInPayrollPeriod(month.month_key, em.start_date);
+  let baseMinor = 0;
+  if (type==='hourly') baseMinor = payrollMultiplyDivideMinor(rateMinor, hoursForPay, 1, 1);
+  else if (type==='monthly') baseMinor = payrollRatioMinor(rateMinor, elapsedDays, dim);
+  else if (type==='daily') baseMinor = payrollMultiplyDivideMinor(rateMinor, elapsedDays, 1, 1);
+  else baseMinor = Number(em.base_amount_minor || money.toMinor(Number(em.base_amount||0),unit));
+  const absenceMinor = type==='monthly' ? payrollRatioMinor(rateMinor, absDays, dim) : type==='daily' ? payrollMultiplyDivideMinor(rateMinor, absDays, 1, 1) : 0;
+  const bonusMinor = money.add(...tx.filter(x=>x.type==='bonus').map(x=>money.toMinor(Number(x.amount||0),unit)));
+  const deductionMinor = money.add(...tx.filter(x=>x.type==='deduction').map(x=>money.toMinor(Number(x.amount||0),unit)));
+  const overtimeRows = tx.filter(x=>x.type==='overtime');
+  const overtimeHours = overtimeRows.reduce((sum,x)=>sum+Number(x.overtime_hours||0),0);
+  const overtimeLegacyMinor = money.add(...overtimeRows.filter(x=>!Number(x.overtime_hours||0)).map(x=>money.toMinor(Number(x.amount||0),unit)));
+  const workHoursPerDay=Number(getSetting('payroll_work_hours_per_day','8'))||8;
+  const overtimeMinor = overtimeHours>0 ? overtimeRows.reduce((sum,x)=>{
+    const hours=Number(x.overtime_hours||0), mult=Number(x.overtime_multiplier||1.5);
+    const divisor = type==='hourly' ? 1 : (type==='daily' ? workHoursPerDay : dim*workHoursPerDay);
+    return sum + payrollMultiplyDivideMinor(rateMinor, hours, mult, divisor);
+  },0) : overtimeLegacyMinor;
+  const beforeAdvancesMinor = Math.max(0, rateMinor ? money.add(baseMinor, -absenceMinor, -deductionMinor, bonusMinor, overtimeMinor) : 0);
+  const netBeforeDebtMinor = money.add(beforeAdvancesMinor, -Number(scheduledAdvanceMinor||0));
+  const debtMinor = Math.max(0,-netBeforeDebtMinor);
+  const netMinor = Math.max(0,netBeforeDebtMinor);
   const rounded = n=>Math.round(Number(n||0)*100)/100;
-  db.prepare(`UPDATE payroll_employee_months SET base_amount=?,absence_days=?,absence_deduction=?,bonus_total=?,deduction_total=?,advance_total=?,overtime_total=?,net_salary=?,regular_hours=?,updated_at=datetime('now') WHERE id=?`)
-    .run(rounded(base),rounded(absDays),rounded(absenceDeduction),rounded(bonus),rounded(deduction),rounded(advance),rounded(overtime),rounded(net),rounded(hoursForPay),em.id);
+  db.prepare(`UPDATE payroll_employee_months SET base_amount=?,base_amount_minor=?,absence_days=?,absence_deduction=?,bonus_total=?,deduction_total=?,advance_total=?,overtime_total=?,net_salary=?,net_salary_minor=?,debt_carry=?,debt_carry_minor=?,regular_hours=?,updated_at=datetime('now') WHERE id=?`)
+    .run(money.fromMinor(baseMinor,unit),baseMinor,rounded(absDays),money.fromMinor(absenceMinor,unit),money.fromMinor(bonusMinor,unit),money.fromMinor(deductionMinor,unit),money.fromMinor(Number(scheduledAdvanceMinor),unit),money.fromMinor(overtimeMinor,unit),money.fromMinor(netMinor,unit),netMinor,money.fromMinor(debtMinor,unit),debtMinor,Math.round(hoursForPay*100)/100,em.id);
   return db.prepare(`SELECT m.*,e.full_name,e.job_title,e.pay_type employee_pay_type,e.pay_rate employee_pay_rate,e.is_active
     FROM payroll_employee_months m JOIN payroll_employees e ON e.id=m.employee_id WHERE m.id=?`).get(em.id);
 }
 function listPayrollV2Employees(includeInactive=false) {
   const b=getCurrentBranch();
-  return db.prepare(`SELECT id,uuid,full_name,job_title,pay_type,pay_rate,is_active,created_at,updated_at FROM payroll_employees WHERE branch_id=? ${includeInactive?'':'AND is_active=1'} ORDER BY full_name COLLATE NOCASE`).all(b.id);
+  return db.prepare(`SELECT id,uuid,full_name,job_title,pay_type,pay_rate,pay_rate_minor,is_active,national_id,hire_date,phone,department,iban,country_code,payroll_notes,created_at,updated_at FROM payroll_employees WHERE branch_id=? ${includeInactive?'':'AND is_active=1'} ORDER BY full_name COLLATE NOCASE`).all(b.id);
 }
-function addPayrollV2Employee(fullName,jobTitle,payType,payRate) {
+function addPayrollV2Employee(fullName,jobTitle,payType,payRate,meta={}) {
   const name=String(fullName||'').trim(), title=String(jobTitle||'').trim(), type=['monthly','daily','hourly'].includes(payType)?payType:'monthly', rate=Number(payRate);
   if(!name) return {success:false,message:'اسم العامل مطلوب.'};
   if(!title) return {success:false,message:'المسمى الوظيفي مطلوب.'};
   if(!Number.isFinite(rate)||rate<=0) return {success:false,message:'قيمة الأجر يجب أن تكون أكبر من صفر.'};
-  const b=getCurrentBranch(), v=Math.round(rate*100)/100;
-  const info=db.prepare(`INSERT INTO payroll_employees(uuid,branch_id,full_name,job_title,pay_type,pay_rate,is_active) VALUES(?,?,?,?,?,?,1)`).run(uuid(),b.id,name,title,type,v);
+  const b=getCurrentBranch(), rateMinor=money.toMinor(rate,Number(getGlobalProfile()?.currency_minor_unit||2)), v=money.fromMinor(rateMinor,Number(getGlobalProfile()?.currency_minor_unit||2));
+  const info=db.prepare(`INSERT INTO payroll_employees(uuid,branch_id,full_name,job_title,pay_type,pay_rate,pay_rate_minor,is_active,national_id,hire_date,phone,department,iban,country_code,payroll_notes) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(uuid(),b.id,name,title,type,v,rateMinor,1,String(meta.nationalId||'').trim()||null,String(meta.hireDate||'').trim()||null,String(meta.phone||'').trim()||null,String(meta.department||'').trim()||null,String(meta.iban||'').trim()||null,String(meta.countryCode||'').trim()||null,String(meta.payrollNotes||'').trim()||null);
   return {success:true,id:Number(info.lastInsertRowid)};
 }
-function updatePayrollV2Employee(employeeId, fullName, jobTitle, payType, payRate) {
+function updatePayrollV2Employee(employeeId, fullName, jobTitle, payType, payRate, meta={}) {
   const b=getCurrentBranch(), id=Number(employeeId), name=String(fullName||'').trim(), title=String(jobTitle||'').trim(), type=['monthly','daily','hourly'].includes(payType)?payType:'monthly', rate=Number(payRate);
   if(!name||!title) return {success:false,message:'الاسم والوظيفة مطلوبان.'};
   if(!Number.isFinite(rate)||rate<=0) return {success:false,message:'قيمة الأجر يجب أن تكون أكبر من صفر.'};
   const row=db.prepare('SELECT id FROM payroll_employees WHERE id=? AND branch_id=?').get(id,b.id); if(!row) return {success:false,message:'العامل غير موجود.'};
-  db.prepare('UPDATE payroll_employees SET full_name=?,job_title=?,pay_type=?,pay_rate=?,updated_at=datetime(\'now\') WHERE id=? AND branch_id=?').run(name,title,type,Math.round(rate*100)/100,id,b.id);
+  const unit=Number(getGlobalProfile()?.currency_minor_unit||2); const rateMinor=money.toMinor(rate,unit);
+  const metaValues=[String(meta.nationalId||'').trim()||null,String(meta.hireDate||'').trim()||null,String(meta.phone||'').trim()||null,String(meta.department||'').trim()||null,String(meta.iban||'').trim()||null,String(meta.countryCode||'').trim()||null,String(meta.payrollNotes||'').trim()||null];
+  db.prepare('UPDATE payroll_employees SET full_name=?,job_title=?,pay_type=?,pay_rate=?,pay_rate_minor=?,national_id=?,hire_date=?,phone=?,department=?,iban=?,country_code=?,payroll_notes=?,updated_at=datetime(\'now\'),synced=0 WHERE id=? AND branch_id=?').run(name,title,type,money.fromMinor(rateMinor,unit),rateMinor,...metaValues,id,b.id);
   return {success:true,id};
 }
-function setPayrollV2EmployeeActive(employeeId,isActive){ const b=getCurrentBranch(); const r=db.prepare('SELECT id FROM payroll_employees WHERE id=? AND branch_id=?').get(Number(employeeId),b.id); if(!r)return{success:false,message:'العامل غير موجود.'}; db.prepare('UPDATE payroll_employees SET is_active=?,updated_at=datetime(\'now\') WHERE id=?').run(isActive?1:0,r.id); return{success:true,isActive:!!isActive}; }
+function setPayrollV2EmployeeActive(employeeId,isActive){ const b=getCurrentBranch(); const r=db.prepare('SELECT id FROM payroll_employees WHERE id=? AND branch_id=?').get(Number(employeeId),b.id); if(!r)return{success:false,message:'العامل غير موجود.'}; db.prepare('UPDATE payroll_employees SET is_active=?,updated_at=datetime(\'now\'),synced=0 WHERE id=?').run(isActive?1:0,r.id); return{success:true,isActive:!!isActive}; }
 // حذف نهائي — مسموح فقط إذا العامل ما إله ولا سجل راتب واحد بأي شهر (يعني انضاف بالغلط
 // ولم يُصرف له شيء بعد). إذا إله تاريخ، نرفض الحذف حتى لا تُفقد سجلات رواتب مدفوعة فعلياً
 // أو ينكسر أي تقرير قديم يعتمد عليها — الخيار الصحيح حينها هو تعطيله (setPayrollV2EmployeeActive).
@@ -3227,6 +3982,28 @@ function deletePayrollV2Employee(employeeId){
   db.prepare('DELETE FROM payroll_employees WHERE id=? AND branch_id=?').run(r.id,b.id);
   return {success:true};
 }
+function getPayrollV2Report(monthKey) {
+  const month = getPayrollV2Month(monthKey);
+  const unit = Number(getGlobalProfile()?.currency_minor_unit || 2);
+  const rows = month.items.map((x) => {
+    const paidMinor = Number(x.paid_total_minor || 0);
+    const netMinor = Number(x.net_salary_minor || 0);
+    return {
+      employeeId: x.employee_id, fullName: x.full_name, jobTitle: x.job_title,
+      nationalId: x.national_id || '', department: x.department || '', iban: x.iban || '',
+      payType: x.employee_pay_type || x.pay_type, payRate: money.fromMinor(Number(x.pay_rate_minor || 0), unit),
+      base: money.fromMinor(Number(x.base_amount_minor || 0), unit),
+      absence: Number(x.absence_days || 0), absenceDeduction: Number(x.absence_deduction || 0),
+      bonuses: Number(x.bonus_total || 0), deductions: Number(x.deduction_total || 0),
+      advances: Number(x.advance_total || 0), overtime: Number(x.overtime_total || 0),
+      net: money.fromMinor(netMinor, unit), debtCarry: money.fromMinor(Number(x.debt_carry_minor || 0), unit),
+      paid: money.fromMinor(paidMinor, unit), remaining: money.fromMinor(Math.max(0, netMinor-paidMinor), unit),
+      status: x.payment_status || 'unpaid', active: Number(x.is_active) !== 0
+    };
+  });
+  return { monthKey: month.month_key, status: month.status, generatedAt: new Date().toISOString(), total: rows.reduce((n,r)=>n+r.net,0), rows };
+}
+
 function getPayrollV2Month(monthKey) {
   const m=getOrCreatePayrollMonth(monthKey); const b=getCurrentBranch();
   const rows=db.prepare(`SELECT m.*,e.uuid employee_uuid,e.full_name,e.job_title,e.pay_type employee_pay_type,e.pay_rate employee_pay_rate,e.is_active
@@ -3234,16 +4011,41 @@ function getPayrollV2Month(monthKey) {
   for(const r of rows) recalcPayrollEmployeeMonth(m.id,r.employee_id);
   const items=db.prepare(`SELECT m.*,e.uuid employee_uuid,e.full_name,e.job_title,e.pay_type employee_pay_type,e.pay_rate employee_pay_rate,e.is_active
     FROM payroll_employee_months m JOIN payroll_employees e ON e.id=m.employee_id WHERE m.month_id=? AND e.branch_id=? ORDER BY e.full_name COLLATE NOCASE`).all(m.id,b.id);
-  const transactions=db.prepare(`SELECT t.*,e.full_name employee_name FROM payroll_transactions t JOIN payroll_employees e ON e.id=t.employee_id WHERE t.month_id=? AND t.branch_id=? ORDER BY t.event_date DESC,t.id DESC`).all(m.id,b.id);
-  const payableItems=items.filter(x=>Number(x.is_active)!==0);
-  return {id:m.id,uuid:m.uuid,month_key:m.month_key,items,transactions,total:Math.round(payableItems.reduce((s,x)=>s+Number(x.net_salary||0),0)*100)/100};
+  const paymentRows=db.prepare(`SELECT employee_id,COALESCE(SUM(amount_minor),0) paid_minor,COALESCE(SUM(amount),0) paid_amount FROM payroll_payments WHERE branch_id=? AND month_id=? GROUP BY employee_id`).all(b.id,m.id);
+  const paymentMap=new Map(paymentRows.map(x=>[Number(x.employee_id),x]));
+  const unit=Number(getGlobalProfile()?.currency_minor_unit||2);
+  const transactions=db.prepare('SELECT * FROM payroll_transactions WHERE month_id=? AND branch_id=? ORDER BY event_date DESC,id DESC').all(m.id,b.id);
+  const enrichedItems=items.map(x=>{const paid=paymentMap.get(Number(x.employee_id));const paidMinor=Number(paid?.paid_minor||0);const netMinor=Number(x.net_salary_minor||money.toMinor(Number(x.net_salary||0),unit));return {...x,paid_total:money.fromMinor(paidMinor,unit),paid_total_minor:paidMinor,remaining_salary:money.fromMinor(Math.max(0,netMinor-paidMinor),unit),remaining_salary_minor:Math.max(0,netMinor-paidMinor),payment_status:paidMinor>=netMinor?'paid':paidMinor>0?'partial':'unpaid'};});
+  const payableItems=enrichedItems.filter(x=>Number(x.is_active)!==0);
+  return {id:m.id,uuid:m.uuid,month_key:m.month_key,status:m.status||'open',closed_at:m.closed_at||null,items:enrichedItems,transactions,total:money.fromMinor(payableItems.reduce((s,x)=>s+Number(x.net_salary_minor||money.toMinor(Number(x.net_salary||0),unit)),0),unit)};
 }
-function addPayrollV2Transaction({monthId,employeeId,type,amount,quantity,eventDate,reason,createdBy,paidFromRegister}) {
+function assertPayrollMonthMutable(month) {
+  if (String(month.status || 'open') === 'paid') {
+    throw new Error('تم صرف هذا الشهر بالكامل ولا يمكن تعديل مستحقاته. إذا كان هناك خطأ، استخدم قيد تصحيح مستقل ولا تعدّل السجل التاريخي.');
+  }
+}
+
+function getPayrollEmployeePaymentState(monthId, employeeId) {
+  const b = getCurrentBranch();
+  const month = payrollMonth(monthId);
+  const item = db.prepare(`SELECT m.*,e.full_name,e.is_active FROM payroll_employee_months m JOIN payroll_employees e ON e.id=m.employee_id WHERE m.month_id=? AND m.employee_id=? AND e.branch_id=?`).get(month.id, Number(employeeId), b.id);
+  if (!item) throw new Error('العامل غير موجود في هذا الشهر.');
+  const unit = Number(getGlobalProfile()?.currency_minor_unit || 2);
+  const netMinor = money.toMinor(Number(item.net_salary || 0), unit);
+  const paid = db.prepare('SELECT COALESCE(SUM(amount_minor),0) paid_minor FROM payroll_payments WHERE branch_id=? AND month_id=? AND employee_id=?').get(b.id, month.id, item.employee_id);
+  const paidMinor = Number(paid?.paid_minor || 0);
+  return { item, netMinor, paidMinor, remainingMinor: Math.max(0, netMinor - paidMinor), currencyMinorUnit: unit };
+}
+
+function addPayrollV2Transaction({monthId,employeeId,type,amount,quantity,eventDate,reason,createdBy,paidFromRegister,overtimeMultiplier=1.5}) {
   const b=getCurrentBranch(), m=payrollMonth(monthId);
+  assertPayrollMonthMutable(m);
   // 'hours' = سجل ساعات عمل ليوم واحد بالتحديد (quantity = عدد الساعات)، يُستخدم مع
   // العاملين بالساعة بدل إدخال إجمالي شهري يدوي واحد عرضة للخطأ.
-  if(!['absence','advance','bonus','deduction','overtime','hours'].includes(type)) throw new Error('نوع الحركة غير صالح.');
+  if(type==='advance') throw new Error('السلف تُدار حصراً من سجل السلف المجدولة.');
+  if(!['absence','bonus','deduction','overtime','hours'].includes(type)) throw new Error('نوع الحركة غير صالح.');
   const amt=Number(amount||0), qty=Number(quantity==null?1:quantity), date=String(eventDate||'').trim();
+  const overtimeMultiplierValue=Number(overtimeMultiplier);
   if(!Number.isFinite(amt)||amt<0) throw new Error('مبلغ الحركة غير صالح.');
   const zeroAmountTypes = type==='absence' || type==='hours';
   if(!Number.isFinite(qty)||qty<=0) throw new Error(type==='hours' ? 'عدد الساعات غير صالح.' : 'الكمية غير صالحة.');
@@ -3257,7 +4059,7 @@ function addPayrollV2Transaction({monthId,employeeId,type,amount,quantity,eventD
   // السلفة ممكن تتسجل كصرف نقدي فوري من الصندوق (لو الموظف استلمها كاش دلوقتي)، أو كقيد
   // رواتب بحت (لو هتتسوى لاحقاً بطريقة تانية). لو "من الصندوق"، لازم يكون فيه وردية مفتوحة
   // فعلاً عشان الفلوس فعلياً تخصم من رصيد الصندوق وتظهر في التقارير المالية.
-  const wantsCashOut = type==='advance' && !!paidFromRegister;
+  const wantsCashOut = false;
   const result=db.transaction(()=>{
     let cashMovementId=null;
     if(wantsCashOut){
@@ -3270,7 +4072,17 @@ function addPayrollV2Transaction({monthId,employeeId,type,amount,quantity,eventD
     if(!exists) db.prepare(`INSERT INTO payroll_employee_months(month_id,employee_id,pay_type,pay_rate,base_amount) SELECT ?,id,pay_type,pay_rate,CASE WHEN pay_type='monthly' THEN pay_rate WHEN pay_type='daily' THEN pay_rate*? ELSE 0 END FROM payroll_employees WHERE id=?`).run(m.id,daysInPayrollMonth(key),e.id);
     if(type==='absence') { const dup=db.prepare("SELECT id FROM payroll_transactions WHERE month_id=? AND employee_id=? AND type=\'absence\' AND event_date=?").get(m.id,e.id,date); if(dup) throw new Error('يوم الغياب هذا مسجل بالفعل.'); }
     if(type==='hours') { const dup=db.prepare("SELECT id FROM payroll_transactions WHERE month_id=? AND employee_id=? AND type=\'hours\' AND event_date=?").get(m.id,e.id,date); if(dup) throw new Error('ساعات هذا اليوم مسجلة بالفعل. احذف السجل القديم إن أردت تعديله.'); }
-    const info=db.prepare(`INSERT INTO payroll_transactions(uuid,branch_id,month_id,employee_id,type,amount,quantity,event_date,reason,created_by,cash_movement_id) VALUES(?,?,?,?,?,?,?,?,?,?,?)`).run(uuid(),b.id,m.id,e.id,type,Math.round(amt*100)/100,Math.round(qty*100)/100,date,String(reason||'').trim()||null,createdBy||null,cashMovementId);
+    const amountMinor = money.toMinor(amt, unit);
+    const overtimeHoursValue = type === 'overtime' ? qty : 0;
+    const overtimeMultiplierDb = type === 'overtime' ? overtimeMultiplierValue : 1.5;
+    if (type === 'overtime') {
+      if (!Number.isFinite(overtimeMultiplierValue) || overtimeMultiplierValue <= 0 || overtimeMultiplierValue > 10) {
+        throw new Error('معامل الإضافي يجب أن يكون أكبر من صفر ولا يتجاوز 10.');
+      }
+    }
+    const info=db.prepare(`INSERT INTO payroll_transactions(uuid,branch_id,month_id,employee_id,type,amount,amount_minor,quantity,event_date,reason,created_by,cash_movement_id,overtime_multiplier,overtime_hours) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
+      uuid(),b.id,m.id,e.id,type,money.fromMinor(amountMinor,unit),amountMinor,Math.round(qty*100)/100,date,String(reason||'').trim()||null,createdBy||null,cashMovementId,overtimeMultiplierDb,overtimeHoursValue
+    );
     return {success:true,id:Number(info.lastInsertRowid),cashMovementId,item:recalcPayrollEmployeeMonth(m.id,e.id)};
   })();
   return result;
@@ -3279,6 +4091,7 @@ function removePayrollV2Transaction(transactionId,deletedBy){
   const b=getCurrentBranch();
   const t=db.prepare('SELECT id,month_id,employee_id,amount,cash_movement_id FROM payroll_transactions WHERE id=? AND branch_id=?').get(Number(transactionId),b.id);
   if(!t)throw new Error('الحركة غير موجودة.');
+  assertPayrollMonthMutable(payrollMonth(t.month_id));
   const result=db.transaction(()=>{
     // لو السلفة دي كانت اتخصمت فعلياً من الصندوق، لازم نرجّع المبلغ للصندوق (حركة إدخال
     // معاكسة) قبل حذف القيد، وإلا هيفضل رصيد الصندوق ناقص فلوس من غير سبب. نسيب حركة النقد
@@ -3297,15 +4110,309 @@ function removePayrollV2Transaction(transactionId,deletedBy){
 // بعدها يُعاد احتساب صافي الراتب فوراً على أساس عدد الأيام من هذا التاريخ وحتى اليوم.
 function setPayrollEmployeeMonthStartDate(monthId,employeeId,startDate){
   const b=getCurrentBranch(); const m=payrollMonth(monthId);
+  assertPayrollMonthMutable(m);
   const date=String(startDate||'').trim();
   if(!/^\d{4}-\d{2}-\d{2}$/.test(date)) return {success:false,message:'تاريخ البدء غير صالح.'};
   const row=db.prepare(`SELECT m.id FROM payroll_employee_months m JOIN payroll_employees e ON e.id=m.employee_id WHERE m.month_id=? AND m.employee_id=? AND e.branch_id=?`).get(m.id,Number(employeeId),b.id);
   if(!row) return {success:false,message:'العامل غير موجود في هذا الشهر.'};
-  db.prepare(`UPDATE payroll_employee_months SET start_date=?,updated_at=datetime('now') WHERE id=?`).run(date,row.id);
+  db.prepare(`UPDATE payroll_employee_months SET start_date=?,updated_at=datetime('now'),synced=0 WHERE id=?`).run(date,row.id);
   return {success:true,item:recalcPayrollEmployeeMonth(m.id,Number(employeeId))};
 }
-function setPayrollV2RegularHours(monthId,employeeId,hours){ const b=getCurrentBranch(); const m=payrollMonth(monthId), n=Number(hours); if(!Number.isFinite(n)||n<0||n>744)throw new Error('ساعات العمل غير صالحة.'); const e=db.prepare('SELECT id,pay_type,pay_rate FROM payroll_employees WHERE id=? AND branch_id=?').get(Number(employeeId),b.id); if(!e)throw new Error('العامل غير موجود.'); db.prepare(`INSERT INTO payroll_employee_months(month_id,employee_id,pay_type,pay_rate,base_amount) VALUES(?,?,?,?,0) ON CONFLICT(month_id,employee_id) DO NOTHING`).run(m.id,e.id,e.pay_type,e.pay_rate); db.prepare('UPDATE payroll_employee_months SET regular_hours=?,updated_at=datetime(\'now\') WHERE month_id=? AND employee_id=?').run(Math.round(n*100)/100,m.id,e.id); return{success:true,item:recalcPayrollEmployeeMonth(m.id,e.id)}; }
-function getPayrollV2Employee(monthId,employeeId){ const m=payrollMonth(monthId), b=getCurrentBranch(); recalcPayrollEmployeeMonth(m.id,Number(employeeId)); const employee=db.prepare(`SELECT e.*,m.pay_type,m.pay_rate,m.base_amount,m.regular_hours,m.absence_days,m.absence_deduction,m.bonus_total,m.deduction_total,m.advance_total,m.overtime_total,m.net_salary FROM payroll_employee_months m JOIN payroll_employees e ON e.id=m.employee_id WHERE m.month_id=? AND m.employee_id=? AND e.branch_id=?`).get(m.id,Number(employeeId),b.id); if(!employee)throw new Error('العامل غير موجود في هذا الشهر.'); const transactions=db.prepare('SELECT * FROM payroll_transactions WHERE month_id=? AND employee_id=? ORDER BY event_date DESC,id DESC').all(m.id,Number(employeeId)); return {employee,transactions}; }
+
+function normalizePayrollFirstDeductionMonth(monthKey) {
+  return normalizePayrollMonth(monthKey || currentPayrollMonthKey());
+}
+function currentPayrollMonthKey() { const d=payrollTodayLocal(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`; }
+function addMonthsToPayrollMonth(monthKey, offset) {
+  const [y,m]=normalizePayrollMonth(monthKey).split('-').map(Number);
+  const d=new Date(y,m-1+Number(offset),1);
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+}
+function createPayrollAdvance({monthId,employeeId,amount,installmentCount=1,firstDeductionMonth,reason,paidFromRegister=false,createdBy}) {
+  const b=getCurrentBranch(); const m=payrollMonth(monthId); assertPayrollMonthMutable(m);
+  const employee=db.prepare('SELECT id,full_name,is_active FROM payroll_employees WHERE id=? AND branch_id=?').get(Number(employeeId),b.id);
+  if(!employee) throw new Error('العامل غير موجود.');
+  if(!employee.is_active) throw new Error('لا يمكن إنشاء سلفة لعامل معطّل.');
+  const unit=Number(getGlobalProfile()?.currency_minor_unit||2);
+  const principalMinor=money.toMinor(Number(amount),unit);
+  if(principalMinor<=0) throw new Error('قيمة السلفة يجب أن تكون أكبر من صفر.');
+  const count=Number(installmentCount);
+  if(!Number.isInteger(count)||count<1||count>36) throw new Error('عدد أقساط السلفة يجب أن يكون بين 1 و36.');
+  const first=normalizePayrollFirstDeductionMonth(firstDeductionMonth || m.month_key);
+  if(first < m.month_key) throw new Error('شهر بدء الخصم لا يمكن أن يكون قبل شهر السلفة.');
+  const regularMinor=Math.floor(principalMinor/count);
+  const remainder=principalMinor-(regularMinor*count);
+  const tx=db.transaction(()=>{
+    let cashMovementId=null;
+    if(paidFromRegister){
+      const shift=getOpenShift();
+      if(!shift) throw new Error('لا يمكن دفع السلفة نقداً من الصندوق دون وردية مفتوحة. افتح وردية أولاً أو سجّلها بدون صرف فوري.');
+      const cm=addCashMovement({shiftId:shift.id,type:'cash_out',amount:money.fromMinor(principalMinor,unit),reason:`سلفة موظف: ${employee.full_name}`,reference:'payroll_advance',createdBy});
+      cashMovementId=cm.id;
+    }
+    const advanceInfo=db.prepare(`INSERT INTO payroll_advances(uuid,branch_id,employee_id,principal,principal_minor,installment_count,installment_amount,installment_amount_minor,first_deduction_month,reason,cash_movement_id,created_by) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`)
+      .run(uuid(),b.id,employee.id,money.fromMinor(principalMinor,unit),principalMinor,count,money.fromMinor(regularMinor,unit),regularMinor,first,String(reason||'').trim()||null,cashMovementId,createdBy||null);
+    const advanceId=Number(advanceInfo.lastInsertRowid);
+    const ins=db.prepare(`INSERT INTO payroll_advance_installments(advance_id,month_key,installment_no,amount,amount_minor) VALUES(?,?,?,?,?)`);
+    for(let n=1;n<=count;n++){
+      const minor=regularMinor+(n===count?remainder:0); const month=addMonthsToPayrollMonth(first,n-1);
+      ins.run(advanceId,month,n,money.fromMinor(minor,unit),minor);
+    }
+    return {advanceId,cashMovementId,principalMinor};
+  })();
+  return {success:true,id:tx.advanceId,cashMovementId:tx.cashMovementId,principal:money.fromMinor(tx.principalMinor,unit),installmentCount:count,firstDeductionMonth:first};
+}
+function listPayrollAdvances(employeeId=null){
+  const b=getCurrentBranch(); const unit=Number(getGlobalProfile()?.currency_minor_unit||2);
+  const where=employeeId!=null?'AND a.employee_id=?':''; const params=employeeId!=null?[b.id,Number(employeeId)]:[b.id];
+  const rows=db.prepare(`SELECT a.*,e.full_name employee_name FROM payroll_advances a JOIN payroll_employees e ON e.id=a.employee_id WHERE a.branch_id=? ${where} ORDER BY a.created_at DESC,a.id DESC`).all(...params);
+  return rows.map(a=>{
+    const paid=db.prepare(`SELECT COALESCE(SUM(CASE WHEN p.payment_type='direct' THEN pa.amount_minor ELSE 0 END),0) direct_paid_minor,COALESCE(SUM(pa.amount_minor),0) recovered_minor FROM payroll_advance_payment_allocations pa JOIN payroll_advance_payments p ON p.id=pa.payment_id WHERE p.voided_at IS NULL AND p.advance_id=?`).get(a.id);
+    const directPaidMinor=Number(paid?.direct_paid_minor||0);
+    const recoveredMinor=Number(paid?.recovered_minor||0);
+    const remainingMinor=Math.max(0,Number(a.principal_minor||0)-recoveredMinor);
+    const current= db.prepare(`SELECT COALESCE(SUM(i.amount_minor),0) scheduled_minor,
+      COALESCE(SUM(CASE WHEN i.month_key<=? THEN i.amount_minor ELSE 0 END),0) accrued_minor,
+      COALESCE(SUM(CASE WHEN i.month_key<=? THEN (i.amount_minor-COALESCE((SELECT SUM(CASE WHEN p.payment_type='direct' THEN pa.amount_minor ELSE 0 END) FROM payroll_advance_payment_allocations pa JOIN payroll_advance_payments p ON p.id=pa.payment_id WHERE p.voided_at IS NULL AND pa.installment_id=i.id),0)) ELSE 0 END),0) overdue_direct_adjusted_minor
+      FROM payroll_advance_installments i WHERE i.advance_id=?`).get(currentPayrollMonthKey(),currentPayrollMonthKey(),a.id);
+    const status=remainingMinor<=0?'completed':'active';
+    if (String(a.status)!==status) db.prepare(`UPDATE payroll_advances SET status=?,updated_at=datetime('now'),synced=0 WHERE id=? AND branch_id=?`).run(status,a.id,b.id);
+    return {...a,status,principal:money.fromMinor(Number(a.principal_minor||0),unit),installment_amount:money.fromMinor(Number(a.installment_amount_minor||0),unit),scheduled_minor:Number(current?.scheduled_minor||0),scheduled:money.fromMinor(Number(current?.scheduled_minor||0),unit),accrued_minor:Number(current?.accrued_minor||0),accrued:money.fromMinor(Number(current?.accrued_minor||0),unit),direct_paid_minor:directPaidMinor,direct_paid:money.fromMinor(directPaidMinor,unit),recovered_minor:recoveredMinor,recovered:money.fromMinor(recoveredMinor,unit),remaining_minor:remainingMinor,remaining:money.fromMinor(remainingMinor,unit)};
+  });
+}
+
+function listPayrollAdvancePayments(advanceId){
+  const b=getCurrentBranch(); const a=db.prepare('SELECT id FROM payroll_advances WHERE id=? AND branch_id=?').get(Number(advanceId),b.id); if(!a) throw new Error('السلفة غير موجودة.');
+  return db.prepare(`SELECT p.*,COALESCE(SUM(pa.amount_minor),0) allocated_minor FROM payroll_advance_payments p LEFT JOIN payroll_advance_payment_allocations pa ON pa.payment_id=p.id WHERE p.advance_id=? AND p.branch_id=? GROUP BY p.id ORDER BY p.payment_date DESC,p.id DESC`).all(a.id,b.id);
+}
+
+function repayPayrollAdvance({advanceId,amount,paymentDate,method='cash',reference,notes,createdBy,paidFromRegister=false}){
+  const b=getCurrentBranch(); const unit=Number(getGlobalProfile()?.currency_minor_unit||2);
+  const advance=db.prepare('SELECT * FROM payroll_advances WHERE id=? AND branch_id=?').get(Number(advanceId),b.id);
+  if(!advance) throw new Error('السلفة غير موجودة.');
+  if(String(advance.status)==='completed') throw new Error('هذه السلفة مسددة بالكامل.');
+  const date = String(paymentDate || payrollTodayLocal().toISOString().slice(0,10)).slice(0,10);
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error('تاريخ تسديد السلفة غير صالح.');
+  const amountMinor=money.toMinor(Number(amount),unit); if(amountMinor<=0) throw new Error('قيمة التسديد يجب أن تكون أكبر من صفر.');
+  const recovered=Number(db.prepare('SELECT COALESCE(SUM(amount_minor),0) x FROM payroll_advance_payment_allocations pa JOIN payroll_advance_payments p ON p.id=pa.payment_id WHERE p.voided_at IS NULL AND p.advance_id=?').get(advance.id).x||0);
+  const remaining=Math.max(0,Number(advance.principal_minor||0)-recovered);
+  if(amountMinor>remaining) throw new Error(`مبلغ التسديد أكبر من الرصيد المتبقي (${money.fromMinor(remaining,unit)}).`);
+  const tx=db.transaction(()=>{
+    let cashMovementId=null;
+    if(paidFromRegister){
+      const shift=getOpenShift(); if(!shift) throw new Error('لا يمكن تسجيل التسديد نقداً من الصندوق دون وردية مفتوحة.');
+      const cm=addCashMovement({shiftId:shift.id,type:'cash_in',amount:money.fromMinor(amountMinor,unit),reason:'تسديد سلفة موظف',reference:`payroll_advance_repayment:${advance.id}`,createdBy}); cashMovementId=cm.id;
+    }
+    const paymentInfo=db.prepare(`INSERT INTO payroll_advance_payments(uuid,branch_id,advance_id,payment_type,amount,amount_minor,payment_date,method,reference,notes,cash_movement_id,created_by) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`).run(uuid(),b.id,advance.id,'direct',money.fromMinor(amountMinor,unit),amountMinor,date,String(method||'cash'),String(reference||'payroll_advance_repayment'),String(notes||'').trim()||null,cashMovementId,createdBy||null);
+    const paymentId=Number(paymentInfo.lastInsertRowid);
+    let left=amountMinor;
+    const installments=db.prepare(`SELECT i.* FROM payroll_advance_installments i WHERE i.advance_id=? ORDER BY i.month_key,i.installment_no`).all(advance.id);
+    for(const i of installments){
+      if(left<=0) break;
+      const already=Number(db.prepare(`SELECT COALESCE(SUM(CASE WHEN p.payment_type='direct' THEN pa.amount_minor ELSE 0 END),0) x FROM payroll_advance_payment_allocations pa JOIN payroll_advance_payments p ON p.id=pa.payment_id WHERE p.voided_at IS NULL AND pa.installment_id=?`).get(i.id).x||0);
+      const open=Math.max(0,Number(i.amount_minor)-already); if(open<=0) continue;
+      const alloc=Math.min(open,left); const ins=db.prepare(`INSERT INTO payroll_advance_payment_allocations(payment_id,installment_id,amount,amount_minor) VALUES(?,?,?,?)`).run(paymentId,i.id,money.fromMinor(alloc,unit),alloc); left-=alloc;
+    }
+    if(left>0) throw new Error('تعذر توزيع مبلغ التسديد على أقساط السلفة.');
+    const newRecovered=recovered+amountMinor;
+    if(newRecovered>=Number(advance.principal_minor)) db.prepare(`UPDATE payroll_advances SET status='completed',updated_at=datetime('now'),synced=0 WHERE id=? AND branch_id=?`).run(advance.id,b.id);
+    return {id:paymentId,cashMovementId,amountMinor,remainingMinor:Math.max(0,Number(advance.principal_minor)-newRecovered)};
+  })();
+  return {success:true,id:tx.id,cashMovementId:tx.cashMovementId,amount:money.fromMinor(tx.amountMinor,unit),remaining:money.fromMinor(tx.remainingMinor,unit),status:tx.remainingMinor<=0?'completed':'active'};
+}
+
+function settlePayrollAdvance(advanceId,{paymentDate,method='cash',reference='payroll_advance_early_settlement',notes,createdBy,paidFromRegister=false}={}){
+  const a=listPayrollAdvances(advanceId)[0]; if(!a) throw new Error('السلفة غير موجودة.');
+  if(Number(a.remaining_minor||0)<=0) return {success:true,status:'completed',amount:'0.00',remaining:'0.00'};
+  return repayPayrollAdvance({advanceId:a.id,amount:a.remaining,paymentDate,method,reference,notes,createdBy,paidFromRegister});
+}
+
+function recordPayrollSalaryAdvanceRecovery({monthId,employeeId,amountMinor,createdBy,sourcePaymentId}){
+  const b=getCurrentBranch(); const m=payrollMonth(monthId); const unit=Number(getGlobalProfile()?.currency_minor_unit||2);
+  const paidMinor=Math.max(0,Number(amountMinor||0)); if(!paidMinor) return {recoveredMinor:0};
+  const advanceRows=db.prepare(`SELECT a.* FROM payroll_advances a WHERE a.branch_id=? AND a.employee_id=? AND a.status='active' ORDER BY a.first_deduction_month,a.created_at,a.id`).all(b.id,Number(employeeId));
+  let left=paidMinor, recovered=0;
+  for(const a of advanceRows){
+    if(left<=0) break;
+    const already=Number(db.prepare('SELECT COALESCE(SUM(pa.amount_minor),0) x FROM payroll_advance_payment_allocations pa JOIN payroll_advance_payments p ON p.id=pa.payment_id WHERE p.voided_at IS NULL AND p.advance_id=?').get(a.id).x||0);
+    const remaining=Math.max(0,Number(a.principal_minor)-already); if(!remaining) continue;
+    const dueThisMonth=Number(db.prepare(`SELECT COALESCE(SUM(i.amount_minor),0) x FROM payroll_advance_installments i WHERE i.advance_id=? AND i.month_key=?`).get(a.id,m.month_key).x||0); if(!dueThisMonth) continue;
+    const salaryAlready=Number(db.prepare(`SELECT COALESCE(SUM(pa.amount_minor),0) x FROM payroll_advance_payment_allocations pa JOIN payroll_advance_payments p ON p.id=pa.payment_id WHERE p.voided_at IS NULL AND p.advance_id=? AND p.payment_type='salary' AND pa.installment_id IN (SELECT id FROM payroll_advance_installments WHERE advance_id=? AND month_key=?)`).get(a.id,a.id,m.month_key).x||0);
+    const openDue=Math.max(0,dueThisMonth-salaryAlready); if(!openDue) continue;
+    const alloc=Math.min(openDue,left,remaining); const paymentInfo=db.prepare(`INSERT INTO payroll_advance_payments(uuid,branch_id,advance_id,payment_type,amount,amount_minor,payment_date,method,reference,notes,created_by) VALUES(?,?,?,?,?,?,?,?,?,?,?)`).run(uuid(),b.id,a.id,'salary',money.fromMinor(alloc,unit),alloc,`${m.month_key}-01`,'payroll',String(sourcePaymentId||'payroll_payment'),`خصم سلفة من راتب ${m.month_key}`,createdBy||null); const pid=Number(paymentInfo.lastInsertRowid);
+    const inst=db.prepare(`SELECT id,amount_minor FROM payroll_advance_installments WHERE advance_id=? AND month_key=? ORDER BY installment_no`).all(a.id,m.month_key);
+    let il=alloc;
+    for(const i of inst){ if(il<=0) break; const alreadyI=Number(db.prepare(`SELECT COALESCE(SUM(CASE WHEN p.payment_type='salary' THEN pa.amount_minor ELSE 0 END),0) x FROM payroll_advance_payment_allocations pa JOIN payroll_advance_payments p ON p.id=pa.payment_id WHERE p.voided_at IS NULL AND pa.installment_id=?`).get(i.id).x||0); const openI=Math.max(0,Number(i.amount_minor)-alreadyI); if(!openI) continue; const q=Math.min(openI,il); db.prepare(`INSERT INTO payroll_advance_payment_allocations(payment_id,installment_id,amount,amount_minor) VALUES(?,?,?,?)`).run(pid,i.id,money.fromMinor(q,unit),q); il-=q; }
+    recovered+=alloc; left-=alloc; const totalRecovered=already+alloc; if(totalRecovered>=Number(a.principal_minor)) db.prepare(`UPDATE payroll_advances SET status='completed',updated_at=datetime('now'),synced=0 WHERE id=? AND branch_id=?`).run(a.id,b.id);
+  }
+  return {recoveredMinor:recovered};
+}
+
+
+function getPayrollSettings(){const unit=Number(getGlobalProfile()?.currency_minor_unit||2),m=Number(getSetting('payroll_overtime_multiplier','1.5')),h=Number(getSetting('payroll_work_hours_per_day','8'));return{overtimeMultiplier:Number.isFinite(m)&&m>0?m:1.5,workHoursPerDay:Number.isFinite(h)&&h>0?h:8,currencyMinorUnit:unit};}
+function savePayrollSettings({overtimeMultiplier,workHoursPerDay}={}){const m=Number(overtimeMultiplier),h=Number(workHoursPerDay);if(!Number.isFinite(m)||m<=0||m>10)throw new Error('معامل الإضافي يجب أن يكون بين 0 و10.');if(!Number.isFinite(h)||h<=0||h>24)throw new Error('ساعات العمل اليومية يجب أن تكون بين 0 و24.');setSetting('payroll_overtime_multiplier',String(m));setSetting('payroll_work_hours_per_day',String(h));return{success:true,overtimeMultiplier:m,workHoursPerDay:h};}
+function setPayrollV2RegularHours(monthId,employeeId,hours){ const b=getCurrentBranch(); const m=payrollMonth(monthId); assertPayrollMonthMutable(m); const n=Number(hours); if(!Number.isFinite(n)||n<0||n>744)throw new Error('ساعات العمل غير صالحة.'); const e=db.prepare('SELECT id,pay_type,pay_rate FROM payroll_employees WHERE id=? AND branch_id=?').get(Number(employeeId),b.id); if(!e)throw new Error('العامل غير موجود.'); db.prepare(`INSERT INTO payroll_employee_months(month_id,employee_id,pay_type,pay_rate,base_amount) VALUES(?,?,?,?,0) ON CONFLICT(month_id,employee_id) DO NOTHING`).run(m.id,e.id,e.pay_type,e.pay_rate); db.prepare('UPDATE payroll_employee_months SET regular_hours=?,updated_at=datetime(\'now\'),synced=0 WHERE month_id=? AND employee_id=?').run(Math.round(n*100)/100,m.id,e.id); return{success:true,item:recalcPayrollEmployeeMonth(m.id,e.id)}; }
+function recordPayrollPayment({monthId, employeeId, amount, method='cash', paymentDate, reference, notes, createdBy}) {
+  const b = getCurrentBranch(); const unit=Number(getGlobalProfile()?.currency_minor_unit||2);
+  const m = payrollMonth(monthId);
+  assertPayrollMonthMutable(m);
+  const state = getPayrollEmployeePaymentState(m.id, employeeId);
+  const value = Number(amount);
+  if (!Number.isFinite(value) || value <= 0) throw new Error('مبلغ صرف الراتب غير صالح.');
+  if (!['cash','bank','other'].includes(String(method))) throw new Error('طريقة صرف الراتب غير صالحة.');
+  const amountMinor = money.toMinor(value, unit);
+  if (amountMinor <= 0) throw new Error('مبلغ صرف الراتب يجب أن يكون أكبر من صفر.');
+  if (amountMinor > state.remainingMinor) throw new Error(`المبلغ أكبر من المتبقي للموظف. المتبقي: ${money.fromMinor(state.remainingMinor, unit)}`);
+  const date = String(paymentDate || payrollTodayLocal()).trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error('تاريخ صرف الراتب غير صالح.');
+  if (date.slice(0,7) !== m.month_key) throw new Error('تاريخ صرف الراتب يجب أن يكون ضمن الشهر المحدد.');
+  const tx = db.transaction(() => {
+    let cashMovementId = null;
+    if (method === 'cash') {
+      const shift = getOpenShift();
+      if (!shift) throw new Error('لا يمكن صرف الراتب نقداً بدون وردية صندوق مفتوحة. افتح وردية أولاً أو اختر التحويل/أخرى.');
+      const cm = addCashMovement({shiftId: shift.id, type:'cash_out', amount:money.fromMinor(amountMinor, unit), reason:`صرف راتب: ${state.item.full_name}`, reference:reference || 'payroll_salary', createdBy});
+      cashMovementId = cm.id;
+    }
+    const info = db.prepare(`INSERT INTO payroll_payments(uuid,branch_id,month_id,employee_id,amount,amount_minor,method,payment_date,reference,notes,created_by,cash_movement_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`)
+      .run(uuid(), b.id, m.id, state.item.employee_id, money.fromMinor(amountMinor, unit), amountMinor, method, date, String(reference||'').trim()||null, String(notes||'').trim()||null, createdBy||null, cashMovementId);
+    const nextPaid = state.paidMinor + amountMinor;
+    const monthItems = db.prepare(`SELECT m.employee_id,m.net_salary,e.is_active FROM payroll_employee_months m JOIN payroll_employees e ON e.id=m.employee_id WHERE m.month_id=?`).all(m.id);
+    let allPaid = true;
+    for (const row of monthItems.filter(x => Number(x.is_active)!==0)) {
+      const net = money.toMinor(Number(row.net_salary||0), unit);
+      const paid = db.prepare('SELECT COALESCE(SUM(amount_minor),0) x FROM payroll_payments WHERE branch_id=? AND month_id=? AND employee_id=?').get(b.id,m.id,row.employee_id).x;
+      if (Number(paid) < net) { allPaid = false; break; }
+    }
+    if (allPaid && monthItems.some(x => Number(x.is_active)!==0)) {
+      db.prepare(`UPDATE payroll_months SET status='paid',closed_at=datetime('now'),closed_by=?,synced=0 WHERE id=? AND branch_id=?`).run(createdBy||null,m.id,b.id);
+    }
+    const finalSalaryPayment = nextPaid >= state.netMinor;
+    const scheduledRecoveryMinor = finalSalaryPayment ? money.toMinor(Number(state.item.advance_total || 0), unit) : 0;
+    const recovery = scheduledRecoveryMinor > 0 ? recordPayrollSalaryAdvanceRecovery({monthId:m.id,employeeId:Number(employeeId),amountMinor:scheduledRecoveryMinor,createdBy,sourcePaymentId:Number(info.lastInsertRowid)}) : {recoveredMinor:0};
+    return {success:true,id:Number(info.lastInsertRowid),cashMovementId,amountMinor,remainingMinor:Math.max(0,state.remainingMinor-amountMinor),monthStatus:allPaid?'paid':'open',advanceRecoveredMinor:recovery.recoveredMinor};
+  })();
+  return tx;
+}
+
+function calculatePayrollFinalSettlement(monthId, employeeId, settlementDate, additionalCompensation=0) {
+  const b=getCurrentBranch(); const m=payrollMonth(monthId);
+  const date=String(settlementDate||'').slice(0,10);
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(date) || date.slice(0,7)!==m.month_key) throw new Error('تاريخ إنهاء الخدمة يجب أن يكون ضمن شهر الرواتب المحدد.');
+  const employee=db.prepare('SELECT * FROM payroll_employees WHERE id=? AND branch_id=?').get(Number(employeeId),b.id);
+  if(!employee) throw new Error('العامل غير موجود.');
+  const existing=db.prepare("SELECT id FROM payroll_final_settlements WHERE branch_id=? AND employee_id=? AND status='paid' ORDER BY id DESC LIMIT 1").get(b.id,employee.id);
+  if(existing) throw new Error('تمت تسوية الموظف سابقاً.');
+  const item=recalcPayrollEmployeeMonth(m.id,employee.id,{asOfDate:date});
+  const unit=Number(getGlobalProfile()?.currency_minor_unit||2);
+  const grossEarned=Number(item.base_amount||0)-Number(item.absence_deduction||0)+Number(item.bonus_total||0)+Number(item.overtime_total||0);
+  const deductions=Number(item.deduction_total||0);
+  const advanceRows=listPayrollAdvances(employee.id);
+  const advanceBalanceMinor=advanceRows.reduce((sum,a)=>sum+Number(a.remaining_minor||0),0);
+  const paidMinor=Number(db.prepare('SELECT COALESCE(SUM(amount_minor),0) x FROM payroll_payments WHERE branch_id=? AND month_id=? AND employee_id=?').get(b.id,m.id,employee.id).x||0);
+  const additionalMinor=money.toMinor(Number(additionalCompensation||0),unit);
+  if(additionalMinor<0) throw new Error('التعويض الإضافي غير صالح.');
+  const grossMinor=Math.max(0,money.toMinor(grossEarned,unit));
+  const deductionsMinor=Math.max(0,money.toMinor(deductions,unit));
+  const finalGrossAfterDeductions=Math.max(0,grossMinor-deductionsMinor);
+  const netDueBeforePaid=Math.max(0,finalGrossAfterDeductions+additionalMinor-advanceBalanceMinor);
+  const netDueMinor=Math.max(0,netDueBeforePaid-paidMinor);
+  return {employee,month:m,item,date,unit,grossMinor,deductionsMinor,advanceBalanceMinor,additionalMinor,paidMinor,netDueMinor,
+    grossEarned:money.fromMinor(grossMinor,unit),deductions:money.fromMinor(deductionsMinor,unit),advanceBalance:money.fromMinor(advanceBalanceMinor,unit),
+    additionalCompensation:money.fromMinor(additionalMinor,unit),paidAmount:money.fromMinor(paidMinor,unit),netDue:money.fromMinor(netDueMinor,unit)};
+}
+
+function settleEmployeeFinalPayroll({monthId,employeeId,settlementDate,additionalCompensation=0,method='cash',notes,createdBy,paidFromRegister=true,terminationReason}) {
+  const b=getCurrentBranch(); const unit=Number(getGlobalProfile()?.currency_minor_unit||2);
+  const data=calculatePayrollFinalSettlement(monthId,employeeId,settlementDate,additionalCompensation);
+  if(!['cash','bank','other'].includes(String(method))) throw new Error('طريقة دفع التسوية غير صالحة.');
+  const tx=db.transaction(()=>{
+    let cashMovementId=null;
+    if(data.netDueMinor>0 && method==='cash') {
+      if(!paidFromRegister) throw new Error('التسوية النقدية يجب أن تُسجل من الصندوق حفاظاً على دقة النقدية.');
+      const shift=getOpenShift(); if(!shift) throw new Error('لا يمكن دفع التسوية نقداً دون وردية صندوق مفتوحة.');
+      const cm=addCashMovement({shiftId:shift.id,type:'cash_out',amount:money.fromMinor(data.netDueMinor,unit),reason:`تصفية موظف: ${data.employee.full_name}`,reference:`payroll_final_settlement:${data.employee.id}`,createdBy});
+      cashMovementId=cm.id;
+    }
+    // التسوية النهائية تسدد كامل رصيد السلف ضمنياً. نسجلها كدفعة direct بدون حركة cash-in
+    // لأنها جزء من المقاصة على مستحق الراتب، وليست مبلغاً عاد إلى الصندوق من الموظف.
+    let left=data.advanceBalanceMinor;
+    const advances=listPayrollAdvances(data.employee.id).filter(a=>Number(a.remaining_minor||0)>0);
+    for(const a of advances){
+      if(left<=0) break;
+      let remainingA=Number(a.remaining_minor||0);
+      const paymentInfo=db.prepare(`INSERT INTO payroll_advance_payments(uuid,branch_id,advance_id,payment_type,amount,amount_minor,payment_date,method,reference,notes,created_by) VALUES(?,?,?,?,?,?,?,?,?,?,?)`)
+        .run(uuid(),b.id,a.id,'direct',money.fromMinor(remainingA,unit),remainingA,data.date,'settlement',`payroll_final_settlement:${data.employee.id}`,'تسوية رصيد السلفة ضمن التصفية النهائية',createdBy||null);
+      const pid=Number(paymentInfo.lastInsertRowid);
+      const installments=db.prepare(`SELECT i.* FROM payroll_advance_installments i WHERE i.advance_id=? ORDER BY i.month_key,i.installment_no`).all(a.id);
+      let allocLeft=remainingA;
+      for(const i of installments){
+        if(allocLeft<=0) break;
+        const already=Number(db.prepare(`SELECT COALESCE(SUM(CASE WHEN p.payment_type='direct' THEN pa.amount_minor ELSE 0 END),0) x FROM payroll_advance_payment_allocations pa JOIN payroll_advance_payments p ON p.id=pa.payment_id WHERE p.voided_at IS NULL AND pa.installment_id=?`).get(i.id).x||0);
+        const openI=Math.max(0,Number(i.amount_minor)-already); if(!openI) continue;
+        const q=Math.min(openI,allocLeft);
+        db.prepare(`INSERT INTO payroll_advance_payment_allocations(payment_id,installment_id,amount,amount_minor) VALUES(?,?,?,?)`).run(pid,i.id,money.fromMinor(q,unit),q);
+        allocLeft-=q;
+      }
+      db.prepare(`UPDATE payroll_advances SET status='completed',updated_at=datetime('now'),synced=0 WHERE id=? AND branch_id=?`).run(a.id,b.id);
+      left-=remainingA;
+    }
+    const info=db.prepare(`INSERT INTO payroll_final_settlements(uuid,branch_id,employee_id,month_id,settlement_date,gross_earned,deductions,advance_balance,additional_compensation,net_due,paid_amount,gross_earned_minor,deductions_minor,advance_balance_minor,additional_compensation_minor,net_due_minor,paid_amount_minor,method,cash_movement_id,notes,created_by,status) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+      .run(uuid(),b.id,data.employee.id,data.month.id,data.date,data.grossEarned,data.deductions,data.advanceBalance,data.additionalCompensation,data.netDue,data.netDue,
+        data.grossMinor,data.deductionsMinor,data.advanceBalanceMinor,data.additionalMinor,data.netDueMinor,data.netDueMinor,method,cashMovementId,String(notes||'').trim()||null,createdBy||null,'paid');
+    db.prepare(`UPDATE payroll_employees SET is_active=0,terminated_at=?,termination_reason=?,updated_at=datetime('now'),synced=0 WHERE id=? AND branch_id=?`).run(data.date,String(terminationReason||'').trim()||null,data.employee.id,b.id);
+    return {id:Number(info.lastInsertRowid),cashMovementId};
+  })();
+  return {success:true,id:tx.id,employeeId:data.employee.id,employeeName:data.employee.full_name,netDue:data.netDue,advanceSettled:data.advanceBalance,paidAmount:data.netDue,status:'paid',cashMovementId:tx.cashMovementId};
+}
+
+function listPayrollFinalSettlements(employeeId=null) {
+  const b=getCurrentBranch(); const unit=Number(getGlobalProfile()?.currency_minor_unit||2);
+  const rows=db.prepare(`SELECT s.*,e.full_name employee_name,m.month_key FROM payroll_final_settlements s JOIN payroll_employees e ON e.id=s.employee_id JOIN payroll_months m ON m.id=s.month_id WHERE s.branch_id=? ${employeeId!=null?'AND s.employee_id=?':''} ORDER BY s.settlement_date DESC,s.id DESC`).all(...(employeeId!=null?[b.id,Number(employeeId)]:[b.id]));
+  return rows.map(r=>({...r,grossEarned:money.fromMinor(Number(r.gross_earned_minor||0),unit),deductions:money.fromMinor(Number(r.deductions_minor||0),unit),advanceBalance:money.fromMinor(Number(r.advance_balance_minor||0),unit),additionalCompensation:money.fromMinor(Number(r.additional_compensation_minor||0),unit),netDue:money.fromMinor(Number(r.net_due_minor||0),unit),paidAmount:money.fromMinor(Number(r.paid_amount_minor||0),unit)}));
+}
+
+function listPayrollPayments(monthId, employeeId=null) {
+  const b=getCurrentBranch(); const m=payrollMonth(monthId);
+  const rows=db.prepare(`SELECT p.*,e.full_name employee_name FROM payroll_payments p JOIN payroll_employees e ON e.id=p.employee_id WHERE p.branch_id=? AND p.month_id=? ${employeeId!=null?'AND p.employee_id=?':''} ORDER BY p.payment_date DESC,p.id DESC`).all(...(employeeId!=null?[b.id,m.id,Number(employeeId)]:[b.id,m.id]));
+  return rows;
+}
+
+function voidPayrollFinalSettlement(settlementId, reason, voidedBy) {
+  const b=getCurrentBranch(); const id=Number(settlementId); const text=String(reason||'').trim();
+  if(!Number.isInteger(id)||id<=0) throw new Error('معرّف التسوية غير صالح.');
+  if(text.length<10) throw new Error('سبب إلغاء التصفية يجب ألا يقل عن 10 محارف.');
+  const s=db.prepare('SELECT * FROM payroll_final_settlements WHERE id=? AND branch_id=?').get(id,b.id);
+  if(!s) throw new Error('التصفية النهائية غير موجودة.');
+  if(String(s.status)!=='paid') throw new Error('هذه التصفية ملغاة بالفعل.');
+  db.transaction(()=>{
+    db.prepare(`UPDATE payroll_final_settlements SET status='voided',voided_at=datetime('now'),void_reason=?,updated_at=datetime('now'),synced=0 WHERE id=? AND branch_id=?`).run(text,id,b.id);
+    db.prepare("UPDATE payroll_employees SET is_active=1,terminated_at=NULL,termination_reason=NULL,updated_at=datetime('now') WHERE id=? AND branch_id=?").run(Number(s.employee_id),b.id);
+    if(Number(s.cash_movement_id)>0){
+      const cm=db.prepare('SELECT * FROM cash_movements WHERE id=? AND branch_id=?').get(Number(s.cash_movement_id),b.id);
+      if(cm){
+        const openShift=getOpenShift();
+        if(!openShift) throw new Error('لا يمكن إلغاء تصفية نقدية بدون وردية مفتوحة لتسجيل حركة العكس في الصندوق.');
+        db.prepare(`INSERT INTO cash_movements(uuid,branch_id,shift_id,type,amount,amount_minor,reason,reference,created_by,created_at,synced) VALUES(?,?,?,?,?,?,?,?,?,datetime('now'),0)`).run(uuid(),b.id,openShift.id,'cash_in',cm.amount,cm.amount_minor,'عكس تصفية موظف',`void:payroll_final_settlement:${id}`,voidedBy||null);
+      }
+    }
+    const refs=[`payroll_final_settlement:${s.employee_id}`, `payroll_final_settlement:${Number(s.employee_id)}`];
+    const aps=db.prepare(`SELECT id FROM payroll_advance_payments WHERE branch_id=? AND reference=? AND voided_at IS NULL`).all(b.id,refs[0]);
+    for(const ap of aps) db.prepare(`UPDATE payroll_advance_payments SET voided_at=datetime('now'),void_reason=? WHERE id=?`).run(`إلغاء التصفية النهائية ${id}`,ap.id);
+  })();
+  return {success:true,id,status:'voided'};
+}
+
+function reopenPayrollMonth(monthId, reason, reopenedBy) {
+  const b=getCurrentBranch(); const m=payrollMonth(monthId);
+  if (String(m.status)!=='paid') return {success:true,status:m.status};
+  const text=String(reason||'').trim(); if(text.length<10) throw new Error('سبب إعادة فتح شهر الرواتب يجب ألا يقل عن 10 محارف.');
+  // لا نحذف ولا نعدل دفعات سابقة. إعادة الفتح تسمح فقط بتسجيل تصحيح جديد.
+  db.prepare(`UPDATE payroll_months SET status='open',closed_at=NULL,closed_by=NULL,synced=0 WHERE id=? AND branch_id=?`).run(m.id,b.id);
+  return {success:true,status:'open',reason:text};
+}
+
+function getPayrollV2Employee(monthId,employeeId){ const m=payrollMonth(monthId), b=getCurrentBranch(); recalcPayrollEmployeeMonth(m.id,Number(employeeId)); const employee=db.prepare(`SELECT e.*,m.month_id,m.month_key,m.pay_type,m.pay_rate,m.base_amount,m.base_amount_minor,m.regular_hours,m.absence_days,m.absence_deduction,m.bonus_total,m.deduction_total,m.advance_total,m.overtime_total,m.net_salary,m.net_salary_minor,m.debt_carry,m.debt_carry_minor FROM payroll_employee_months m JOIN payroll_employees e ON e.id=m.employee_id JOIN payroll_months pm ON pm.id=m.month_id WHERE m.month_id=? AND m.employee_id=? AND e.branch_id=?`).get(m.id,Number(employeeId),b.id); if(!employee)throw new Error('العامل غير موجود في هذا الشهر.'); const unit=Number(getGlobalProfile()?.currency_minor_unit||2); const paid=db.prepare('SELECT COALESCE(SUM(amount_minor),0) paid_minor,COALESCE(SUM(amount),0) paid_amount FROM payroll_payments WHERE branch_id=? AND month_id=? AND employee_id=?').get(b.id,m.id,Number(employeeId)); const paidMinor=Number(paid?.paid_minor||0),netMinor=money.toMinor(Number(employee.net_salary||0),unit); employee.paid_total=money.fromMinor(paidMinor,unit); employee.paid_total_minor=paidMinor; employee.remaining_salary=money.fromMinor(Math.max(0,netMinor-paidMinor),unit); employee.remaining_salary_minor=Math.max(0,netMinor-paidMinor); employee.payment_status=paidMinor>=netMinor?'paid':paidMinor>0?'partial':'unpaid'; const transactions=db.prepare('SELECT * FROM payroll_transactions WHERE month_id=? AND employee_id=? ORDER BY event_date DESC,id DESC').all(m.id,Number(employeeId)); const payments=listPayrollPayments(m.id,Number(employeeId)); return {employee,transactions,payments,monthStatus:m.status||'open'}; }
 
 /* ==========================================================
    المرتجعات
@@ -3632,29 +4739,61 @@ function syncPayload() {
   const tableRows = db.prepare(`SELECT t.*,b.uuid AS branch_uuid FROM restaurant_tables t JOIN branches b ON b.id=t.branch_id WHERE t.branch_id=? AND t.synced=0`).all(branch.id);
   const bundleRows = db.prepare(`SELECT bu.*,b.uuid AS branch_uuid FROM bundles bu JOIN branches b ON b.id=bu.branch_id WHERE bu.branch_id=? AND bu.synced=0`).all(branch.id).map((b) => ({...b,items: db.prepare(`SELECT bi.*,p.uuid AS product_uuid FROM bundle_items bi JOIN products p ON p.id=bi.product_id WHERE bi.bundle_id=?`).all(b.id)}));
   const taxProfileRows = db.prepare(`SELECT tp.*,b.uuid AS branch_uuid FROM tax_profiles tp JOIN branches b ON b.id=tp.branch_id WHERE tp.branch_id=? AND tp.synced=0`).all(branch.id);
-  return { branch, changes: { categories: categoryRows, products: productRows, tables: tableRows, customers: customerRows, inventory: inventoryRows, sales: saleRows, payments: paymentRows, cash_movements: cashMovementRows, shifts: shiftRows, inventory_movements: inventoryMovementRows, suppliers: supplierRows, supplier_ledger: supplierLedgerRows, purchase_orders: purchaseOrderRows, returns: returnRows, bundles: bundleRows, customer_ledger: customerLedgerRows, store_credit_ledger: storeCreditLedgerRows, tax_profiles: taxProfileRows } };
+  const inventoryTransferRows = db.prepare(`SELECT t.* FROM inventory_transfers t WHERE t.local_branch_id=? AND t.source_branch_uuid=? AND t.synced=0`).all(branch.id, branch.uuid).map((t)=>({
+    ...t, branch_uuid: branch.uuid,
+    items: db.prepare(`SELECT product_uuid,quantity,unit_cost FROM inventory_transfer_items WHERE transfer_id=? ORDER BY id`).all(t.id)
+  }));
+  const payrollEmployeeRows = db.prepare(`SELECT e.*,b.uuid AS branch_uuid FROM payroll_employees e JOIN branches b ON b.id=e.branch_id WHERE e.branch_id=? AND e.synced=0`).all(branch.id);
+  const payrollMonthRows = db.prepare(`SELECT m.*,b.uuid AS branch_uuid FROM payroll_months m JOIN branches b ON b.id=m.branch_id WHERE m.branch_id=? AND m.synced=0`).all(branch.id);
+  const payrollEmployeeMonthRows = db.prepare(`SELECT em.*,m.uuid AS month_uuid,e.uuid AS employee_uuid,b.uuid AS branch_uuid FROM payroll_employee_months em JOIN payroll_months m ON m.id=em.month_id JOIN payroll_employees e ON e.id=em.employee_id JOIN branches b ON b.id=? WHERE em.synced=0`).all(branch.id);
+  const payrollTransactionRows = db.prepare(`SELECT t.*,m.uuid AS month_uuid,e.uuid AS employee_uuid,b.uuid AS branch_uuid FROM payroll_transactions t JOIN payroll_months m ON m.id=t.month_id JOIN payroll_employees e ON e.id=t.employee_id JOIN branches b ON b.id=t.branch_id WHERE t.branch_id=? AND t.synced=0`).all(branch.id);
+  const payrollAdvanceRows = db.prepare(`SELECT a.*,e.uuid AS employee_uuid,b.uuid AS branch_uuid FROM payroll_advances a JOIN payroll_employees e ON e.id=a.employee_id JOIN branches b ON b.id=a.branch_id WHERE a.branch_id=? AND a.synced=0`).all(branch.id);
+  const payrollInstallmentRows = db.prepare(`SELECT i.*,a.uuid AS advance_uuid,b.uuid AS branch_uuid FROM payroll_advance_installments i JOIN payroll_advances a ON a.id=i.advance_id JOIN branches b ON b.id=a.branch_id WHERE a.branch_id=? AND i.synced=0`).all(branch.id);
+  const payrollAdvancePaymentRows = db.prepare(`SELECT p.*,a.uuid AS advance_uuid,b.uuid AS branch_uuid FROM payroll_advance_payments p JOIN payroll_advances a ON a.id=p.advance_id JOIN branches b ON b.id=p.branch_id WHERE p.branch_id=? AND p.synced=0`).all(branch.id);
+  const payrollAllocationRows = db.prepare(`SELECT pa.*,p.uuid AS payment_uuid,i.advance_id,a.uuid AS advance_uuid,i.month_key,b.uuid AS branch_uuid FROM payroll_advance_payment_allocations pa JOIN payroll_advance_payments p ON p.id=pa.payment_id JOIN payroll_advance_installments i ON i.id=pa.installment_id JOIN payroll_advances a ON a.id=i.advance_id JOIN branches b ON b.id=a.branch_id WHERE a.branch_id=? AND pa.synced=0`).all(branch.id);
+  const payrollPaymentRows = db.prepare(`SELECT p.*,m.uuid AS month_uuid,e.uuid AS employee_uuid,b.uuid AS branch_uuid FROM payroll_payments p JOIN payroll_months m ON m.id=p.month_id JOIN payroll_employees e ON e.id=p.employee_id JOIN branches b ON b.id=p.branch_id WHERE p.branch_id=? AND p.synced=0`).all(branch.id);
+  const payrollSettlementRows = db.prepare(`SELECT s.*,m.uuid AS month_uuid,e.uuid AS employee_uuid,b.uuid AS branch_uuid FROM payroll_final_settlements s JOIN payroll_months m ON m.id=s.month_id JOIN payroll_employees e ON e.id=s.employee_id JOIN branches b ON b.id=s.branch_id WHERE s.branch_id=? AND s.synced=0`).all(branch.id);
+  const inventoryTransferReceiptRows = db.prepare(`SELECT r.* FROM inventory_transfer_receipts r WHERE r.local_branch_id=? AND r.destination_branch_uuid=? AND r.synced=0`).all(branch.id, branch.uuid).map((r)=>({
+    ...r, branch_uuid: branch.uuid,
+    items: db.prepare(`SELECT product_uuid,quantity_received FROM inventory_transfer_receipt_items WHERE receipt_id=? ORDER BY id`).all(r.id)
+  }));
+  return { branch, changes: { categories: categoryRows, products: productRows, tables: tableRows, customers: customerRows, inventory: inventoryRows, sales: saleRows, payments: paymentRows, cash_movements: cashMovementRows, shifts: shiftRows, inventory_movements: inventoryMovementRows, suppliers: supplierRows, supplier_ledger: supplierLedgerRows, purchase_orders: purchaseOrderRows, returns: returnRows, bundles: bundleRows, customer_ledger: customerLedgerRows, store_credit_ledger: storeCreditLedgerRows, tax_profiles: taxProfileRows, inventory_transfers: inventoryTransferRows, inventory_transfer_receipts: inventoryTransferReceiptRows, payroll_employees: payrollEmployeeRows, payroll_months: payrollMonthRows, payroll_employee_months: payrollEmployeeMonthRows, payroll_transactions: payrollTransactionRows, payroll_advances: payrollAdvanceRows, payroll_advance_installments: payrollInstallmentRows, payroll_advance_payments: payrollAdvancePaymentRows, payroll_advance_payment_allocations: payrollAllocationRows, payroll_payments: payrollPaymentRows, payroll_final_settlements: payrollSettlementRows } };
 }
 function markSynced(payload) {
   const set = (table, rows) => {
     const uuids=(rows||[]).map(r=>r.uuid).filter(Boolean); if(!uuids.length)return;
     db.prepare(`UPDATE ${table} SET synced=1 WHERE uuid IN (${uuids.map(()=>'?').join(',')})`).run(...uuids);
   };
-  ['categories','products','restaurant_tables','customers','sales','payments','cash_movements','shifts','inventory_movements','suppliers','supplier_ledger','purchase_orders','customer_ledger','store_credit_ledger','returns','bundles','tax_profiles'].forEach((entity)=>{
+  ['categories','products','restaurant_tables','customers','sales','payments','cash_movements','shifts','inventory_movements','suppliers','supplier_ledger','purchase_orders','customer_ledger','store_credit_ledger','returns','bundles','tax_profiles','inventory_transfers','inventory_transfer_receipts','payroll_employees','payroll_months','payroll_employee_months','payroll_transactions','payroll_advances','payroll_advance_installments','payroll_advance_payments','payroll_advance_payment_allocations','payroll_payments','payroll_final_settlements'].forEach((entity)=>{
     const table = entity==='payments' ? 'payment_transactions' : entity==='restaurant_tables' ? 'restaurant_tables' : entity;
     set(table,payload.changes?.[entity]);
   });
   const ids=(payload.changes?.inventory||[]).map(r=>r.id).filter(Boolean); if(ids.length)db.prepare(`UPDATE inventory SET synced=1 WHERE id IN (${ids.map(()=>'?').join(',')})`).run(...ids);
+  const transferUuids=(payload.changes?.inventory_transfers||[]).map(r=>r.uuid).filter(Boolean); if(transferUuids.length)db.prepare(`UPDATE inventory_transfers SET synced=1 WHERE uuid IN (${transferUuids.map(()=>'?').join(',')})`).run(...transferUuids);
+  const receiptUuids=(payload.changes?.inventory_transfer_receipts||[]).map(r=>r.uuid).filter(Boolean); if(receiptUuids.length)db.prepare(`UPDATE inventory_transfer_receipts SET synced=1 WHERE uuid IN (${receiptUuids.map(()=>'?').join(',')})`).run(...receiptUuids);
 }
 function applyRemoteChanges(changes={}) {
   const currentBranch=getCurrentBranch();
   const currentBranchUuid=currentBranch?.uuid||null;
-  const own=(rows)=>(rows||[]).filter(r=>!r?.branch_uuid||r.branch_uuid===currentBranchUuid);
+  const branchOwnedEntities = ['tables','inventory','sales','customers','suppliers','purchase_orders','returns','bundles','customer_ledger','payments','cash_movements','shifts','inventory_movements','supplier_ledger','store_credit_ledger','tax_profiles','payroll_employees','payroll_months','payroll_employee_months','payroll_transactions','payroll_advances','payroll_advance_installments','payroll_advance_payments','payroll_advance_payment_allocations','payroll_payments','payroll_final_settlements'];
+  const transferEntities = ['inventory_transfers','inventory_transfer_receipts'];
+  const own=(rows, entity)=> (rows||[]).filter(r=>{
+    if (transferEntities.includes(entity)) {
+      return !!r?.source_branch_uuid && !!r?.destination_branch_uuid && (r.source_branch_uuid===currentBranchUuid || r.destination_branch_uuid===currentBranchUuid);
+    }
+    if (branchOwnedEntities.includes(entity)) {
+      if (!r?.branch_uuid) throw new Error(`رفضت المزامنة: ${entity} يحتوي سجلاً بلا branch_uuid.`);
+      if (r.branch_uuid !== currentBranchUuid) throw new Error('رفضت المزامنة سجلات تخص فرعاً آخر.');
+      return true;
+    }
+    return !r?.branch_uuid || r.branch_uuid===currentBranchUuid;
+  });
   const foreign=(rows)=>(rows||[]).filter(r=>r?.branch_uuid&&r.branch_uuid!==currentBranchUuid).length;
   if(
     foreign(changes.tables)||foreign(changes.inventory)||foreign(changes.sales)||foreign(changes.customers)||
     foreign(changes.suppliers)||foreign(changes.purchase_orders)||foreign(changes.returns)||foreign(changes.bundles)||
     foreign(changes.customer_ledger)||foreign(changes.payments)||foreign(changes.cash_movements)||foreign(changes.shifts)||
-    foreign(changes.inventory_movements)||foreign(changes.supplier_ledger)||foreign(changes.store_credit_ledger)||foreign(changes.tax_profiles)
+    foreign(changes.inventory_movements)||foreign(changes.supplier_ledger)||foreign(changes.store_credit_ledger)||foreign(changes.tax_profiles)||foreign(changes.payroll_employees)||foreign(changes.payroll_months)||foreign(changes.payroll_employee_months)||foreign(changes.payroll_transactions)||foreign(changes.payroll_advances)||foreign(changes.payroll_advance_installments)||foreign(changes.payroll_advance_payments)||foreign(changes.payroll_advance_payment_allocations)||foreign(changes.payroll_payments)||foreign(changes.payroll_final_settlements)
   ) throw new Error('رفضت المزامنة سجلات تخص فرعاً آخر.');
 
   const findOrCreateBranch=(uuidValue,name='فرع مُزامَن')=>{
@@ -3667,7 +4806,7 @@ function applyRemoteChanges(changes={}) {
 
   const tx=db.transaction(()=>{
     // 1) tax profiles first: products/sale items reference them by UUID.
-    for(const tp of own(changes.tax_profiles||[])){
+    for(const tp of own(changes.tax_profiles||[], 'tax_profiles')){
       const branchId=findOrCreateBranch(tp.branch_uuid);
       if(branchId!==currentBranch.id) continue;
       db.prepare(`
@@ -3691,6 +4830,18 @@ function applyRemoteChanges(changes={}) {
       const parentId=c.parent_uuid?db.prepare('SELECT id FROM categories WHERE uuid=?').get(c.parent_uuid)?.id||null:null;
       db.prepare('UPDATE categories SET parent_id=?,synced=1 WHERE uuid=?').run(parentId,c.uuid);
     }
+
+    // Payroll branch-owned records: resolve UUID relationships locally before insert/upsert.
+    for(const pe of own(changes.payroll_employees||[], 'payroll_employees')) db.prepare(`INSERT INTO payroll_employees(uuid,branch_id,full_name,job_title,pay_type,pay_rate,pay_rate_minor,is_active,legacy_user_id,terminated_at,termination_reason,national_id,hire_date,phone,department,iban,country_code,payroll_notes,created_at,updated_at,synced) VALUES(@uuid,@branchId,@full_name,@job_title,@pay_type,@pay_rate,@pay_rate_minor,@is_active,NULL,@terminated_at,@termination_reason,@national_id,@hire_date,@phone,@department,@iban,@country_code,@payroll_notes,@created_at,@updated_at,1) ON CONFLICT(uuid) DO UPDATE SET full_name=excluded.full_name,job_title=excluded.job_title,pay_type=excluded.pay_type,pay_rate=excluded.pay_rate,pay_rate_minor=excluded.pay_rate_minor,is_active=excluded.is_active,terminated_at=excluded.terminated_at,termination_reason=excluded.termination_reason,national_id=excluded.national_id,hire_date=excluded.hire_date,phone=excluded.phone,department=excluded.department,iban=excluded.iban,country_code=excluded.country_code,payroll_notes=excluded.payroll_notes,updated_at=excluded.updated_at,synced=1`).run({...pe,branchId:currentBranch.id});
+    for(const pm of own(changes.payroll_months||[], 'payroll_months')) db.prepare(`INSERT INTO payroll_months(uuid,branch_id,month_key,status,closed_at,closed_by,created_at,synced) VALUES(@uuid,@branchId,@month_key,@status,@closed_at,NULL,@created_at,1) ON CONFLICT(uuid) DO UPDATE SET month_key=excluded.month_key,status=excluded.status,closed_at=excluded.closed_at,synced=1`).run({...pm,branchId:currentBranch.id});
+    for(const pem of own(changes.payroll_employee_months||[], 'payroll_employee_months')) { const monthId=db.prepare('SELECT id FROM payroll_months WHERE uuid=?').get(pem.month_uuid)?.id; const employeeId=db.prepare('SELECT id FROM payroll_employees WHERE uuid=?').get(pem.employee_uuid)?.id; if(!monthId||!employeeId) continue; db.prepare(`INSERT INTO payroll_employee_months(month_id,employee_id,pay_type,pay_rate,base_amount,base_amount_minor,regular_hours,absence_days,absence_deduction,bonus_total,deduction_total,advance_total,overtime_total,net_salary,net_salary_minor,start_date,debt_carry,debt_carry_minor,created_at,updated_at,synced) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(month_id,employee_id) DO UPDATE SET pay_type=excluded.pay_type,pay_rate=excluded.pay_rate,base_amount=excluded.base_amount,base_amount_minor=excluded.base_amount_minor,regular_hours=excluded.regular_hours,absence_days=excluded.absence_days,absence_deduction=excluded.absence_deduction,bonus_total=excluded.bonus_total,deduction_total=excluded.deduction_total,advance_total=excluded.advance_total,overtime_total=excluded.overtime_total,net_salary=excluded.net_salary,net_salary_minor=excluded.net_salary_minor,start_date=excluded.start_date,debt_carry=excluded.debt_carry,debt_carry_minor=excluded.debt_carry_minor,updated_at=excluded.updated_at,synced=1`).run(monthId,employeeId,pem.pay_type,pem.pay_rate,pem.base_amount,pem.base_amount_minor,pem.regular_hours,pem.absence_days,pem.absence_deduction,pem.bonus_total,pem.deduction_total,pem.advance_total,pem.overtime_total,pem.net_salary,pem.net_salary_minor,pem.start_date,pem.debt_carry||0,pem.debt_carry_minor||0,pem.created_at,pem.updated_at); }
+    for(const pt of own(changes.payroll_transactions||[], 'payroll_transactions')) { const monthId=db.prepare('SELECT id FROM payroll_months WHERE uuid=?').get(pt.month_uuid)?.id; const employeeId=db.prepare('SELECT id FROM payroll_employees WHERE uuid=?').get(pt.employee_uuid)?.id; if(!monthId||!employeeId) continue; db.prepare(`INSERT INTO payroll_transactions(uuid,branch_id,month_id,employee_id,type,amount,amount_minor,quantity,event_date,reason,created_by,cash_movement_id,overtime_multiplier,overtime_hours,created_at,synced) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1) ON CONFLICT(uuid) DO UPDATE SET type=excluded.type,amount=excluded.amount,amount_minor=excluded.amount_minor,quantity=excluded.quantity,event_date=excluded.event_date,reason=excluded.reason,overtime_multiplier=excluded.overtime_multiplier,overtime_hours=excluded.overtime_hours,synced=1`).run(pt.uuid,currentBranch.id,monthId,employeeId,pt.type,pt.amount,pt.amount_minor||0,pt.quantity,pt.event_date,pt.reason,null,null,pt.overtime_multiplier||1.5,pt.overtime_hours||0,pt.created_at); }
+    for(const pa of own(changes.payroll_advances||[], 'payroll_advances')) { const employeeId=db.prepare('SELECT id FROM payroll_employees WHERE uuid=?').get(pa.employee_uuid)?.id; if(!employeeId) continue; db.prepare(`INSERT INTO payroll_advances(uuid,branch_id,employee_id,principal,principal_minor,installment_count,installment_amount,installment_amount_minor,first_deduction_month,reason,cash_movement_id,created_by,status,created_at,updated_at,synced) VALUES(@uuid,@branchId,?,?,?,?,?,?,?,?,?,?,@status,@created_at,@updated_at,1) ON CONFLICT(uuid) DO UPDATE SET employee_id=excluded.employee_id,principal=excluded.principal,principal_minor=excluded.principal_minor,installment_count=excluded.installment_count,installment_amount=excluded.installment_amount,installment_amount_minor=excluded.installment_amount_minor,first_deduction_month=excluded.first_deduction_month,reason=excluded.reason,status=excluded.status,updated_at=excluded.updated_at,synced=1`).run({...pa,branchId:currentBranch.id}); }
+    for(const pi of own(changes.payroll_advance_installments||[], 'payroll_advance_installments')) { const advanceId=db.prepare('SELECT id FROM payroll_advances WHERE uuid=?').get(pi.advance_uuid)?.id; if(!advanceId) continue; db.prepare(`INSERT INTO payroll_advance_installments(advance_id,month_key,installment_no,amount,amount_minor,created_at,synced) VALUES(?,?,?,?,?,?,1) ON CONFLICT(advance_id,installment_no) DO UPDATE SET month_key=excluded.month_key,amount=excluded.amount,amount_minor=excluded.amount_minor,synced=1`).run(advanceId,pi.month_key,pi.installment_no,pi.amount,pi.amount_minor||0,pi.created_at); }
+    for(const pp of own(changes.payroll_advance_payments||[], 'payroll_advance_payments')) { const advanceId=db.prepare('SELECT id FROM payroll_advances WHERE uuid=?').get(pp.advance_uuid)?.id; if(!advanceId) continue; db.prepare(`INSERT INTO payroll_advance_payments(uuid,branch_id,advance_id,payment_type,amount,amount_minor,payment_date,method,reference,notes,cash_movement_id,created_by,voided_at,void_reason,created_at,synced) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1) ON CONFLICT(uuid) DO UPDATE SET advance_id=excluded.advance_id,amount=excluded.amount,amount_minor=excluded.amount_minor,payment_date=excluded.payment_date,method=excluded.method,reference=excluded.reference,notes=excluded.notes,voided_at=excluded.voided_at,void_reason=excluded.void_reason,synced=1`).run(pp.uuid,currentBranch.id,advanceId,pp.payment_type,pp.amount,pp.amount_minor,pp.payment_date,pp.method,pp.reference,pp.notes,null,null,pp.voided_at,pp.void_reason,pp.created_at); }
+    for(const al of own(changes.payroll_advance_payment_allocations||[], 'payroll_advance_payment_allocations')) { const paymentId=db.prepare('SELECT id FROM payroll_advance_payments WHERE uuid=?').get(al.payment_uuid)?.id; const installmentId=db.prepare('SELECT i.id FROM payroll_advance_installments i JOIN payroll_advances a ON a.id=i.advance_id WHERE i.month_key=? AND a.uuid=?').get(al.month_key,al.advance_uuid)?.id; if(!paymentId||!installmentId) continue; db.prepare(`INSERT INTO payroll_advance_payment_allocations(payment_id,installment_id,amount,amount_minor,created_at,synced) VALUES(?,?,?,?,?,1) ON CONFLICT(payment_id,installment_id) DO UPDATE SET amount=excluded.amount,amount_minor=excluded.amount_minor,synced=1`).run(paymentId,installmentId,al.amount,al.amount_minor,al.created_at); }
+    for(const pp of own(changes.payroll_payments||[], 'payroll_payments')) { const monthId=db.prepare('SELECT id FROM payroll_months WHERE uuid=?').get(pp.month_uuid)?.id; const employeeId=db.prepare('SELECT id FROM payroll_employees WHERE uuid=?').get(pp.employee_uuid)?.id; if(!monthId||!employeeId) continue; db.prepare(`INSERT INTO payroll_payments(uuid,branch_id,month_id,employee_id,amount,amount_minor,method,payment_date,reference,notes,created_by,cash_movement_id,created_at,synced) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,1) ON CONFLICT(uuid) DO UPDATE SET amount=excluded.amount,amount_minor=excluded.amount_minor,method=excluded.method,payment_date=excluded.payment_date,reference=excluded.reference,notes=excluded.notes,synced=1`).run(pp.uuid,currentBranch.id,monthId,employeeId,pp.amount,pp.amount_minor||0,pp.method,pp.payment_date,pp.reference,pp.notes,null,null,pp.created_at); }
+    for(const fsr of own(changes.payroll_final_settlements||[], 'payroll_final_settlements')) { const monthId=db.prepare('SELECT id FROM payroll_months WHERE uuid=?').get(fsr.month_uuid)?.id; const employeeId=db.prepare('SELECT id FROM payroll_employees WHERE uuid=?').get(fsr.employee_uuid)?.id; if(!monthId||!employeeId) continue; db.prepare(`INSERT INTO payroll_final_settlements(uuid,branch_id,employee_id,month_id,settlement_date,gross_earned,deductions,advance_balance,additional_compensation,net_due,paid_amount,gross_earned_minor,deductions_minor,advance_balance_minor,additional_compensation_minor,net_due_minor,paid_amount_minor,method,cash_movement_id,notes,created_by,status,voided_at,void_reason,created_at,updated_at,synced) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1) ON CONFLICT(uuid) DO UPDATE SET settlement_date=excluded.settlement_date,net_due=excluded.net_due,net_due_minor=excluded.net_due_minor,paid_amount=excluded.paid_amount,paid_amount_minor=excluded.paid_amount_minor,status=excluded.status,voided_at=excluded.voided_at,void_reason=excluded.void_reason,updated_at=excluded.updated_at,synced=1`).run(fsr.uuid,currentBranch.id,employeeId,monthId,fsr.settlement_date,fsr.gross_earned,fsr.deductions,fsr.advance_balance,fsr.additional_compensation,fsr.net_due,fsr.paid_amount,fsr.gross_earned_minor,fsr.deductions_minor,fsr.advance_balance_minor,fsr.additional_compensation_minor,fsr.net_due_minor,fsr.paid_amount_minor,fsr.method,null,fsr.notes,null,fsr.status,fsr.voided_at,fsr.void_reason,fsr.created_at,fsr.updated_at); }
 
     // 3) products first, then parent-product references.
     for(const prod of changes.products||[]){
@@ -3719,7 +4870,7 @@ function applyRemoteChanges(changes={}) {
     }
 
     // 4) branch-owned masters before transactional documents.
-    for(const t of own(changes.tables||[])){
+    for(const t of own(changes.tables||[], 'tables')){
       const branchId=findOrCreateBranch(t.branch_uuid);
       if(branchId!==currentBranch.id) continue;
       db.prepare(`
@@ -3728,7 +4879,7 @@ function applyRemoteChanges(changes={}) {
         ON CONFLICT(uuid) DO UPDATE SET name=excluded.name,seats=excluded.seats,status=excluded.status,
           updated_at=excluded.updated_at,synced=1`).run({...t,branchId,updated_at:t.updated_at||new Date().toISOString()});
     }
-    for(const c of own(changes.customers||[])){
+    for(const c of own(changes.customers||[], 'customers')){
       const branchId=findOrCreateBranch(c.branch_uuid);
       if(branchId!==currentBranch.id) continue;
       db.prepare(`
@@ -3738,7 +4889,7 @@ function applyRemoteChanges(changes={}) {
           balance=excluded.balance,updated_at=excluded.updated_at,synced=1`)
         .run({...c,branchId,balance:Number(c.balance||0),updated_at:c.updated_at||new Date().toISOString()});
     }
-    for(const sup of own(changes.suppliers||[])){
+    for(const sup of own(changes.suppliers||[], 'suppliers')){
       const branchId=findOrCreateBranch(sup.branch_uuid);
       if(branchId!==currentBranch.id) continue;
       db.prepare(`
@@ -3748,7 +4899,7 @@ function applyRemoteChanges(changes={}) {
           balance=excluded.balance,updated_at=excluded.updated_at,synced=1`)
         .run({...sup,branchId,updated_at:sup.updated_at||new Date().toISOString()});
     }
-    for(const sh of own(changes.shifts||[])){
+    for(const sh of own(changes.shifts||[], 'shifts')){
       const branchId=findOrCreateBranch(sh.branch_uuid);
       if(branchId!==currentBranch.id) continue;
       const openedBy=sh.opened_by_username?db.prepare('SELECT id FROM users WHERE username=? AND branch_id=?').get(sh.opened_by_username,branchId)?.id:null;
@@ -3763,7 +4914,7 @@ function applyRemoteChanges(changes={}) {
     }
 
     // 5) purchase orders before supplier ledger so foreign keys can resolve.
-    for(const po of own(changes.purchase_orders||[])){
+    for(const po of own(changes.purchase_orders||[], 'purchase_orders')){
       const branchId=findOrCreateBranch(po.branch_uuid);
       if(branchId!==currentBranch.id) continue;
       const supplierId=po.supplier_uuid?db.prepare('SELECT id FROM suppliers WHERE uuid=? AND branch_id=?').get(po.supplier_uuid,branchId)?.id:null;
@@ -3787,7 +4938,7 @@ function applyRemoteChanges(changes={}) {
     }
 
     // 6) sales before returns/payments/ledgers so all references are resolvable.
-    for(const sale of own(changes.sales||[])){
+    for(const sale of own(changes.sales||[], 'sales')){
       const branchId=findOrCreateBranch(sale.branch_uuid);
       if(branchId!==currentBranch.id) continue;
       const customerId=sale.customer_uuid?db.prepare('SELECT id FROM customers WHERE uuid=? AND branch_id=?').get(sale.customer_uuid,branchId)?.id||null:null;
@@ -3825,7 +4976,7 @@ function applyRemoteChanges(changes={}) {
     }
 
     // 7) returns before payment_transactions because return payment rows reference return_id.
-    for(const r of own(changes.returns||[])){
+    for(const r of own(changes.returns||[], 'returns')){
       const branchId=findOrCreateBranch(r.branch_uuid);
       if(branchId!==currentBranch.id) continue;
       const saleId=r.sale_uuid?db.prepare('SELECT id FROM sales WHERE uuid=? AND branch_id=?').get(r.sale_uuid,branchId)?.id:null;
@@ -3868,7 +5019,7 @@ function applyRemoteChanges(changes={}) {
     }
 
     // 8) store-credit ledger before payments: events are authoritative; customer snapshots never overwrite the balance.
-    for(const l of own(changes.store_credit_ledger||[])){
+    for(const l of own(changes.store_credit_ledger||[], 'store_credit_ledger')){
       const branchId=findOrCreateBranch(l.branch_uuid); if(branchId!==currentBranch.id) continue;
       const customerId=l.customer_uuid?db.prepare('SELECT id FROM customers WHERE uuid=? AND branch_id=?').get(l.customer_uuid,branchId)?.id:null;
       if(!customerId) continue;
@@ -3880,7 +5031,7 @@ function applyRemoteChanges(changes={}) {
     }
 
     // 9) payments/cash after their parents exist.
-    for(const pt of own(changes.payments||[])){
+    for(const pt of own(changes.payments||[], 'payments')){
       const branchId=findOrCreateBranch(pt.branch_uuid); if(branchId!==currentBranch.id)continue;
       const saleId=pt.sale_uuid?db.prepare('SELECT id FROM sales WHERE uuid=? AND branch_id=?').get(pt.sale_uuid,branchId)?.id:null;
       const returnId=pt.return_uuid?db.prepare('SELECT id FROM returns WHERE uuid=? AND branch_id=?').get(pt.return_uuid,branchId)?.id:null;
@@ -3891,7 +5042,7 @@ function applyRemoteChanges(changes={}) {
         VALUES(@uuid,@branchId,@saleId,@returnId,@shiftId,@method,@currency_code,@amount,@exchange_rate,@provider,@provider_reference,@external_id,@masked_descriptor,@createdBy,@created_at,1)
         ON CONFLICT(uuid) DO NOTHING`).run({...pt,branchId,saleId,returnId,shiftId,createdBy,created_at:pt.created_at||new Date().toISOString()});
     }
-    for(const cm of own(changes.cash_movements||[])){
+    for(const cm of own(changes.cash_movements||[], 'cash_movements')){
       const branchId=findOrCreateBranch(cm.branch_uuid); if(branchId!==currentBranch.id)continue;
       const shiftId=cm.shift_uuid?db.prepare('SELECT id FROM shifts WHERE uuid=? AND branch_id=?').get(cm.shift_uuid,branchId)?.id:null; if(!shiftId)continue;
       const createdBy=cm.created_by_username?db.prepare('SELECT id FROM users WHERE username=? AND branch_id=?').get(cm.created_by_username,branchId)?.id:null;
@@ -3902,7 +5053,7 @@ function applyRemoteChanges(changes={}) {
     }
 
     // 9) inventory snapshot first, then movements as the authoritative delta stream.
-    for(const i of own(changes.inventory||[])){
+    for(const i of own(changes.inventory||[], 'inventory')){
       const productId=db.prepare('SELECT id FROM products WHERE uuid=?').get(i.product_uuid)?.id;
       if(!productId)continue;
       const branchId=findOrCreateBranch(i.branch_uuid); if(branchId!==currentBranch.id)continue;
@@ -3915,7 +5066,7 @@ function applyRemoteChanges(changes={}) {
         db.prepare(`UPDATE inventory SET min_quantity=?,unit_cost=CASE WHEN ? THEN unit_cost ELSE COALESCE(?,unit_cost) END,updated_at=CASE WHEN ? THEN updated_at ELSE ? END,synced=1 WHERE branch_id=? AND product_id=?`).run(i.min_quantity, localIsNewer ? 1 : 0, i.unit_cost == null ? null : Number(i.unit_cost), localIsNewer ? 1 : 0, localIsNewer ? local.updated_at : incomingUpdatedAt, branchId, productId);
       }
     }
-    for(const im of own(changes.inventory_movements||[])){
+    for(const im of own(changes.inventory_movements||[], 'inventory_movements')){
       const branchId=findOrCreateBranch(im.branch_uuid); if(branchId!==currentBranch.id)continue;
       const productId=im.product_uuid?db.prepare('SELECT id FROM products WHERE uuid=?').get(im.product_uuid)?.id:null;
       if(!productId)continue;
@@ -3938,7 +5089,7 @@ function applyRemoteChanges(changes={}) {
     }
 
     // 10) ledgers after their referenced sales/purchase orders exist.
-    for(const l of own(changes.customer_ledger||[])){
+    for(const l of own(changes.customer_ledger||[], 'customer_ledger')){
       if(!l.uuid)continue;
       const branchId=l.branch_uuid?findOrCreateBranch(l.branch_uuid):currentBranch.id; if(branchId!==currentBranch.id)continue;
       const customerId=l.customer_uuid?db.prepare('SELECT id FROM customers WHERE uuid=? AND branch_id=?').get(l.customer_uuid,branchId)?.id:null; if(!customerId)continue;
@@ -3948,7 +5099,7 @@ function applyRemoteChanges(changes={}) {
         VALUES(@uuid,@branchId,@customerId,@saleId,@entry_type,@amount,@balance_after,@notes,@created_at,1)
         ON CONFLICT(uuid) DO NOTHING`).run({...l,branchId,customerId,saleId,created_at:l.created_at||new Date().toISOString()});
     }
-    for(const sl of own(changes.supplier_ledger||[])){
+    for(const sl of own(changes.supplier_ledger||[], 'supplier_ledger')){
       const branchId=findOrCreateBranch(sl.branch_uuid); if(branchId!==currentBranch.id)continue;
       const supplierId=sl.supplier_uuid?db.prepare('SELECT id FROM suppliers WHERE uuid=? AND branch_id=?').get(sl.supplier_uuid,branchId)?.id:null;
       const poId=sl.purchase_order_uuid?db.prepare('SELECT id FROM purchase_orders WHERE uuid=? AND branch_id=?').get(sl.purchase_order_uuid,branchId)?.id:null;
@@ -3960,7 +5111,7 @@ function applyRemoteChanges(changes={}) {
     }
 
     // 11) bundles after products exist.
-    for(const bu of own(changes.bundles||[])){
+    for(const bu of own(changes.bundles||[], 'bundles')){
       const branchId=findOrCreateBranch(bu.branch_uuid); if(branchId!==currentBranch.id)continue;
       db.prepare(`
         INSERT INTO bundles(uuid,branch_id,name,discount_type,discount_value,is_active,updated_at,synced)
@@ -3975,6 +5126,40 @@ function applyRemoteChanges(changes={}) {
       for(const item of bu.items||[]){
         const productId=db.prepare('SELECT id FROM products WHERE uuid=?').get(item.product_uuid)?.id;
         if(productId)ins.run(localBundle.id,productId,item.quantity);
+      }
+    }
+
+    // 12) Cross-branch inventory transfers. The transfer document is visible to both
+    // endpoints, while the receipt is the only event that mutates destination stock.
+    for (const t of (changes.inventory_transfers || [])) {
+      if (!t?.uuid || t.source_branch_uuid !== currentBranchUuid && t.destination_branch_uuid !== currentBranchUuid) continue;
+      const local = db.prepare('SELECT id FROM inventory_transfers WHERE uuid=? AND local_branch_id=?').get(t.uuid,currentBranch.id);
+      let localTransferId = local?.id || null;
+      if (!localTransferId) {
+        const result = db.prepare(`INSERT INTO inventory_transfers(uuid,source_branch_uuid,destination_branch_uuid,local_branch_id,status,notes,created_by,shipped_at,created_at,updated_at,synced)
+          VALUES(?,?,?,?,?,?,?,?,?,?,1)`).run(t.uuid,t.source_branch_uuid,t.destination_branch_uuid,currentBranch.id,t.status==='cancelled'?'cancelled':'shipped',t.notes||null,null,t.shipped_at||t.created_at||new Date().toISOString(),t.created_at||new Date().toISOString(),t.updated_at||t.created_at||new Date().toISOString());
+        localTransferId=result.lastInsertRowid;
+        const ins=db.prepare(`INSERT OR IGNORE INTO inventory_transfer_items(transfer_id,product_id,product_uuid,quantity,unit_cost) VALUES(?,?,?,?,?)`);
+        for(const item of t.items||[]) {
+          const productId=db.prepare('SELECT id FROM products WHERE uuid=?').get(item.product_uuid)?.id;
+          if(productId) ins.run(localTransferId,productId,item.product_uuid,Number(item.quantity)||0,Number(item.unit_cost)||0);
+        }
+      } else if (t.status === 'cancelled' && !db.prepare('SELECT 1 FROM inventory_transfer_receipts WHERE transfer_uuid=?').get(t.uuid)) {
+        db.prepare(`UPDATE inventory_transfers SET status='cancelled',notes=?,updated_at=?,synced=1 WHERE id=?`).run(t.notes||null,t.updated_at||new Date().toISOString(),localTransferId);
+      }
+    }
+    for (const r of (changes.inventory_transfer_receipts || [])) {
+      if (!r?.uuid || (r.destination_branch_uuid !== currentBranchUuid && r.source_branch_uuid !== currentBranchUuid)) continue;
+      const localReceipt=db.prepare('SELECT id FROM inventory_transfer_receipts WHERE uuid=?').get(r.uuid);
+      if(localReceipt) continue;
+      const transfer=db.prepare('SELECT * FROM inventory_transfers WHERE uuid=? AND local_branch_id=?').get(r.transfer_uuid,currentBranch.id);
+      if(!transfer) continue;
+      const receiptId=db.prepare(`INSERT INTO inventory_transfer_receipts(uuid,transfer_uuid,source_branch_uuid,destination_branch_uuid,local_branch_id,received_by,notes,received_at,created_at,updated_at,synced)
+        VALUES(?,?,?,?,?,?,?, ?,?,?,1)`).run(r.uuid,r.transfer_uuid,r.source_branch_uuid,r.destination_branch_uuid,currentBranch.id,null,r.notes||null,r.received_at||r.created_at||new Date().toISOString(),r.created_at||new Date().toISOString(),r.updated_at||r.created_at||new Date().toISOString()).lastInsertRowid;
+      const ins=db.prepare('INSERT OR IGNORE INTO inventory_transfer_receipt_items(receipt_id,product_uuid,quantity_received) VALUES(?,?,?)');
+      for(const item of r.items||[]) ins.run(receiptId,item.product_uuid,Number(item.quantity_received)||0);
+      if(transfer.source_branch_uuid===currentBranchUuid){
+        db.prepare(`UPDATE inventory_transfers SET status='received',updated_at=? WHERE id=?`).run(r.received_at||r.created_at||new Date().toISOString(),transfer.id);
       }
     }
 
@@ -4003,6 +5188,51 @@ function recalcAllCustomerBalancesForBranch(branchId) {
       db.prepare('UPDATE customers SET balance=?,synced=1 WHERE id=? AND branch_id=?').run(next,r.id,branchId);
     }
   }
+}
+
+/* ==========================================================
+   المحاسبة + سجل المزامنة
+   ========================================================== */
+function listAccountingAccounts(){const b=getCurrentBranch();return db.prepare('SELECT * FROM accounting_accounts WHERE branch_id=? ORDER BY code').all(b.id);}
+function createAccountingAccount(input){const b=getCurrentBranch();const n=accounting.normalizeAccount(input,Number(getGlobalProfile()?.currency_minor_unit||2));const r=db.prepare(`INSERT INTO accounting_accounts(uuid,branch_id,code,name,account_type,currency_code,opening_balance_minor,is_active,updated_at,synced) VALUES(?,?,?,?,?,?,?,?,datetime('now'),0)`).run(uuid(),b.id,n.code,n.name,n.type,n.currencyCode,n.openingBalanceMinor,n.isActive);return db.prepare('SELECT * FROM accounting_accounts WHERE id=?').get(r.lastInsertRowid);}
+function insertPostedJournalEntry({ branchId, memo = null, referenceType = null, referenceId = null, entryDate = null, lines = [], createdBy = null, currencyCode = null }) {
+  const p = getGlobalProfile();
+  const unit = Number(p?.currency_minor_unit || 2);
+  const normalized = lines.map((l) => ({
+    ...l,
+    debitMinor: l.debitMinor != null ? Number(l.debitMinor) : money.toMinor(l.debit || 0, unit),
+    creditMinor: l.creditMinor != null ? Number(l.creditMinor) : money.toMinor(l.credit || 0, unit),
+  }));
+  accounting.validateJournalLines(normalized);
+  const currency = String(currencyCode || p?.currency_code || 'USD').toUpperCase();
+  const e = db.prepare(`INSERT INTO accounting_journal_entries(uuid,branch_id,reference_type,reference_id,memo,currency_code,entry_date,status,created_by,synced) VALUES(?,?,?,?,?,?,?,'posted',?,0)`)
+    .run(uuid(), branchId, referenceType, referenceId == null ? null : String(referenceId), memo, currency, entryDate || new Date().toISOString(), createdBy || null);
+  const ins = db.prepare('INSERT INTO accounting_journal_lines(entry_id,account_id,debit_minor,credit_minor,memo) VALUES(?,?,?,?,?)');
+  for (const line of normalized) ins.run(e.lastInsertRowid, Number(line.accountId), Number(line.debitMinor || 0), Number(line.creditMinor || 0), line.memo || null);
+  return db.prepare('SELECT * FROM accounting_journal_entries WHERE id=?').get(e.lastInsertRowid);
+}
+function postJournalEntry(input = {}) {
+  const b = getCurrentBranch();
+  return db.transaction(() => insertPostedJournalEntry({ ...input, branchId: b.id }))();
+}
+function listJournalEntries(range={}){const b=getCurrentBranch();let sql='SELECT * FROM accounting_journal_entries WHERE branch_id=?';const a=[b.id];if(range.from){sql+=' AND entry_date>=?';a.push(range.from);}if(range.to){sql+=' AND entry_date<=?';a.push(range.to);}return db.prepare(sql+' ORDER BY entry_date DESC,id DESC LIMIT 1000').all(...a);}
+function recordSyncOutboxEvent({entityType,entityUuid=null,operation='event',payload={}}){const b=getCurrentBranch();const eventId=uuid();const json=JSON.stringify(payload);const checksum=crypto.createHash('sha256').update(json).digest('hex');db.prepare('INSERT INTO sync_outbox(event_id,branch_id,entity_type,entity_uuid,operation,payload_json,payload_checksum) VALUES(?,?,?,?,?,?,?)').run(eventId,b.id,String(entityType),entityUuid,operation,json,checksum);return eventId;}
+function listSyncConflicts(limit=200){const b=getCurrentBranch();return db.prepare('SELECT * FROM sync_conflicts WHERE branch_id=? ORDER BY id DESC LIMIT ?').all(b.id,Math.min(Math.max(Number(limit)||50,1),500));}
+function listBackupManifests(limit=100){return db.prepare('SELECT * FROM backup_manifests ORDER BY created_at DESC LIMIT ?').all(Math.min(Math.max(Number(limit)||50,1),500));}
+
+function saveFiscalDocument(input = {}) {
+  const branch = getCurrentBranch();
+  const result = db.prepare(`INSERT INTO fiscal_documents(uuid,branch_id,sale_id,provider,status,external_id,external_number,request_payload,response_payload,issued_at) VALUES(?,?,?,?,?,?,?,?,?,?)`)
+    .run(uuid(), branch.id, Number(input.saleId) || null, String(input.provider || 'generic'), String(input.status || 'pending'), input.externalId || null, input.externalNumber || null, input.requestPayload == null ? null : JSON.stringify(input.requestPayload), input.responsePayload == null ? null : JSON.stringify(input.responsePayload), input.issuedAt || null);
+  return db.prepare('SELECT * FROM fiscal_documents WHERE id=?').get(result.lastInsertRowid);
+}
+function listFiscalDocuments(filters = {}) {
+  const branch = getCurrentBranch();
+  let sql = 'SELECT * FROM fiscal_documents WHERE branch_id=?'; const params = [branch.id];
+  if (filters.saleId) { sql += ' AND sale_id=?'; params.push(Number(filters.saleId)); }
+  if (filters.status) { sql += ' AND status=?'; params.push(String(filters.status)); }
+  sql += ' ORDER BY id DESC LIMIT 500';
+  return db.prepare(sql).all(...params);
 }
 
 /* ==========================================================
@@ -4086,16 +5316,34 @@ function validateBackupFile(filePath) {
 }
 
 async function backupTo(destPath) {
-  // better-sqlite3: backup() غير متزامنة وتُنتج نسخة متسقة حتى أثناء استخدام التطبيق
-  await db.backup(destPath);
-  const validation = validateBackupFile(destPath);
-  if (!validation.valid) {
-    try { fs.unlinkSync(destPath); } catch (_) {}
-    throw new Error(validation.message);
+  const target = path.resolve(String(destPath || ''));
+  if (!target) throw new Error('مسار النسخة الاحتياطية غير صالح.');
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  const temp = `${target}.tmp-${process.pid}-${Date.now()}`;
+  try {
+    await db.backup(temp);
+    const validation = validateBackupFile(temp);
+    if (!validation.valid) throw new Error(validation.message);
+    const bytes = fs.statSync(temp).size;
+    const sha256 = crypto.createHash('sha256').update(fs.readFileSync(temp)).digest('hex');
+    // Replace only after the backup is complete and validated, avoiding a partially-written target.
+    try { fs.rmSync(target, { force: true }); } catch (_) {}
+    fs.renameSync(temp, target);
+    try {
+      db.prepare(`INSERT INTO backup_manifests(uuid,kind,path,file_size,sha256,schema_version,verified_at) VALUES(?,?,?,?,?,?,datetime('now'))`)
+        .run(uuid(),'local',target,bytes,sha256,CURRENT_SCHEMA_VERSION);
+    } catch (error) {
+      logAudit({ userId: null, action: 'backup_manifest_failed', entityType: 'backup', entityId: target, level: 'error', details: { reason: error.message } });
+    }
+    return {success:true,path:target,sha256,schemaVersion:CURRENT_SCHEMA_VERSION};
+  } finally {
+    try { fs.unlinkSync(temp); } catch (_) {}
   }
-  return { success: true, path: destPath };
 }
-
+const PORTABLE_BACKUP_MAGIC=Buffer.from('NEXORA-NXBAK-1\0','utf8');
+function derivePortableKey(passphrase,salt){return crypto.scryptSync(String(passphrase),salt,32,{N:16384,r:8,p:1}).toString('hex');}
+async function createPortableBackup(destPath,passphrase){const secret=String(passphrase||'');if(secret.length<12)throw new Error('كلمة مرور النسخة المحمولة يجب ألا تقل عن 12 محرفاً.');const tempDb=`${destPath}.work-${process.pid}-${Date.now()}.db`;const salt=crypto.randomBytes(16);const portableKey=derivePortableKey(secret,salt);try{await db.backup(tempDb);const h=new Database(tempDb);try{applyDatabaseKey(h);h.rekey(portableKey);}finally{h.close();}const dbBytes=fs.readFileSync(tempDb);const meta=Buffer.from(JSON.stringify({format:1,createdAt:new Date().toISOString(),appVersion:require('../package.json').version,schemaVersion:CURRENT_SCHEMA_VERSION,salt:salt.toString('base64'),dbSha256:crypto.createHash('sha256').update(dbBytes).digest('hex')}),'utf8');const header=Buffer.alloc(PORTABLE_BACKUP_MAGIC.length+4);PORTABLE_BACKUP_MAGIC.copy(header,0);header.writeUInt32BE(meta.length,PORTABLE_BACKUP_MAGIC.length);fs.writeFileSync(destPath,Buffer.concat([header,meta,dbBytes]));const checksum=crypto.createHash('sha256').update(fs.readFileSync(destPath)).digest('hex');try{db.prepare(`INSERT INTO backup_manifests(uuid,kind,path,file_size,sha256,schema_version,verified_at) VALUES(?,?,?,?,?,?,datetime('now'))`).run(uuid(),'portable',destPath,fs.statSync(destPath).size,checksum,CURRENT_SCHEMA_VERSION);}catch(_){ }return{success:true,path:destPath,sha256:checksum,schemaVersion:CURRENT_SCHEMA_VERSION};}finally{try{fs.unlinkSync(tempDb);}catch(_){}}}
+function restorePortableBackup(filePath,passphrase){const secret=String(passphrase||'');if(secret.length<12)return{valid:false,message:'كلمة مرور النسخة المحمولة غير صالحة.'};let data;try{data=fs.readFileSync(filePath);}catch(e){return{valid:false,message:`تعذّر قراءة النسخة: ${e.message}`};}if(data.length<PORTABLE_BACKUP_MAGIC.length+4||!data.subarray(0,PORTABLE_BACKUP_MAGIC.length).equals(PORTABLE_BACKUP_MAGIC))return{valid:false,message:'صيغة النسخة المحمولة غير صالحة.'};const metadataLen=data.readUInt32BE(PORTABLE_BACKUP_MAGIC.length);const metadataStart=PORTABLE_BACKUP_MAGIC.length+4;const dbStart=metadataStart+metadataLen;if(dbStart>data.length)return{valid:false,message:'ملف النسخة المحمولة ناقص.'};let meta;try{meta=JSON.parse(data.subarray(metadataStart,dbStart).toString('utf8'));}catch(_){return{valid:false,message:'بيانات النسخة المحمولة تالفة.'};}const dbBytes=data.subarray(dbStart);if(crypto.createHash('sha256').update(dbBytes).digest('hex')!==meta.dbSha256)return{valid:false,message:'فشل تحقق سلامة قاعدة النسخة المحمولة.'};const salt=Buffer.from(String(meta.salt||''),'base64');if(salt.length<16)return{valid:false,message:'ملح التشفير غير صالح.'};const key=derivePortableKey(secret,salt);const temp=`${dbPath}.portable-restore-${Date.now()}.db`;try{fs.writeFileSync(temp,dbBytes,{mode:0o600});const h=new Database(temp);try{h.pragma("cipher = 'chacha20'");h.key(key);h.pragma('schema_version');h.rekey(encryptionKey);}finally{h.close();}fs.copyFileSync(temp,dbPath);const validation=validateBackupFile(dbPath);if(!validation.valid)return validation;return{valid:true,schemaVersion:Number(meta.schemaVersion||0),appVersion:String(meta.appVersion||'unknown')};}catch(e){return{valid:false,message:`فشل فك واستعادة النسخة المحمولة: ${e.message}`};}finally{try{fs.unlinkSync(temp);}catch(_){}}}
 
 module.exports = {
   DatabaseKeyMismatchError,
@@ -4145,6 +5393,13 @@ module.exports = {
   listInventory,
   adjustInventory,
   listInventoryMovements,
+  listTransferBranches,
+  upsertTransferBranch,
+  createInventoryTransfer,
+  listInventoryTransfers,
+  getInventoryTransferByUuid,
+  receiveInventoryTransfer,
+  cancelInventoryTransfer,
   getSalesSummary,
   getTopProducts,
   getDailySales,
@@ -4197,10 +5452,26 @@ module.exports = {
   deletePayrollV2Employee,
   getOrCreatePayrollMonth,
   getPayrollV2Month,
+  getPayrollV2Report,
   getPayrollV2Employee,
   addPayrollV2Transaction,
   removePayrollV2Transaction,
+  recordPayrollPayment,
+  listPayrollPayments,
+  createPayrollAdvance,
+  listPayrollAdvances,
+  listPayrollAdvancePayments,
+  repayPayrollAdvance,
+  settlePayrollAdvance,
+  recordPayrollSalaryAdvanceRecovery,
+  calculatePayrollFinalSettlement,
+  settleEmployeeFinalPayroll,
+  listPayrollFinalSettlements,
+  voidPayrollFinalSettlement,
+  reopenPayrollMonth,
   setPayrollV2RegularHours,
+  getPayrollSettings,
+  savePayrollSettings,
   setPayrollEmployeeMonthStartDate,
   getSaleForReturn,
   createReturn,
@@ -4218,4 +5489,8 @@ module.exports = {
   closeDatabase,
   validateBackupFile,
   backupTo,
+  createPortableBackup, restorePortableBackup,
+  listAccountingAccounts, createAccountingAccount, postJournalEntry, listJournalEntries,
+  recordSyncOutboxEvent, listSyncConflicts, listBackupManifests,
+  saveFiscalDocument, listFiscalDocuments,
 };

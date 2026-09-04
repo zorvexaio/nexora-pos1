@@ -29,6 +29,7 @@ const fieldWeightedPrefix = document.getElementById('fieldWeightedPrefix');
 const createBackupBtn = document.getElementById('createBackupBtn');
 const restoreBackupBtn = document.getElementById('restoreBackupBtn');
 const backupStatus = document.getElementById('backupStatus');
+const autoBackupStatus = document.getElementById('autoBackupStatus');
 
 const brandingForm = document.getElementById('brandingForm');
 const fieldStoreName = document.getElementById('fieldStoreName');
@@ -84,6 +85,7 @@ async function init() {
   const user = await guardPage(['admin'], '../login.html');
   if (!user) return;
 
+  loadAutoBackupStatus();
   currentBranch = await window.api.branches.current();
   branchNameEl.textContent = currentBranch ? currentBranch.name : '';
   fieldBranchUuid.value = currentBranch ? currentBranch.uuid : '';
@@ -440,6 +442,21 @@ async function saveWeighingPrefix(e) {
     btn.disabled = false;
     btn.textContent = 'حفظ';
   }
+}
+
+// يعرض تاريخ آخر نسخة احتياطية تلقائية (تعمل يومياً في الخلفية بلا أي تدخل)
+// حتى يطمئن صاحب المحل أن بياناته محمية فعلاً لا مجرد إعداد نظري.
+async function loadAutoBackupStatus() {
+  try {
+    const status = await window.api.backup.autoStatus();
+    if (status.lastDate) {
+      autoBackupStatus.textContent = `✓ آخر نسخة احتياطية تلقائية: ${status.lastDate} (يُحتفظ بآخر ${status.retentionDays} يوماً)`;
+      autoBackupStatus.style.color = 'var(--success, #16a34a)';
+    } else {
+      autoBackupStatus.textContent = 'لم تُنشأ أي نسخة احتياطية تلقائية بعد (ستُنشأ أول نسخة تلقائياً قريباً).';
+      autoBackupStatus.style.color = 'var(--text-faint)';
+    }
+  } catch (_) { /* لا نزعج المستخدم لو فشل هذا العرض التوضيحي فقط */ }
 }
 
 async function createBackup() {

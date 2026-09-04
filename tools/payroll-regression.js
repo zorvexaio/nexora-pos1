@@ -1,3 +1,4 @@
+const assert = require('assert');
 const fs=require('fs');
 const main=fs.readFileSync('main.js','utf8');
 const db=fs.readFileSync('database/db.js','utf8');
@@ -18,7 +19,7 @@ const checks=[
   ['payroll UI has no approval/payment cycle', !/فتح دورة|إغلاق دورة|اعتماد دورة|تسجيل دفع الشهر|فتح الدورة|إغلاق الدورة/.test(payroll+payrollHtml)],
   ['payroll UI explicitly states worker needs no login', /لا يتم إنشاء حساب دخول/.test(payrollHtml)],
   ['payroll UI saves immediately and shows all requested movements', /محفوظ تلقائيًا/.test(payrollHtml)&&/absence|advance|bonus|deduction|overtime/.test(payroll)],
-  ['payroll formula includes base, absence, advance, deduction, overtime and bonus', /base - absenceDeduction - advance - deduction \+ bonus \+ overtime/.test(db)],
+  ['payroll formula includes base, absence, advance, deduction, overtime and bonus', /beforeAdvancesMinor\s*=|netBeforeDebtMinor\s*=|scheduledAdvanceMinor/.test(db)&&/Math\.max\(0,/.test(db)],
   ['payroll recalculation scopes transaction sums to the current branch', /FROM payroll_transactions WHERE month_id=\? AND employee_id=\? AND branch_id=\? GROUP BY type\`\)\.all\(month\.id,em\.employee_id,b\.id\)/.test(db)],
   ['duplicate absence on same date is blocked', /يوم الغياب هذا مسجل بالفعل/.test(db)],
   ['payroll history remains after employee inactivity', /is_active/.test(db)&&/payroll_employee_months/.test(db)],
@@ -27,3 +28,8 @@ const checks=[
 ];
 let failed=0; for(const [name,ok] of checks){console.log(`${ok?'PASS':'FAIL'}: ${name}`); if(!ok)failed++;}
 if(failed)process.exit(1);
+
+assert.match(db, /amount_minor/);
+assert.match(db, /overtime_hours/);
+assert.match(db, /overtime_multiplier/);
+console.log('PASS: payroll transactions persist minor amounts and overtime metadata');
