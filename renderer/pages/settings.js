@@ -33,6 +33,7 @@ const autoBackupStatus = document.getElementById('autoBackupStatus');
 
 const brandingForm = document.getElementById('brandingForm');
 const fieldStoreName = document.getElementById('fieldStoreName');
+const fieldReceiptFooter = document.getElementById('fieldReceiptFooter');
 const selectLogoBtn = document.getElementById('selectLogoBtn');
 const logoPreview = document.getElementById('logoPreview');
 const fieldBranchUuid = document.getElementById('fieldBranchUuid');
@@ -115,6 +116,7 @@ async function init() {
 
   const branding = await window.api.branding.get();
   fieldStoreName.value = branding.storeName || '';
+  fieldReceiptFooter.value = branding.receiptFooterMessage || '';
   if (branding.logoPath) {
     logoPreview.src = window.api.pathToFileURL(branding.logoPath);
     logoPreview.style.display = 'inline-block';
@@ -372,6 +374,7 @@ async function saveBranding(e) {
   btn.textContent = 'جارٍ الحفظ...';
   try {
     await window.api.branding.setStoreName(fieldStoreName.value.trim());
+    await window.api.branding.setReceiptFooterMessage(fieldReceiptFooter.value.trim());
     showToast('تم حفظ اسم المتجر.');
   } catch (err) {
     showToast('حدث خطأ أثناء الحفظ: ' + err.message, 'error');

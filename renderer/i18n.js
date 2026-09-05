@@ -99,7 +99,7 @@ const TRANSLATIONS = {
     'common.discountLabel': 'الخصم',
     'common.total': 'الإجمالي',
     'common.cash': 'نقدي',
-    'common.card': 'بطاقة',
+    'common.card': 'بطاقة / تحويل',
     'common.mixed': 'مختلط',
     'common.password': 'كلمة المرور',
     'common.cancel': 'إلغاء',

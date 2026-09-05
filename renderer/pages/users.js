@@ -14,6 +14,7 @@ const cancelBtn = document.getElementById('cancelBtn');
 const fieldFullName = document.getElementById('fieldFullName');
 const fieldUsername = document.getElementById('fieldUsername');
 const fieldRole = document.getElementById('fieldRole');
+const fieldShiftType = document.getElementById('fieldShiftType');
 const fieldPassword = document.getElementById('fieldPassword');
 const fieldIsActive = document.getElementById('fieldIsActive');
 const passwordLabel = document.getElementById('passwordLabel');
@@ -27,6 +28,7 @@ const savePinBtn = document.getElementById('savePinBtn');
 let pinModalUserId = null;
 
 const ROLE_TABLE_LABELS = { admin: 'مدير عام', manager: 'مدير فرع', cashier: 'كاشير' };
+const SHIFT_TYPE_LABELS = { morning: 'صباحية', evening: 'مسائية' };
 
 async function init() {
   loggedInUser = await guardPage(['admin'], '../login.html');
@@ -65,6 +67,7 @@ function renderTable(users) {
       <td>${escapeHtml(u.full_name)}${u.id === loggedInUser.id ? ' <span class="you-tag">(أنت)</span>' : ''}</td>
       <td>${escapeHtml(u.username)}</td>
       <td>${ROLE_TABLE_LABELS[u.role] || escapeHtml(u.role)}</td>
+      <td>${SHIFT_TYPE_LABELS[u.shift_type] || SHIFT_TYPE_LABELS.morning}</td>
       <td>${u.is_active ? '<span class="status-active">مفعّل</span>' : '<span class="status-inactive">معطّل</span>'}</td>
       <td>${u.has_pin ? '<span class="status-active">مُعيَّن</span>' : '<span class="status-inactive">—</span>'}</td>
       <td class="row-actions">
@@ -94,11 +97,13 @@ function openModal(user = null) {
     fieldFullName.value = user.full_name;
     fieldUsername.value = user.username;
     fieldRole.value = user.role;
+    fieldShiftType.value = user.shift_type || 'morning';
     fieldIsActive.checked = !!user.is_active;
   } else {
     modalTitle.textContent = 'مستخدم جديد';
     passwordLabel.textContent = 'كلمة المرور *';
     fieldPassword.required = true;
+    fieldShiftType.value = 'morning';
   }
 
   modal.classList.remove('hidden');
@@ -150,6 +155,9 @@ async function saveUser(e) {
       alert(result.message || ts('حدث خطأ أثناء الحفظ'));
       return;
     }
+
+    const savedUserId = currentEditId || result.id;
+    if (savedUserId) await window.api.users.setShiftType(savedUserId, fieldShiftType.value);
 
     closeModal();
     await loadUsers();

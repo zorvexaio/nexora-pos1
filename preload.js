@@ -24,6 +24,7 @@ contextBridge.exposeInMainWorld('api', {
     delete: (userId) => ipcRenderer.invoke('users:delete', userId),
     setPin: (userId, pin) => ipcRenderer.invoke('users:setPin', { userId, pin }),
     clearPin: (userId) => ipcRenderer.invoke('users:clearPin', userId),
+    setShiftType: (userId, shiftType) => ipcRenderer.invoke('users:setShiftType', { userId, shiftType }),
   },
   products: {
     list: (filters) => ipcRenderer.invoke('products:list', filters),
@@ -226,6 +227,7 @@ contextBridge.exposeInMainWorld('api', {
   branding: {
     get: () => ipcRenderer.invoke('branding:get'),
     setStoreName: (storeName) => ipcRenderer.invoke('branding:setStoreName', storeName),
+    setReceiptFooterMessage: (message) => ipcRenderer.invoke('branding:setReceiptFooterMessage', message),
     setLogo: () => ipcRenderer.invoke('branding:setLogo'),
   },
   language: {

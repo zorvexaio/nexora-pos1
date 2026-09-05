@@ -1007,6 +1007,12 @@ ipcMain.handle('users:clearPin', (_event, userId) => {
   db.logAudit({ userId: currentUser.id, action: 'user_pin_cleared', entityType: 'user', entityId: userId });
   return db.clearUserPin(userId);
 });
+ipcMain.handle('users:setShiftType', (_event, { userId, shiftType }) => {
+  requireAdmin();
+  const result = db.setUserShiftType(userId, shiftType);
+  if (result.success) db.logAudit({ userId: currentUser.id, action: 'user_shift_type_set', entityType: 'user', entityId: userId });
+  return result;
+});
 
 function requireManagerOrAdmin() { return requirePermission('management.access'); }
 
@@ -1124,10 +1130,18 @@ ipcMain.handle('theme:set', (_event, theme) => {
 ipcMain.handle('branding:get', () => ({
   storeName: db.getSetting('branding_store_name', ''),
   logoPath: db.getSetting('branding_logo_path', ''),
+  // نص حر يكتبه صاحب المحل بأي لغة يريدها ويظهر أسفل كل فاتورة تلقائياً - مثل
+  // "شكراً لتسوقكم معنا"، أو العنوان ورقم الهاتف، أو أي رسالة أخرى يريدها.
+  receiptFooterMessage: db.getSetting('branding_receipt_footer', ''),
 }));
 ipcMain.handle('branding:setStoreName', (_event, storeName) => {
   requireAdmin();
   return db.setSetting('branding_store_name', storeName || '');
+});
+ipcMain.handle('branding:setReceiptFooterMessage', (_event, message) => {
+  requireAdmin();
+  // حد أقصى معقول (500 حرف) لمنع إيصال طويل جداً يستهلك ورق الطابعة الحراري بلا داعٍ
+  return db.setSetting('branding_receipt_footer', String(message || '').slice(0, 500));
 });
 ipcMain.handle('branding:setLogo', async () => {
   requireAdmin();

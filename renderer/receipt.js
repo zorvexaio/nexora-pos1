@@ -102,6 +102,7 @@ function renderReceipt(sale, branding, currency = {}) {
 
     <img id="receiptQr" class="receipt-qr" alt="QR" style="display:none" />
     <div class="receipt-footer">${t('receipt.thankYou')}</div>
+    ${branding && branding.receiptFooterMessage ? `<div class="receipt-footer receipt-footer-custom">${escapeHtml(branding.receiptFooterMessage).replace(/\n/g, '<br>')}</div>` : ''}
   `;
 
   // إذا فشل تحميل ملف الشعار (حُذف من القرص، أو مسار غير صالح)، لا نترك أيقونة صورة

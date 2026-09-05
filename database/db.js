@@ -1298,11 +1298,23 @@ function listUsers() {
   const branch = getCurrentBranch();
   return db
     .prepare(
-      `SELECT id, uuid, full_name, username, role, branch_id, is_active, monthly_salary, created_at,
+      `SELECT id, uuid, full_name, username, role, branch_id, is_active, monthly_salary, created_at, shift_type,
               (pin_hash IS NOT NULL) AS has_pin
        FROM users WHERE branch_id = ? AND is_payroll_only = 0 ORDER BY id`
     )
     .all(branch.id);
+}
+
+// نوع وردية الموظف (صباحي/مسائي) — بيانات معلوماتية بحتة تُعرض بجانب اسمه بقوائم المستخدمين
+// والرواتب، لا تؤثر بأي حساب أو صلاحية. أُضيف العمود سابقاً بالمخطط دون أن تُوصَل واجهة
+// تعديله فعلياً؛ هذه الدالة هي نقطة الكتابة الوحيدة له.
+function setUserShiftType(userId, shiftType) {
+  const branch = getCurrentBranch();
+  const value = String(shiftType || '').trim();
+  if (!['morning', 'evening'].includes(value)) return { success: false, message: 'نوع الوردية غير صالح.' };
+  const result = db.prepare('UPDATE users SET shift_type=? WHERE id=? AND branch_id=?').run(value, Number(userId), branch.id);
+  if (!result.changes) return { success: false, message: 'المستخدم غير موجود في الفرع الحالي.' };
+  return { success: true, shiftType: value };
 }
 
 function getUser(id) {
@@ -5539,6 +5551,7 @@ module.exports = {
   authenticateManagerByPin,
   setUserPin,
   clearUserPin,
+  setUserShiftType,
   listUsers,
   getUser,
   createUser,
