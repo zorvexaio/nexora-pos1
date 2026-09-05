@@ -118,8 +118,14 @@ async function init() {
   fieldStoreName.value = branding.storeName || '';
   fieldReceiptFooter.value = branding.receiptFooterMessage || '';
   if (branding.logoPath) {
-    logoPreview.src = window.api.pathToFileURL(branding.logoPath);
-    logoPreview.style.display = 'inline-block';
+    try {
+      logoPreview.src = window.api.pathToFileURL(branding.logoPath);
+      logoPreview.style.display = 'inline-block';
+    } catch (err) {
+      // لا نسمح لفشل معاينة الشعار بإيقاف بقية init() (ربط النماذج، أزرار
+      // التحديث، حالة الشبكة المحلية...) — نسجّل الخطأ فقط ونكمل.
+      console.error('branding logo preview failed:', err);
+    }
   }
 
   settingsForm.addEventListener('submit', save);
