@@ -21,7 +21,7 @@
         <a href="pages/inventory.html" data-roles="admin,manager" data-i18n="nav.inventory">المخزون</a>
         <a href="pages/customers.html" data-roles="admin,manager" data-i18n="nav.customers">العملاء</a>
         <a href="pages/suppliers.html" data-roles="admin,manager" data-i18n="nav.suppliers">الموردون والشراء</a>
-        <a href="pages/reports.html" data-roles="admin,manager" data-i18n="nav.reports">التقارير</a>
+        <a href="pages/reports.html" data-roles="admin,manager" data-i18n="nav.reports">التقارير</a><a href="pages/accounting.html" data-roles="admin" data-i18n="nav.accounting">المحاسبة</a>
         <a href="pages/audit.html" data-roles="admin">سجل التدقيق</a>
         <a href="pages/payroll.html" data-roles="admin" data-i18n="nav.payroll">الرواتب</a>
         <a href="pages/users.html" data-roles="admin" data-i18n="nav.users">المستخدمون</a>
@@ -80,22 +80,25 @@
           </div>
           <div class="form-field">
             <label data-i18n="pos.deliveryPerson">مندوب التوصيل (اختياري)</label>
-            <input id="deliveryPersonInput" type="text" data-i18n-placeholder="pos.deliveryPersonPlaceholder" placeholder="اسم/رقم المندوب" />
+            <input id="deliveryPersonInput" type="text" list="deliveryPersonList" data-i18n-placeholder="pos.deliveryPersonPlaceholder" placeholder="اسم/رقم المندوب" />
+            <datalist id="deliveryPersonList"></datalist>
           </div>
-          <div class="form-field">
-            <label data-i18n="pos.deliveryTimeLabel">وقت التسليم</label>
-            <div class="order-type-row" style="margin-bottom:6px;">
-              <label class="method-option">
-                <input type="radio" name="deliveryTimeMode" value="now" checked />
-                <span data-i18n="pos.deliveryNow">الآن</span>
-              </label>
-              <label class="method-option">
-                <input type="radio" name="deliveryTimeMode" value="custom" />
-                <span data-i18n="pos.deliveryCustomTime">تحديد وقت</span>
-              </label>
-            </div>
-            <input id="deliveryCustomTimeInput" type="time" class="hidden" />
+        </div>
+        <!-- وقت الطلب متاح لأي نوع طلب (سفري/استلام أو توصيل) - أحياناً الزبون
+             هيجي يستلم في وقت معيّن، مش بس التوصيل محتاج وقت محدد. -->
+        <div id="orderTimeField" class="form-field" style="margin-bottom:10px;">
+          <label data-i18n="pos.deliveryTimeLabel">وقت الطلب</label>
+          <div class="order-type-row" style="margin-bottom:6px;">
+            <label class="method-option">
+              <input type="radio" name="deliveryTimeMode" value="now" checked />
+              <span data-i18n="pos.deliveryNow">الآن</span>
+            </label>
+            <label class="method-option">
+              <input type="radio" name="deliveryTimeMode" value="custom" />
+              <span data-i18n="pos.deliveryCustomTime">تحديد وقت</span>
+            </label>
           </div>
+          <input id="deliveryCustomTimeInput" type="time" class="hidden" />
         </div>
 
         <div class="form-field" style="margin-bottom:10px;">

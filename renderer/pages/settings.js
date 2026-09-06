@@ -5,6 +5,7 @@ const fieldBusinessType = document.getElementById('fieldBusinessType');
 const currencyForm = document.getElementById('currencyForm');
 const fieldCurrencyBase = document.getElementById('fieldCurrencyBase');
 const fieldCurrencySecondary = document.getElementById('fieldCurrencySecondary');
+const fieldShowSecondaryOnReceipt = document.getElementById('fieldShowSecondaryOnReceipt');
 const fieldExchangeRate = document.getElementById('fieldExchangeRate');
 const fieldTaxNumber = document.getElementById('fieldTaxNumber');
 const globalForm = document.getElementById('globalForm');
@@ -105,6 +106,7 @@ async function init() {
   const currency = await window.api.currency.get();
   fieldCurrencyBase.value = currency.base;
   fieldCurrencySecondary.value = currency.secondary;
+  fieldShowSecondaryOnReceipt.checked = currency.showSecondaryOnReceipt;
   fieldExchangeRate.value = currency.rate;
   fieldTaxNumber.value = currency.taxNumber || '';
 
@@ -118,14 +120,8 @@ async function init() {
   fieldStoreName.value = branding.storeName || '';
   fieldReceiptFooter.value = branding.receiptFooterMessage || '';
   if (branding.logoPath) {
-    try {
-      logoPreview.src = window.api.pathToFileURL(branding.logoPath);
-      logoPreview.style.display = 'inline-block';
-    } catch (err) {
-      // لا نسمح لفشل معاينة الشعار بإيقاف بقية init() (ربط النماذج، أزرار
-      // التحديث، حالة الشبكة المحلية...) — نسجّل الخطأ فقط ونكمل.
-      console.error('branding logo preview failed:', err);
-    }
+    logoPreview.src = window.api.pathToFileURL(branding.logoPath);
+    logoPreview.style.display = 'inline-block';
   }
 
   settingsForm.addEventListener('submit', save);
@@ -351,7 +347,7 @@ async function saveCurrency(event) {
   const button = document.getElementById('saveCurrencyBtn');
   button.disabled = true;
   try {
-    await window.api.currency.set({ base: fieldCurrencyBase.value, secondary: fieldCurrencySecondary.value, rate: parseLocaleNumber(fieldExchangeRate.value), taxNumber: fieldTaxNumber.value });
+    await window.api.currency.set({ base: fieldCurrencyBase.value, secondary: fieldCurrencySecondary.value, showSecondaryOnReceipt: fieldShowSecondaryOnReceipt.checked, rate: parseLocaleNumber(fieldExchangeRate.value), taxNumber: fieldTaxNumber.value });
     showToast('تم حفظ إعدادات العملة والفاتورة.');
   } catch (error) { showToast('تعذر الحفظ: ' + error.message, 'error'); }
   finally { button.disabled = false; }
@@ -634,12 +630,6 @@ async function disconnectLan() {
   } catch (err) {
     showToast(ts('حدث خطأ: ') + err.message, 'error');
   }
-}
-
-function escapeHtml(str) {
-  const div = document.createElement('div');
-  div.textContent = str == null ? '' : String(str);
-  return div.innerHTML;
 }
 
 init();

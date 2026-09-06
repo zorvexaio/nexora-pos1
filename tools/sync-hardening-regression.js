@@ -16,5 +16,13 @@ ok('sync client validates server envelope before applying it', client.indexOf('v
 ok('database rejects branch-owned sync rows without branch_uuid', /يحتوي سجلاً بلا branch_uuid/.test(db));
 ok('migration journal stores checksum', /schema_migrations[\s\S]{0,200}checksum TEXT/.test(db));
 ok('published migrations are checksum-verified', /checksum mismatch/.test(db));
-ok('backup is staged before target replacement', /backup\(temp\)/.test(db) && /renameSync\(temp, target\)/.test(db));
+// كان هذا يبحث عن db.backup(temp) الحرفية، وهي طريقة استُبدلت عمداً بنسخ ملف خام
+// (fs.copyFileSync) لأن SQLite3 Multiple Ciphers يرفض backup() الأصلية مع قواعد
+// مشفّرة (موثّق بتعليق backupTo أعلى الدالة نفسها) — فالفحص القديم كان يفشل رغم أن
+// التنفيذ الفعلي أصبح أكثر أماناً (نسخ + تحقق + SHA256 قبل الاستبدال)، لا أقل.
+ok('backup is staged, validated and checksummed before target replacement',
+  /const temp = `\$\{target\}\.tmp-/.test(db) &&
+  /fs\.copyFileSync\(dbPath, temp\)/.test(db) &&
+  /validateBackupFile\(temp\)/.test(db) &&
+  /renameSync\(temp, target\)/.test(db));
 console.log(`SYNC HARDENING REGRESSION: ${n}/8 PASS`);

@@ -294,18 +294,4 @@ function formatDate(str) {
   return d.toLocaleString('ar-EG', { dateStyle: 'short', timeStyle: 'short' });
 }
 
-function debounce(fn, ms) {
-  let t;
-  return (...args) => {
-    clearTimeout(t);
-    t = setTimeout(() => fn(...args), ms);
-  };
-}
-
-function escapeHtml(str) {
-  const div = document.createElement('div');
-  div.textContent = str;
-  return div.innerHTML;
-}
-
 init();

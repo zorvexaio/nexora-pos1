@@ -5,11 +5,25 @@
 ## مثبت
 - JavaScript syntax checks clean.
 - Financial/security static checks clean.
-- Migration chain v2..v15 explicitly checked.
+- Migration chain v2..v18 explicitly checked (append-only chain integrity: v16 shifts-minor-trigger-null-fix, v17 accounting-extensions, v18 payroll-advance-disbursement-method).
 - Payroll regression suite and schema checks are available.
+- `npm run test:release` (`test-engineering.js` + `release-preflight.js`) passes end-to-end in this environment.
+- `better-sqlite3-multiple-ciphers` is pinned to an exact version (`13.0.3`, no caret range) in `package.json`, matching what `release-preflight`/`engineering-audit` require.
 - Core SHA256 manifest is checked.
 - Electron security policy and CSP are checked.
 - Native SQLite setup/rebuild commands are included.
+
+## ملاحظة هندسية: فحوصات كانت تفشل بسبب رقم إصدار مخطط ثابت (أُصلحت 2026-09-06)
+عدد من ملفات `tools/*-regression.js` (من ضمنها اثنان داخل `npm run test:engineering` نفسه:
+`payroll-advances-regression.js` و`payroll-advance-repayments-regression.js`، بالإضافة إلى
+`update-safety-regression.js`, `v0.48.0-regression.js`, `v0.48.2-regression.js`,
+`payroll-lifecycle-regression.js`, `payroll-termination-regression.js`,
+`inventory-transfer-regression.js`) كانت تتحقق من `CURRENT_SCHEMA_VERSION` عبر مطابقة نصية
+لقائمة أرقام ثابتة (مثلاً `10|11|12|13|14|15`)، فتفشل تلقائياً بمجرد أي ترحيلة جديدة —
+وفعلاً كانت تفشل منذ v16 دون أن يلاحظ أحد لأن `npm run test:release` لم يكن يُشغَّل بانتظام.
+كل هذه الفحوصات صارت تتحقق من حد أدنى (>=) لا قيمة ثابتة. `migration-chain-regression.js`
+يبقى الاستثناء المتعمَّد: قائمته تاريخ ثابت (append-only) بالتصميم ويجب تحديثها يدوياً مع كل
+ترحيلة جديدة — هذا هو الغرض منه.
 
 ## غير مثبت داخل بيئة Linux الحالية
 - `better-sqlite3-multiple-ciphers` native runtime after an actual Electron ABI rebuild.

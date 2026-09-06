@@ -17,7 +17,12 @@ const html = read('renderer/pages/inventory.html');
 const renderer = read('renderer/pages/inventory.js');
 const schema = read('database/schema.sql');
 
-expect(db, /CURRENT_SCHEMA_VERSION = (?:15|14|13|12|11)/, 'Schema version is not supported.');
+// كان يطابق قائمة ثابتة (11..15) فيفشل تلقائياً مع أي ترحيلة لاحقة (فشل فعلياً منذ v16).
+{
+  const m = db.match(/CURRENT_SCHEMA_VERSION = (\d+)/);
+  assert(!!m, 'A numeric schema version constant is required.');
+  assert(Number(m[1]) >= 11, 'Schema version must not regress below the inventory-transfer migration (v11).');
+}
 expect(db, /inventory-transfer-workflow-v11/, 'v11 migration is missing.');
 for (const table of ['branch_directory','inventory_transfers','inventory_transfer_items','inventory_transfer_receipts','inventory_transfer_receipt_items']) {
   expect(db, new RegExp(`CREATE TABLE IF NOT EXISTS ${table}`), `DB migration table missing: ${table}`);

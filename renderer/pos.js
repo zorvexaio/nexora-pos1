@@ -5,6 +5,7 @@ let maxCashierDiscountPercent = 10;
 let discountApproval = null; // { approverId, approverName } يُملأ بعد موافقة مدير على خصم متجاوز
 let creditApproval = null;
 let approvalPurpose = 'discount';
+let pendingRemoveLineId = null; // السطر المطلوب حذفه من السلة بانتظار اعتماد مدير (للكاشير فقط)
 let currentUser = null;
 let activeBundles = []; // الحزم الفعّالة، تُجلب مرة واحدة وتُطابَق مع السلة محلياً بكل تغيير
 let currencyConfig = { base: 'USD', secondary: '', rate: 1 };
@@ -126,6 +127,17 @@ function selectedDeliveryTimeMode() {
   return el ? el.value : 'now';
 }
 // يرجع وقت التسليم كـISO datetime كامل (اليوم + الوقت المختار)، أو null لو "الآن".
+// يملأ قائمة اقتراحات اسم مندوب التوصيل من الأسماء المكتوبة يدوياً سابقاً -
+// أول مرة يكتب اسم جديد، هيُقترح تلقائياً من المرة الجاية بمجرد إعادة تحميل
+// الشاشة (بعد نجاح البيع، أو فتح الشاشة من جديد).
+async function loadDeliveryPersonSuggestions() {
+  try {
+    const names = await window.api.sales.knownDeliveryPersons();
+    const list = document.getElementById('deliveryPersonList');
+    if (list) list.innerHTML = names.map((n) => `<option value="${escapeHtml(n)}"></option>`).join('');
+  } catch (_) { /* اقتراح تكميلي فقط، لا نزعج المستخدم لو فشل */ }
+}
+
 function computeDeliveryTimeIso() {
   if (selectedDeliveryTimeMode() !== 'custom' || !deliveryCustomTimeInput.value) return null;
   const [h, m] = deliveryCustomTimeInput.value.split(':').map(Number);
@@ -190,6 +202,7 @@ async function init() {
   activeBundles = await window.api.bundles.listActive();
   deliveryPricingConfig = await window.api.delivery.getPricing();
   updateDeliveryDistanceHint();
+  loadDeliveryPersonSuggestions();
 
   await loadProducts();
   restoreDraftIfAny();
@@ -316,9 +329,9 @@ function looksLikeBarcode(text) {
   return /^\d{6,}$/.test(text);
 }
 
-function showBarcodeError() {
+function showBarcodeError(message) {
   if (!barcodeErrorEl) return;
-  barcodeErrorEl.textContent = t('pos.barcodeNotFound');
+  barcodeErrorEl.textContent = message || t('pos.barcodeNotFound');
   barcodeErrorEl.classList.remove('hidden');
   playBarcodeErrorBeep();
   clearTimeout(barcodeErrorTimeout);
@@ -364,35 +377,56 @@ async function handleSearchKeydown(e) {
   try {
     const matches = await window.api.products.list({ search: code, limit: 20 });
     const exact = matches.find((p) => p.barcode === code);
-  if (exact) {
-    if (exact.variant_count > 0) {
-      openVariantPicker(exact);
-    } else {
-      addToCart(exact);
+    if (exact) {
+      if (exact.variant_count > 0) {
+        openVariantPicker(exact);
+      } else {
+        addToCart(exact);
+      }
+      searchInput.value = '';
+      await loadProducts();
+      return;
     }
-    searchInput.value = '';
-    await loadProducts();
-    return;
-  }
 
-  const gs1 = await window.api.products.resolveGs1Barcode(code);
-  if (gs1 && gs1.product) {
-    if (gs1.product.variant_count > 0) openVariantPicker(gs1.product);
-    else addToCart(gs1.product);
-    searchInput.value = '';
-    await loadProducts();
-    return;
-  }
+    // نجرّب فكّ باركود GS1 أو باركود ميزان (وزن + PLU) فقط لو النص "شكله باركود"
+    // فعلاً (أرقام فقط، 6 خانات أو أكثر) — تفادياً لاستدعاءين إضافيين عديمي الفائدة
+    // لقاعدة البيانات في كل مرة يبحث فيها الكاشير عن صنف بالاسم ويضغط Enter.
+    if (looksLikeBarcode(code)) {
+      const gs1 = await window.api.products.resolveGs1Barcode(code);
+      if (gs1 && gs1.product) {
+        if (gs1.product.variant_count > 0) openVariantPicker(gs1.product);
+        else addToCart(gs1.product);
+        searchInput.value = '';
+        await loadProducts();
+        return;
+      }
 
-  const weighted = await window.api.products.resolveWeightedBarcode(code);
-  if (weighted) {
-    addWeightedToCart(weighted.product, weighted.weightKg);
-    searchInput.value = '';
-    await loadProducts();
-    return;
-  }
+      const weighted = await window.api.products.resolveWeightedBarcode(code);
+      if (weighted) {
+        addWeightedToCart(weighted.product, weighted.weightKg);
+        searchInput.value = '';
+        await loadProducts();
+        return;
+      }
 
-    if (looksLikeBarcode(code)) showBarcodeError();
+      showBarcodeError();
+      return;
+    }
+
+    // بحث بالاسم: لو تضييق النص بالبحث رجّع نتيجة وحيدة بالضبط، ضغطة Enter
+    // بتضيفها للسلة مباشرة — نفس سرعة قارئ الباركود، بدون ما يلمس الكاشير
+    // الماوس أو الشاشة. لو النتائج أكتر من واحدة، ما منضيف شي عشوائياً
+    // (تفادياً لإضافة صنف غلط بالغلط بلحظة بيع حقيقية).
+    if (matches.length === 1) {
+      const only = matches[0];
+      if (only.variant_count > 0) openVariantPicker(only);
+      else addToCart(only);
+      searchInput.value = '';
+      await loadProducts();
+    }
+  } catch (err) {
+    console.error('Search/barcode lookup failed', err);
+    showBarcodeError(t('pos.searchLookupFailed'));
   } finally {
     barcodeLookupBusy = false;
   }
@@ -583,6 +617,22 @@ function changeQty(lineId, delta) {
   renderCart();
 }
 
+// حذف مباشر لسطر كامل من السلة — متاح فقط للمدير/الأدمن بدون اعتماد إضافي
+// (نفس صلاحياتهم الحالية على تعديل الكمية).
+function removeLine(lineId) {
+  cart = cart.filter((i) => i.lineId !== lineId);
+  renderCart();
+}
+
+// الكاشير لا يحذف صنفاً من السلة مباشرة (تفادياً لبيع صنف ثم حذفه بصمت بعد
+// الدفع/الفحص) — لازم اعتماد مدير بنفس آلية اعتماد الخصم المتجاوز للحد.
+// كانت هذه الحالة "نص مطبّقة" فقط: تلميح الواجهة يقول "الكاشير لا يغيّر الكميات
+// مباشرة" (يوحي بوجود مسار غير مباشر عبر اعتماد) لكن ما كان في أي زر يوصل له.
+function requestRemoveLine(lineId) {
+  pendingRemoveLineId = lineId;
+  openApprovalModal('removeLine', 'pos.approveRemoveLine');
+}
+
 /* ---------------- ملاحظة على صنف بالسلة (مثال: بدون ثوم، دبل لحمة) ---------------- */
 const itemNoteModal = document.getElementById('itemNoteModal');
 const itemNoteInput = document.getElementById('itemNoteInput');
@@ -757,6 +807,7 @@ function renderCart() {
             ? `<span title="${t('pos.qtyLockedTooltip')}">${item.quantity}</span>`
             : `<button data-action="minus">−</button><span>${item.quantity}</span><button data-action="plus">+</button>`)}</div>
         <span>${(item.price * item.quantity).toFixed(2)}</span>
+        <button type="button" class="remove-line-btn" data-action="${window.currentPosUser?.role === 'cashier' ? 'request-remove' : 'remove'}" title="${window.currentPosUser?.role === 'cashier' ? t('pos.removeLineTooltip') : t('pos.removeLineTooltipDirect')}">🗑</button>
         <button type="button" class="note-btn ${item.notes ? 'has-note' : ''}" data-action="note" title="${t('pos.addNoteTooltip')}">📝</button>
       </div>
       ${item.notes ? `<div class="cart-item-note" data-action="note" title="${t('pos.addNoteTooltip')}">${escapeHtml(item.notes)}</div>` : ''}
@@ -818,6 +869,8 @@ cartItemsEl.addEventListener('click', (event) => {
   const action = actionEl.dataset.action;
   if (action === 'minus') changeQty(lineId, -1);
   else if (action === 'plus') changeQty(lineId, 1);
+  else if (action === 'remove') removeLine(lineId);
+  else if (action === 'request-remove') requestRemoveLine(lineId);
   else if (action === 'note') openItemNoteModal(lineId);
 });
 
@@ -955,12 +1008,13 @@ const cancelApprovalBtn = document.getElementById('cancelApprovalBtn');
 const confirmApprovalBtn = document.getElementById('confirmApprovalBtn');
 let approvalMode = 'password';
 
-function openApprovalModal() {
-  approvalPurpose = 'discount';
+function openApprovalModal(purpose = 'discount', titleKey = 'pos.approvalRequired') {
+  approvalPurpose = purpose;
   approvalUsername.value = '';
   approvalPassword.value = '';
   approvalPin.value = '';
   approvalError.classList.add('hidden');
+  approvalModal.querySelector('h2').textContent = t(titleKey);
   approvalModal.classList.remove('hidden');
   setApprovalMode('password');
   approvalUsername.focus();
@@ -1018,11 +1072,18 @@ async function runApproval(callApi) {
       return;
     }
     const approval = { approverId: result.approverId, approverName: result.approverName, grantId: result.grantId };
-    if (approvalPurpose === 'credit') creditApproval = approval;
-    else discountApproval = approval;
+    if (approvalPurpose === 'credit') {
+      creditApproval = approval;
+    } else if (approvalPurpose === 'removeLine') {
+      // الاعتماد هون بس بيفتح الباب لحذف سطر واحد محدد سلفاً، مش لتعديل السلة عمومًا
+      removeLine(pendingRemoveLineId);
+      pendingRemoveLineId = null;
+    } else {
+      discountApproval = approval;
+    }
     closeApprovalModal();
     if (approvalPurpose === 'credit') updatePaymentView();
-    else openPaymentModal();
+    else if (approvalPurpose === 'discount') openPaymentModal();
   } catch (err) {
     approvalError.textContent = t('pos.verifyError') + err.message;
     approvalError.classList.remove('hidden');
@@ -1082,12 +1143,10 @@ function updatePaymentView() {
   if (method === 'credit') {
     if (!selectedCustomerId) { showPaymentError(t('pos.creditRequiresCustomer')); return; }
     if (currentUser?.role === 'cashier' && !creditApproval) {
-      // اعتماد المدير هنا خاص بالبيع الآجل؛ سابقاً كانت هذه القيمة قد تبقى على غرض الخصم.
-      approvalPurpose = 'credit';
-      approvalUsername.value = ''; approvalPassword.value = ''; approvalPin.value = ''; approvalError.classList.add('hidden');
-      approvalModal.querySelector('h2').textContent = t('pos.approveCreditSale');
-      approvalModal.classList.remove('hidden');
-      setApprovalMode('password');
+      // اعتماد المدير هنا خاص بالبيع الآجل — يعيد استخدام نفس نافذة الاعتماد العامة
+      // بدل تكرار كود فتحها (كان مكرراً هنا سابقاً تحديداً لأن openApprovalModal
+      // كانت تفرض غرض "discount" دائماً وتُلغي أي غرض آخر بالغلط).
+      openApprovalModal('credit', 'pos.approveCreditSale');
       return;
     }
   }
@@ -1174,7 +1233,7 @@ async function confirmPayment() {
     orderType,
     deliveryFee: currentSaleTotals.deliveryFee,
     deliveryPerson: orderType === 'delivery' ? deliveryPersonInput.value.trim() || null : null,
-    deliveryTime: orderType === 'delivery' ? computeDeliveryTimeIso() : null,
+    deliveryTime: computeDeliveryTimeIso(),
     notes: orderNoteInput.value.trim() || null,
     grandTotal: total,
     paymentMethod: method,
@@ -1205,6 +1264,7 @@ async function confirmPayment() {
     pendingSaleRequestId = null;
     closePaymentModal();
     await loadProducts(searchInput.value); // تحديث المخزون المعروض
+    if (sale.deliveryPerson) loadDeliveryPersonSuggestions(); // اقتراح الاسم الجديد من المرة الجاية
     // ترسل الفاتورة وتذكرة السفري تلقائياً عند تفعيل الطابعة في الإعدادات.
   } catch (err) {
     showPaymentError(t('pos.saleSaveError') + err.message);
@@ -1237,20 +1297,6 @@ function resetOrderExtras() {
 function showPaymentError(msg) {
   paymentError.textContent = msg;
   paymentError.classList.remove('hidden');
-}
-
-function debounce(fn, ms) {
-  let t;
-  return (...args) => {
-    clearTimeout(t);
-    t = setTimeout(() => fn(...args), ms);
-  };
-}
-
-function escapeHtml(str) {
-  const div = document.createElement('div');
-  div.textContent = str;
-  return div.innerHTML;
 }
 
 init();

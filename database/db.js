@@ -14,7 +14,7 @@ const userDataPath = app.getPath('userData');
 const dbPath = path.join(userDataPath, 'pos.db');
 const keyPath = path.join(userDataPath, 'pos.db.key');
 const databaseExistedBeforeOpen = fs.existsSync(dbPath) && fs.statSync(dbPath).size > 0;
-const CURRENT_SCHEMA_VERSION = 16;
+const CURRENT_SCHEMA_VERSION = 18;
 
 function getEncryptionKey() {
   if (!safeStorage.isEncryptionAvailable()) {
@@ -202,6 +202,8 @@ function init() {
       [14, 'payroll-termination-final-settlement-v14', migratePayrollTermination],
       [15, 'payroll-commercial-hardening-v15', migratePayrollCommercialV15],
       [16, 'shifts-minor-trigger-null-fix-v16', migrateShiftsMinorTriggerNullFix],
+      [17, 'accounting-extensions-v17', migrateAccountingExtensionsV17],
+      [18, 'payroll-advance-disbursement-method-v18', migratePayrollAdvanceDisbursementMethodV18],
     ];
     for (const [version, name, migration] of versionedMigrations) applyVersionedMigration(version, name, migration);
     assertMigrationJournalIntegrity(versionedMigrations);
@@ -651,6 +653,29 @@ function migrateAccountingCore() {
   const defaults = [['1000','Cash','asset'],['1100','Bank','asset'],['1200','Accounts Receivable','asset'],['1300','Inventory','asset'],['2000','Accounts Payable','liability'],['2100','Tax Payable','liability'],['2200','Customer Store Credit','liability'],['3000','Owner Equity','equity'],['4000','Sales Revenue','revenue'],['4100','Delivery Revenue','revenue'],['5000','Cost of Goods Sold','expense'],['6000','Operating Expenses','expense']];
   const insert = db.prepare('INSERT OR IGNORE INTO accounting_accounts(uuid,branch_id,code,name,account_type,currency_code) VALUES(?,?,?,?,?,?)');
   for (const row of defaults) insert.run(uuid(), branch.id, row[0], row[1], row[2], currency);
+}
+
+// ترحيلة v3 (migrateAccountingCore) منشورة فعلاً ومحسوبة بصمة (checksum) لمحتواها —
+// لا يجوز تعديل جسمها لإضافة حسابات جديدة (يكسر ترقية أي قاعدة سبق وطبّقتها).
+// أي حساب/دفتر جديد لاحقاً يُضاف هنا بترحيلة برقم أعلى بدلاً من ذلك.
+// تشمل كل الفروع (وليس فرع العمل الحالي فقط) حتى لا يبقى فرع بلا الحسابات الجديدة.
+function migratePayrollAdvanceDisbursementMethodV18() {
+  // قواعد ما قبل v18 لا تميّز طريقة صرف السلفة: العمود الوحيد المتاح كان cash_movement_id
+  // (يُملأ فقط عند الصرف نقداً من الصندوق). لذلك أي سلفة قديمة مربوطة بحركة صندوق تُعتبر
+  // 'cash' بيقين، وأي سلفة قديمة بلا حركة صندوق تبقى 'cash' كقيمة افتراضية متحفظة (كانت
+  // الشاشة القديمة تفترض النقد ضمنياً أصلاً) بدل تخمين 'bank' أو 'other' بلا دليل.
+  addColumnIfMissing('payroll_advances', "disbursement_method TEXT NOT NULL DEFAULT 'cash'");
+}
+function migrateAccountingExtensionsV17() {
+  const branches = db.prepare('SELECT id FROM branches').all();
+  const currency = String(getGlobalProfile()?.currency_code || 'USD').toUpperCase();
+  const extraAccounts = [
+    ['6100', 'رواتب وأجور (مصروف)', 'expense'],
+  ];
+  const insert = db.prepare('INSERT OR IGNORE INTO accounting_accounts(uuid,branch_id,code,name,account_type,currency_code) VALUES(?,?,?,?,?,?)');
+  for (const branch of branches) {
+    for (const row of extraAccounts) insert.run(uuid(), branch.id, row[0], row[1], row[2], currency);
+  }
 }
 
 function migratePermissionsMatrix() {
@@ -2412,6 +2437,18 @@ function createSale(sale) {
   return createSaleTx(sale);
 }
 
+// أسماء مندوبي التوصيل اللي اتكتبوا يدوياً قبل كده في هذا الفرع - تُستخدم
+// لاقتراحها تلقائياً (autocomplete) بدل إعادة كتابة نفس الاسم كل مرة.
+function listKnownDeliveryPersons() {
+  const branch = getCurrentBranch();
+  return db.prepare(`
+    SELECT DISTINCT delivery_person FROM sales
+    WHERE branch_id = ? AND delivery_person IS NOT NULL AND TRIM(delivery_person) <> ''
+    ORDER BY delivery_person COLLATE NOCASE
+    LIMIT 50
+  `).all(branch.id).map((r) => r.delivery_person);
+}
+
 function listSales(filters = {}) {
   const branch = getCurrentBranch();
   let sql = `SELECT * FROM sales WHERE branch_id = ?`;
@@ -3197,14 +3234,23 @@ const receiveCustomerPaymentTx = db.transaction((payload) => {
       .run(uuid(), branch.id, shiftId, 'cash_in', applied, 'تسديد دين عميل', `customer:${payload.customerId}`, payload.userId || null);
     cashMovementRecorded = true;
   }
+  const unit = Number(getGlobalProfile()?.currency_minor_unit || 2);
+  const appliedMinor = money.toMinor(applied, unit);
+  insertPostedJournalEntry({
+    branchId: branch.id, memo: `تسديد دين عميل #${payload.customerId}`, referenceType: 'customer_payment', referenceId: payload.customerId,
+    lines: [
+      { accountId: getAccountingAccountId(branch.id, paymentMethod === 'card' ? '1100' : '1000'), debitMinor: appliedMinor, creditMinor: 0, memo: 'تسديد دين عميل' },
+      { accountId: getAccountingAccountId(branch.id, '1200'), debitMinor: 0, creditMinor: appliedMinor, memo: 'تخفيض ذمم مدينة' },
+    ], createdBy: payload.userId || null,
+  });
   return { success: true, applied, balanceAfter, cashMovementRecorded };
 });
 function receiveCustomerPayment(payload) { return receiveCustomerPaymentTx(payload); }
 function getDebtAging() {
   const branch = getCurrentBranch();
   return db.prepare(`SELECT c.id,c.name,c.phone,c.balance,
-    MIN(CASE WHEN l.entry_type='credit_sale' THEN l.created_at END) AS oldest_debt_at,
-    CAST(julianday('now')-julianday(MIN(CASE WHEN l.entry_type='credit_sale' THEN l.created_at END)) AS INTEGER) AS age_days
+    MIN(CASE WHEN l.entry_type='credit_sale' OR (l.entry_type='credit_correction' AND l.amount>0) THEN l.created_at END) AS oldest_debt_at,
+    CAST(julianday('now')-julianday(MIN(CASE WHEN l.entry_type='credit_sale' OR (l.entry_type='credit_correction' AND l.amount>0) THEN l.created_at END)) AS INTEGER) AS age_days
     FROM customers c LEFT JOIN customer_ledger l ON l.customer_id=c.id AND l.branch_id=c.branch_id
     WHERE c.branch_id=? AND c.balance>0 GROUP BY c.id ORDER BY age_days DESC,c.balance DESC`).all(branch.id);
 }
@@ -3273,6 +3319,7 @@ function receivePurchaseOrderCore(purchaseOrderId, branchId, context = {}) {
     ON CONFLICT(branch_id, product_id) DO UPDATE SET quantity=inventory.quantity + excluded.quantity, unit_cost=excluded.unit_cost, updated_at=datetime('now'), synced=0`);
   const productStock = db.prepare('SELECT quantity, unit_cost FROM inventory WHERE branch_id=? AND product_id=?');
   const movement = db.prepare(`INSERT INTO inventory_movements (uuid, branch_id, product_id, change_qty, reason, ref_id, notes, unit_cost_after, synced) VALUES (?, ?, ?, ?, 'purchase', ?, ?, ?, 0)`);
+  let trackedPurchaseValue = 0; // قيمة البنود المتتبَّعة مخزونياً فقط (بسعر الشراء الفعلي، وليس المتوسط المرجّح) — هذا ما يُضاف لحساب المخزون محاسبياً
   for (const item of items) {
     const product = db.prepare('SELECT track_inventory,is_active FROM products WHERE id=?').get(item.product_id);
     if (!product || !product.is_active) throw new Error('يوجد منتج شراء غير صالح.');
@@ -3286,6 +3333,7 @@ function receivePurchaseOrderCore(purchaseOrderId, branchId, context = {}) {
     const weightedCost = (before + quantity) > 0 ? ((before * oldCost) + (quantity * unitCost)) / (before + quantity) : unitCost;
     upsertInventory.run(po.branch_id, item.product_id, quantity, weightedCost);
     movement.run(uuid(), po.branch_id, item.product_id, quantity, po.id, 'استلام فاتورة شراء', weightedCost);
+    trackedPurchaseValue += quantity * unitCost;
   }
   const paidAmount = Math.min(Number(po.total), Math.max(0, Number(po.paid_amount) || 0));
   const paymentMethod = String(context.paymentMethod || po.payment_method || (paidAmount > 0 ? 'cash' : 'credit')).trim();
@@ -3314,6 +3362,24 @@ function receivePurchaseOrderCore(purchaseOrderId, branchId, context = {}) {
       db.prepare(`INSERT INTO cash_movements(uuid,branch_id,shift_id,type,amount,reason,reference,created_by) VALUES(?,?,?,?,?,?,?,?)`)
         .run(uuid(), po.branch_id, shiftId, 'cash_out', paidAmount, 'دفعة فاتورة شراء', `purchase:${po.id}`, actorId);
     }
+  }
+  // قيد محاسبي: مدين مخزون بالبنود المتتبَّعة + مدين مصروف مباشر بالبنود غير المتتبَّعة
+  // (لأنها لا تدخل حساب المخزون أصلاً)، ودائن حساب التسوية (نقد/بطاقة) بالمدفوع فوراً
+  // ودائن ذمم دائنة (موردون) بالباقي الآجل.
+  if (Number(po.total) > 0) {
+    const unit = Number(getGlobalProfile()?.currency_minor_unit || 2);
+    const totalMinor = money.toMinor(Number(po.total), unit);
+    const paidMinor = money.toMinor(paidAmount, unit);
+    const inventoryMinor = money.toMinor(Math.min(trackedPurchaseValue, Number(po.total)), unit);
+    const directExpenseMinor = Math.max(0, totalMinor - inventoryMinor);
+    const settleCode = paymentMethod === 'card' ? '1100' : '1000';
+    const lines = [];
+    if (inventoryMinor > 0) lines.push({ accountId: getAccountingAccountId(po.branch_id, '1300'), debitMinor: inventoryMinor, creditMinor: 0, memo: `مخزون مستلم من فاتورة شراء #${po.id}` });
+    if (directExpenseMinor > 0) lines.push({ accountId: getAccountingAccountId(po.branch_id, '6000'), debitMinor: directExpenseMinor, creditMinor: 0, memo: `بنود شراء غير مخزنية #${po.id}` });
+    if (paidMinor > 0) lines.push({ accountId: getAccountingAccountId(po.branch_id, settleCode), debitMinor: 0, creditMinor: paidMinor, memo: `دفعة فورية لمورد #${po.id}` });
+    const remainderMinor = totalMinor - paidMinor;
+    if (remainderMinor > 0) lines.push({ accountId: getAccountingAccountId(po.branch_id, '2000'), debitMinor: 0, creditMinor: remainderMinor, memo: `آجل مورد #${po.id}` });
+    insertPostedJournalEntry({ branchId: po.branch_id, memo: `فاتورة شراء #${po.id}`, referenceType: 'purchase_order', referenceId: po.id, lines, createdBy: actorId });
   }
   db.prepare(`UPDATE purchase_orders SET status='received', payment_method=?, received_at=datetime('now'), updated_at=datetime('now'), synced=0 WHERE id=?`).run(paymentMethod, po.id);
   return { success: true, id: po.id, total: po.total, paidAmount, due, balanceAfter, cashMovementRecorded: paymentMethod === 'cash' && !!shiftId };
@@ -3350,6 +3416,15 @@ const paySupplierDebtTx = db.transaction((payload) => {
       .run(uuid(), branch.id, shiftId, 'cash_out', applied, 'دفعة لمورد', `supplier:${payload.supplierId}`, payload.userId || null);
     cashMovementRecorded = true;
   }
+  const unit = Number(getGlobalProfile()?.currency_minor_unit || 2);
+  const appliedMinor = money.toMinor(applied, unit);
+  insertPostedJournalEntry({
+    branchId: branch.id, memo: `دفعة لمورد #${payload.supplierId}`, referenceType: 'supplier_payment', referenceId: payload.supplierId,
+    lines: [
+      { accountId: getAccountingAccountId(branch.id, '2000'), debitMinor: appliedMinor, creditMinor: 0, memo: 'تسديد ذمم دائنة' },
+      { accountId: getAccountingAccountId(branch.id, paymentMethod === 'card' ? '1100' : '1000'), debitMinor: 0, creditMinor: appliedMinor, memo: 'دفعة لمورد' },
+    ], createdBy: payload.userId || null,
+  });
   return { success: true, applied, balanceAfter, cashMovementRecorded };
 });
 function paySupplierDebt(payload) { return paySupplierDebtTx(payload); }
@@ -3756,6 +3831,127 @@ const closeTableSaleTx = db.transaction((saleId, payment, actorUserId, shiftId =
 
 function closeTableSale(saleId, payment, actorUserId, shiftId = null) {
   return closeTableSaleTx(saleId, payment, actorUserId, shiftId);
+}
+
+/* ==========================================================
+   تصحيح طريقة الدفع على فاتورة محفوظة (بعد إتمام البيع)
+   ==========================================================
+   ميزة حساسة تلمس سجلاً مالياً محفوظاً — الصلاحية تُتحقق أيضاً في main.js
+   (دفاع بالعمق)، والسبب إلزامي، وكل تصحيح يُسجَّل كاملاً بـ audit_logs.
+   لا تُغيّر subtotal/tax_total/discount_total/grand_total إطلاقاً؛ فقط
+   توزيع الدفع (payment_method/cash_amount/card_amount/due_amount).
+   لا تُعدَّل payment_transactions الأصلية (تبقى أثراً تاريخياً لما حصل
+   فعلياً وقت البيع) — بدلاً من ذلك تُضاف حركة "تصحيح" جديدة توثّق الفرق.
+   ملاحظة مهمة: لو الوردية المرتبطة بالفاتورة مقفولة أصلاً، تقرير إقفالها
+   (expected_cash) لا يُعاد حسابه تلقائياً بهذا التصحيح — يبقى فرق موثّق
+   فقط بسجل التدقيق، وهذا سلوك متوقّع وليس خللاً. */
+const CORRECTABLE_PAYMENT_METHODS = ['cash', 'card', 'mixed', 'credit'];
+
+const correctSalePaymentMethodTx = db.transaction((payload) => {
+  const branch = getCurrentBranch();
+  const saleId = Number(payload.saleId);
+  const sale = db.prepare(`SELECT * FROM sales WHERE id=? AND branch_id=?`).get(saleId, branch.id);
+  if (!sale) throw new Error('الفاتورة غير موجودة في الفرع الحالي.');
+  if (!['completed', 'partially_refunded'].includes(sale.status)) {
+    throw new Error('لا يمكن تصحيح طريقة الدفع إلا على فاتورة مكتملة أو مرتجعة جزئياً.');
+  }
+
+  const reason = String(payload.reason || '').trim();
+  if (!reason) throw new Error('سبب التصحيح مطلوب.');
+  if (reason.length > 500) throw new Error('سبب التصحيح طويل جداً.');
+
+  const newMethod = String(payload.newMethod || '').trim();
+  if (!CORRECTABLE_PAYMENT_METHODS.includes(newMethod)) throw new Error('طريقة الدفع الجديدة غير صالحة.');
+
+  const total = Number(sale.grand_total) || 0;
+  let cashAmount = 0;
+  let cardAmount = 0;
+  let dueAmount = 0;
+
+  if (newMethod === 'credit') {
+    if (!sale.customer_id) throw new Error('لا يمكن تحويل الفاتورة إلى "آجل" بدون عميل مرتبط بها.');
+    dueAmount = total;
+  } else if (newMethod === 'cash') {
+    cashAmount = total;
+  } else if (newMethod === 'card') {
+    cardAmount = total;
+  } else {
+    // mixed: يحدّد المدير التوزيع يدوياً
+    cashAmount = Math.round((Number(payload.cashAmount) || 0) * 100) / 100;
+    cardAmount = Math.round((Number(payload.cardAmount) || 0) * 100) / 100;
+  }
+  validatePaymentAmounts(total, newMethod, cashAmount, cardAmount, 0);
+
+  const oldMethod = sale.payment_method;
+  const oldDue = Number(sale.due_amount) || 0;
+  const oldCash = Number(sale.cash_amount) || 0;
+  const oldCard = Number(sale.card_amount) || 0;
+  const unchanged = oldMethod === newMethod && Math.abs(oldDue - dueAmount) < 0.01
+    && Math.abs(oldCash - cashAmount) < 0.01 && Math.abs(oldCard - cardAmount) < 0.01;
+  if (unchanged) throw new Error('طريقة الدفع الجديدة مطابقة للحالية، لا يوجد ما يُصحَّح.');
+
+  // تسوية دفتر حساب العميل ورصيده لو تغيّر مبلغ "الآجل" (دخولاً أو خروجاً من الدين)
+  let customerBalanceAfter = null;
+  const dueDelta = Math.round((dueAmount - oldDue) * 100) / 100;
+  if (Math.abs(dueDelta) > 0.01) {
+    const customerId = sale.customer_id;
+    if (!customerId) throw new Error('تعذّر تسوية دين العميل: لا يوجد عميل مرتبط بهذه الفاتورة.');
+    const customer = db.prepare('SELECT balance FROM customers WHERE id=? AND branch_id=?').get(customerId, branch.id);
+    if (!customer) throw new Error('العميل المرتبط بالفاتورة لم يعد موجوداً.');
+    customerBalanceAfter = Math.round((Number(customer.balance || 0) + dueDelta) * 100) / 100;
+    db.prepare(`UPDATE customers SET balance=?, updated_at=datetime('now'), synced=0 WHERE id=? AND branch_id=?`)
+      .run(customerBalanceAfter, customerId, branch.id);
+    appendCustomerLedger({
+      customerId, saleId, entryType: 'credit_correction', amount: dueDelta, balanceAfter: customerBalanceAfter,
+      notes: `تصحيح طريقة دفع الفاتورة ${sale.invoice_number || saleId}: ${reason}`, branchId: branch.id,
+    });
+  }
+
+  db.prepare(`UPDATE sales SET payment_method=?, cash_amount=?, card_amount=?, change_due=0, due_amount=?, synced=0 WHERE id=? AND branch_id=?`)
+    .run(newMethod, cashAmount, cardAmount, dueAmount, saleId, branch.id);
+
+  // حركة تصحيحية توثيقية بدفتر المدفوعات (بدون لمس الحركات الأصلية) — لا حركة لطريقة "آجل" لأنه لا مال فعلي تحرّك
+  const currency = String(getGlobalProfile().currency_code || 'USD').trim().toUpperCase();
+  const insertCorrectionPayment = db.prepare(
+    `INSERT INTO payment_transactions(uuid,branch_id,sale_id,shift_id,method,currency_code,amount,exchange_rate,masked_descriptor,created_by)
+     VALUES(?,?,?,?,?,?,?,?,?,?)`
+  );
+  const descriptor = `تصحيح دفع: ${oldMethod} → ${newMethod}`;
+  if (newMethod === 'cash') insertCorrectionPayment.run(uuid(), branch.id, saleId, sale.shift_id || null, 'cash', currency, cashAmount, 1, descriptor, payload.actorUserId || null);
+  else if (newMethod === 'card') insertCorrectionPayment.run(uuid(), branch.id, saleId, sale.shift_id || null, 'card', currency, cardAmount, 1, descriptor, payload.actorUserId || null);
+  else if (newMethod === 'mixed') {
+    if (cashAmount > 0) insertCorrectionPayment.run(uuid(), branch.id, saleId, sale.shift_id || null, 'cash', currency, cashAmount, 1, descriptor, payload.actorUserId || null);
+    if (cardAmount > 0) insertCorrectionPayment.run(uuid(), branch.id, saleId, sale.shift_id || null, 'card', currency, cardAmount, 1, descriptor, payload.actorUserId || null);
+  }
+
+  const relatedShift = sale.shift_id ? db.prepare('SELECT status FROM shifts WHERE id=?').get(sale.shift_id) : null;
+
+  logAudit({
+    userId: payload.actorUserId || null,
+    branchId: branch.id,
+    action: 'sale_payment_method_corrected',
+    entityType: 'sale',
+    entityId: saleId,
+    level: 'warning',
+    details: {
+      invoiceNumber: sale.invoice_number,
+      oldMethod, newMethod,
+      oldCash, oldCard, oldDue,
+      newCash: cashAmount, newCard: cardAmount, newDue: dueAmount,
+      reason,
+      relatedShiftClosed: relatedShift ? relatedShift.status === 'closed' : null,
+    },
+  });
+
+  return {
+    sale: db.prepare('SELECT * FROM sales WHERE id=?').get(saleId),
+    customerBalanceAfter,
+    relatedShiftClosed: relatedShift ? relatedShift.status === 'closed' : false,
+  };
+});
+
+function correctSalePaymentMethod(payload) {
+  return correctSalePaymentMethodTx(payload);
 }
 
 /* ==========================================================
@@ -4202,6 +4398,7 @@ function getPayrollEmployeePaymentState(monthId, employeeId) {
 
 function addPayrollV2Transaction({monthId,employeeId,type,amount,quantity,eventDate,reason,createdBy,paidFromRegister,overtimeMultiplier=1.5}) {
   const b=getCurrentBranch(), m=payrollMonth(monthId);
+  const unit = Number(getGlobalProfile()?.currency_minor_unit || 2);
   assertPayrollMonthMutable(m);
   // 'hours' = سجل ساعات عمل ليوم واحد بالتحديد (quantity = عدد الساعات)، يُستخدم مع
   // العاملين بالساعة بدل إدخال إجمالي شهري يدوي واحد عرضة للخطأ.
@@ -4210,12 +4407,12 @@ function addPayrollV2Transaction({monthId,employeeId,type,amount,quantity,eventD
   const amt=Number(amount||0), qty=Number(quantity==null?1:quantity), date=String(eventDate||'').trim();
   const overtimeMultiplierValue=Number(overtimeMultiplier);
   if(!Number.isFinite(amt)||amt<0) throw new Error('مبلغ الحركة غير صالح.');
-  const zeroAmountTypes = type==='absence' || type==='hours';
+  const zeroAmountTypes = type==='absence' || type==='hours' || type==='overtime';
   if(!Number.isFinite(qty)||qty<=0) throw new Error(type==='hours' ? 'عدد الساعات غير صالح.' : 'الكمية غير صالحة.');
   if(type==='hours' && qty>24) throw new Error('لا يمكن أن يتجاوز عدد ساعات اليوم الواحد 24 ساعة.');
   if(!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error('تاريخ الحركة غير صالح.');
   const key=m.month_key; if(date.slice(0,7)!==key) throw new Error('تاريخ الحركة يجب أن يكون ضمن الشهر المحدد.');
-  if(zeroAmountTypes && amt!==0) throw new Error(type==='absence' ? 'الغياب لا يحتاج مبلغًا؛ يُحسب الخصم تلقائيًا.' : 'ساعات العمل لا تحتاج مبلغًا؛ يُحسب الراتب تلقائياً من الساعات والأجر بالساعة.');
+  if(zeroAmountTypes && amt!==0) throw new Error(type==='absence' ? 'الغياب لا يحتاج مبلغًا؛ يُحسب الخصم تلقائيًا.' : type==='overtime' ? 'الإضافي لا يحتاج مبلغًا يدوياً؛ يُحسب تلقائياً من الساعات والمعامل.' : 'ساعات العمل لا تحتاج مبلغًا؛ يُحسب الراتب تلقائياً من الساعات والأجر بالساعة.');
   if(!zeroAmountTypes && amt<=0) throw new Error('المبلغ يجب أن يكون أكبر من صفر.');
   const e=db.prepare('SELECT id,pay_type,full_name FROM payroll_employees WHERE id=? AND branch_id=?').get(Number(employeeId),b.id); if(!e)throw new Error('العامل غير موجود.');
   if(type==='hours' && e.pay_type!=='hourly') throw new Error('تسجيل الساعات متاح فقط للعاملين بنظام الأجر بالساعة.');
@@ -4291,7 +4488,7 @@ function addMonthsToPayrollMonth(monthKey, offset) {
   const d=new Date(y,m-1+Number(offset),1);
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
 }
-function createPayrollAdvance({monthId,employeeId,amount,installmentCount=1,firstDeductionMonth,reason,paidFromRegister=false,createdBy}) {
+function createPayrollAdvance({monthId,employeeId,amount,installmentCount=1,firstDeductionMonth,reason,paidFromRegister=false,method,createdBy}) {
   const b=getCurrentBranch(); const m=payrollMonth(monthId); assertPayrollMonthMutable(m);
   const employee=db.prepare('SELECT id,full_name,is_active FROM payroll_employees WHERE id=? AND branch_id=?').get(Number(employeeId),b.id);
   if(!employee) throw new Error('العامل غير موجود.');
@@ -4303,18 +4500,24 @@ function createPayrollAdvance({monthId,employeeId,amount,installmentCount=1,firs
   if(!Number.isInteger(count)||count<1||count>36) throw new Error('عدد أقساط السلفة يجب أن يكون بين 1 و36.');
   const first=normalizePayrollFirstDeductionMonth(firstDeductionMonth || m.month_key);
   if(first < m.month_key) throw new Error('شهر بدء الخصم لا يمكن أن يكون قبل شهر السلفة.');
+  // التوافق مع الواجهة القديمة: كانت ترسل فقط paidFromRegister (checkbox) وتفترض النقد ضمنياً.
+  // الحقل الجديد method صريح؛ إن لم يُرسَل نشتقّه من paidFromRegister حتى لا تنكسر أي استدعاءات قديمة.
+  const disbursementMethod=String(method||'cash').trim().toLowerCase();
+  if(!['cash','bank','other'].includes(disbursementMethod)) throw new Error('طريقة صرف السلفة غير صالحة.');
+  // فقط 'cash' يمرّ عبر الصندوق فعلياً؛ paidFromRegister مع bank/other لا معنى له (لا حركة صندوق لتحويل بنكي).
+  const useRegister=disbursementMethod==='cash' && !!paidFromRegister;
   const regularMinor=Math.floor(principalMinor/count);
   const remainder=principalMinor-(regularMinor*count);
   const tx=db.transaction(()=>{
     let cashMovementId=null;
-    if(paidFromRegister){
+    if(useRegister){
       const shift=getOpenShift();
       if(!shift) throw new Error('لا يمكن دفع السلفة نقداً من الصندوق دون وردية مفتوحة. افتح وردية أولاً أو سجّلها بدون صرف فوري.');
       const cm=addCashMovement({shiftId:shift.id,type:'cash_out',amount:money.fromMinor(principalMinor,unit),reason:`سلفة موظف: ${employee.full_name}`,reference:'payroll_advance',createdBy});
       cashMovementId=cm.id;
     }
-    const advanceInfo=db.prepare(`INSERT INTO payroll_advances(uuid,branch_id,employee_id,principal,principal_minor,installment_count,installment_amount,installment_amount_minor,first_deduction_month,reason,cash_movement_id,created_by) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`)
-      .run(uuid(),b.id,employee.id,money.fromMinor(principalMinor,unit),principalMinor,count,money.fromMinor(regularMinor,unit),regularMinor,first,String(reason||'').trim()||null,cashMovementId,createdBy||null);
+    const advanceInfo=db.prepare(`INSERT INTO payroll_advances(uuid,branch_id,employee_id,principal,principal_minor,installment_count,installment_amount,installment_amount_minor,first_deduction_month,reason,cash_movement_id,disbursement_method,created_by) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+      .run(uuid(),b.id,employee.id,money.fromMinor(principalMinor,unit),principalMinor,count,money.fromMinor(regularMinor,unit),regularMinor,first,String(reason||'').trim()||null,cashMovementId,disbursementMethod,createdBy||null);
     const advanceId=Number(advanceInfo.lastInsertRowid);
     const ins=db.prepare(`INSERT INTO payroll_advance_installments(advance_id,month_key,installment_no,amount,amount_minor) VALUES(?,?,?,?,?)`);
     for(let n=1;n<=count;n++){
@@ -4323,7 +4526,7 @@ function createPayrollAdvance({monthId,employeeId,amount,installmentCount=1,firs
     }
     return {advanceId,cashMovementId,principalMinor};
   })();
-  return {success:true,id:tx.advanceId,cashMovementId:tx.cashMovementId,principal:money.fromMinor(tx.principalMinor,unit),installmentCount:count,firstDeductionMonth:first};
+  return {success:true,id:tx.advanceId,cashMovementId:tx.cashMovementId,principal:money.fromMinor(tx.principalMinor,unit),installmentCount:count,firstDeductionMonth:first,disbursementMethod};
 }
 function listPayrollAdvances(employeeId=null){
   const b=getCurrentBranch(); const unit=Number(getGlobalProfile()?.currency_minor_unit||2);
@@ -4408,12 +4611,15 @@ function recordPayrollSalaryAdvanceRecovery({monthId,employeeId,amountMinor,crea
     const already=Number(db.prepare('SELECT COALESCE(SUM(pa.amount_minor),0) x FROM payroll_advance_payment_allocations pa JOIN payroll_advance_payments p ON p.id=pa.payment_id WHERE p.voided_at IS NULL AND p.advance_id=?').get(a.id).x||0);
     const remaining=Math.max(0,Number(a.principal_minor)-already); if(!remaining) continue;
     const dueThisMonth=Number(db.prepare(`SELECT COALESCE(SUM(i.amount_minor),0) x FROM payroll_advance_installments i WHERE i.advance_id=? AND i.month_key=?`).get(a.id,m.month_key).x||0); if(!dueThisMonth) continue;
-    const salaryAlready=Number(db.prepare(`SELECT COALESCE(SUM(pa.amount_minor),0) x FROM payroll_advance_payment_allocations pa JOIN payroll_advance_payments p ON p.id=pa.payment_id WHERE p.voided_at IS NULL AND p.advance_id=? AND p.payment_type='salary' AND pa.installment_id IN (SELECT id FROM payroll_advance_installments WHERE advance_id=? AND month_key=?)`).get(a.id,a.id,m.month_key).x||0);
-    const openDue=Math.max(0,dueThisMonth-salaryAlready); if(!openDue) continue;
+    // ملاحظة: كانت هذه القيمة تُحسب من دفعات payment_type='salary' فقط، فتتجاهل أي تسديد
+    // مباشر (direct) سُدد لنفس القسط بنفس الشهر — فيؤدي لخصم القسط مرة ثانية من الراتب رغم
+    // سداده جزئياً أو كلياً مسبقاً. الصواب هو حساب كل ما خُصص لهذا القسط بغض النظر عن نوع الدفعة.
+    const alreadyThisMonth=Number(db.prepare(`SELECT COALESCE(SUM(pa.amount_minor),0) x FROM payroll_advance_payment_allocations pa JOIN payroll_advance_payments p ON p.id=pa.payment_id WHERE p.voided_at IS NULL AND p.advance_id=? AND pa.installment_id IN (SELECT id FROM payroll_advance_installments WHERE advance_id=? AND month_key=?)`).get(a.id,a.id,m.month_key).x||0);
+    const openDue=Math.max(0,dueThisMonth-alreadyThisMonth); if(!openDue) continue;
     const alloc=Math.min(openDue,left,remaining); const paymentInfo=db.prepare(`INSERT INTO payroll_advance_payments(uuid,branch_id,advance_id,payment_type,amount,amount_minor,payment_date,method,reference,notes,created_by) VALUES(?,?,?,?,?,?,?,?,?,?,?)`).run(uuid(),b.id,a.id,'salary',money.fromMinor(alloc,unit),alloc,`${m.month_key}-01`,'payroll',String(sourcePaymentId||'payroll_payment'),`خصم سلفة من راتب ${m.month_key}`,createdBy||null); const pid=Number(paymentInfo.lastInsertRowid);
     const inst=db.prepare(`SELECT id,amount_minor FROM payroll_advance_installments WHERE advance_id=? AND month_key=? ORDER BY installment_no`).all(a.id,m.month_key);
     let il=alloc;
-    for(const i of inst){ if(il<=0) break; const alreadyI=Number(db.prepare(`SELECT COALESCE(SUM(CASE WHEN p.payment_type='salary' THEN pa.amount_minor ELSE 0 END),0) x FROM payroll_advance_payment_allocations pa JOIN payroll_advance_payments p ON p.id=pa.payment_id WHERE p.voided_at IS NULL AND pa.installment_id=?`).get(i.id).x||0); const openI=Math.max(0,Number(i.amount_minor)-alreadyI); if(!openI) continue; const q=Math.min(openI,il); db.prepare(`INSERT INTO payroll_advance_payment_allocations(payment_id,installment_id,amount,amount_minor) VALUES(?,?,?,?)`).run(pid,i.id,money.fromMinor(q,unit),q); il-=q; }
+    for(const i of inst){ if(il<=0) break; const alreadyI=Number(db.prepare(`SELECT COALESCE(SUM(pa.amount_minor),0) x FROM payroll_advance_payment_allocations pa JOIN payroll_advance_payments p ON p.id=pa.payment_id WHERE p.voided_at IS NULL AND pa.installment_id=?`).get(i.id).x||0); const openI=Math.max(0,Number(i.amount_minor)-alreadyI); if(!openI) continue; const q=Math.min(openI,il); db.prepare(`INSERT INTO payroll_advance_payment_allocations(payment_id,installment_id,amount,amount_minor) VALUES(?,?,?,?)`).run(pid,i.id,money.fromMinor(q,unit),q); il-=q; }
     recovered+=alloc; left-=alloc; const totalRecovered=already+alloc; if(totalRecovered>=Number(a.principal_minor)) db.prepare(`UPDATE payroll_advances SET status='completed',updated_at=datetime('now'),synced=0 WHERE id=? AND branch_id=?`).run(a.id,b.id);
   }
   return {recoveredMinor:recovered};
@@ -4434,7 +4640,7 @@ function recordPayrollPayment({monthId, employeeId, amount, method='cash', payme
   const amountMinor = money.toMinor(value, unit);
   if (amountMinor <= 0) throw new Error('مبلغ صرف الراتب يجب أن يكون أكبر من صفر.');
   if (amountMinor > state.remainingMinor) throw new Error(`المبلغ أكبر من المتبقي للموظف. المتبقي: ${money.fromMinor(state.remainingMinor, unit)}`);
-  const date = String(paymentDate || payrollTodayLocal()).trim();
+  const date = String(paymentDate || payrollTodayLocal().toISOString().slice(0, 10)).trim();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error('تاريخ صرف الراتب غير صالح.');
   if (date.slice(0,7) !== m.month_key) throw new Error('تاريخ صرف الراتب يجب أن يكون ضمن الشهر المحدد.');
   const tx = db.transaction(() => {
@@ -4461,6 +4667,18 @@ function recordPayrollPayment({monthId, employeeId, amount, method='cash', payme
     const finalSalaryPayment = nextPaid >= state.netMinor;
     const scheduledRecoveryMinor = finalSalaryPayment ? money.toMinor(Number(state.item.advance_total || 0), unit) : 0;
     const recovery = scheduledRecoveryMinor > 0 ? recordPayrollSalaryAdvanceRecovery({monthId:m.id,employeeId:Number(employeeId),amountMinor:scheduledRecoveryMinor,createdBy,sourcePaymentId:Number(info.lastInsertRowid)}) : {recoveredMinor:0};
+    // قيد محاسبي: مدين مصروف رواتب بكامل المبلغ المصروف فعلياً هذه الدفعة، دائن حساب
+    // التسوية (نقد/بنك). ملاحظة: هذا ترحيل على أساس نقدي (وقت الصرف الفعلي) وليس
+    // استحقاقي (وقت اكتساب الراتب) — تحسين مستقبلي محتمل بدفعة لاحقة (مخصص رواتب مستحقة).
+    // استرداد السلف لا يُرحَّل هنا لأن صرف السلفة نفسها لم يُرحَّل أصلاً بهذه الدفعة.
+    const settleCode = method === 'cash' ? '1000' : '1100';
+    insertPostedJournalEntry({
+      branchId: b.id, memo: `صرف راتب: ${state.item.full_name}`, referenceType: 'payroll_payment', referenceId: Number(info.lastInsertRowid), entryDate: date,
+      lines: [
+        { accountId: getAccountingAccountId(b.id, '6100'), debitMinor: amountMinor, creditMinor: 0, memo: `راتب ${state.item.full_name}` },
+        { accountId: getAccountingAccountId(b.id, settleCode), debitMinor: 0, creditMinor: amountMinor, memo: `صرف راتب ${state.item.full_name}` },
+      ], createdBy,
+    });
     return {success:true,id:Number(info.lastInsertRowid),cashMovementId,amountMinor,remainingMinor:Math.max(0,state.remainingMinor-amountMinor),monthStatus:allPaid?'paid':'open',advanceRecoveredMinor:recovery.recoveredMinor};
   })();
   return tx;
@@ -4594,16 +4812,29 @@ function getPayrollV2Employee(monthId,employeeId){ const m=payrollMonth(monthId)
 function getSaleIdByInvoiceNumber(invoiceNumber) {
   const clean = String(invoiceNumber || '').trim();
   if (!clean) return null;
-  const row = db.prepare('SELECT id FROM sales WHERE invoice_number = ?').get(clean);
-  return row ? row.id : null;
+  const exact = db.prepare('SELECT id FROM sales WHERE invoice_number = ?').get(clean);
+  if (exact) return exact.id;
+  // رقم الفاتورة المطبوع فعلياً على الإيصال شكله طويل (فرع-سنة-جهاز-تسلسل)، لكن
+  // المستخدم غالباً بيفتكر بيكتب بس الجزء الرقمي الأخير (مثلاً "20" بدل الرقم
+  // الكامل). لو الإدخال أرقام فقط، ندوّر على فاتورة تنتهي بنفس هذا التسلسل
+  // (بعد إضافة الأصفار المناسبة) ضمن الفرع الحالي فقط - وإن كان فيه أكثر من
+  // تطابق محتمل (غموض)، نرفض ونرجع "غير موجود" بدل تخمين فاتورة عشوائية.
+  if (/^\d+$/.test(clean)) {
+    const branch = getCurrentBranch();
+    const suffix = clean.padStart(6, '0');
+    const matches = db.prepare(
+      `SELECT id FROM sales WHERE branch_id = ? AND invoice_number LIKE '%-' || ? LIMIT 2`
+    ).all(branch.id, suffix);
+    if (matches.length === 1) return matches[0].id;
+  }
+  return null;
 }
 
 function getSaleForReturn(invoiceNumberOrId) {
-  // نقبل رقم الفاتورة (الحالة الطبيعية) وأيضاً الرقم الداخلي القديم للتوافق مع أي استخدام سابق
-  let saleId = getSaleIdByInvoiceNumber(invoiceNumberOrId);
-  if (!saleId && /^\d+$/.test(String(invoiceNumberOrId || '').trim())) {
-    saleId = Number(invoiceNumberOrId);
-  }
+  // نقبل فقط رقم الفاتورة (أو آخر أجزائه الرقمية) - لم نعد نقبل الرقم الداخلي
+  // الخام لقاعدة البيانات كبديل احتياطي، لأنه كان يؤدي لمطابقة فاتورة عشوائية
+  // خاطئة تماماً حين لا يُوجد تطابق حقيقي (خطر استرداد مبلغ لفاتورة غلط).
+  const saleId = getSaleIdByInvoiceNumber(invoiceNumberOrId);
   if (!saleId) return null;
   const sale = getSale(saleId, getCurrentBranch().id);
   if (!sale) return null;
@@ -4699,6 +4930,9 @@ const createReturnTx = db.transaction((payload) => {
   }
 
   let totalRefunded = 0;
+  let totalTaxRefundedMinor = 0;
+  let totalCostReversedMinor = 0;
+  const accountingUnit = Number(globalProfile.currency_minor_unit || 2);
   for (const item of payload.items) {
     const saleItem = db.prepare('SELECT * FROM sale_items WHERE id = ? AND sale_id = ?').get(item.saleItemId, payload.saleId);
     if (!saleItem) continue;
@@ -4722,6 +4956,14 @@ const createReturnTx = db.transaction((payload) => {
       logMovement.run(uuid(), branch.id, saleItem.product_id, item.quantity, returnId, currentCost);
     }
     totalRefunded += refundAmount;
+    // نفس منطق tax-inclusive المستخدم أصلاً بحساب refundableUnitAmount: نسبة الضريبة
+    // من إجمالي المسترد = rate/(100+rate) بغض النظر عن كون سعر البيع شامل الضريبة أم لا،
+    // لأن refundAmount هنا هو المبلغ الإجمالي (شامل الضريبة) أصلاً في الحالتين.
+    const rate = Number(saleItem.tax_rate || 0);
+    if (rate > 0) totalTaxRefundedMinor += money.taxMinor(money.toMinor(refundAmount, accountingUnit), rate, true);
+    // عكس التكلفة يعتمد على تكلفة هذا البند وقت البيع فعلياً (cost_at_sale) — وليس
+    // تكلفة المخزون الحالية — حتى يكون عكساً دقيقاً لنفس قيد COGS الأصلي.
+    totalCostReversedMinor += money.toMinor(Number(saleItem.cost_at_sale || 0) * item.quantity, accountingUnit);
   }
 
   if (!(totalRefunded > 0)) throw new Error('لم توجد كمية قابلة للإرجاع.');
@@ -4739,6 +4981,25 @@ const createReturnTx = db.transaction((payload) => {
     db.prepare(`INSERT INTO payment_transactions(uuid,branch_id,return_id,shift_id,method,currency_code,amount,exchange_rate,provider,provider_reference,created_by) VALUES(?,?,?,?,?,?,?,?,?,?,?)`)
       .run(uuid(), branch.id, returnId, payload.shiftId || null, 'store_credit', String(getGlobalProfile().currency_code).toUpperCase(), -totalRefunded, 1, null, null, payload.userId || null);
     appendCustomerLedger({ customerId, saleId: sale.id, entryType: 'return_adjustment', amount: 0, balanceAfter: Number(customer.balance || 0), notes: `إصدار رصيد متجر ${totalRefunded.toFixed(2)} من الفاتورة ${sale.invoice_number}` });
+  }
+  // قيد محاسبي: مدين إيراد مبيعات (عكس) + مدين ضريبة مستحقة (عكس)، دائن حساب التسوية
+  // بحسب طريقة الاسترداد الفعلية (نقد/بطاقة/رصيد متجر) — تطابق تماماً ما سُجِّل للتو
+  // بـ payment_transactions/store_credit_ledger أعلاه. ثم عكس تكلفة البضاعة المباعة
+  // بقيمتها الأصلية وقت البيع إن وُجدت.
+  {
+    const totalMinor = money.toMinor(totalRefunded, accountingUnit);
+    const taxMinorAmt = Math.min(totalTaxRefundedMinor, totalMinor);
+    const revenueMinorAmt = Math.max(0, totalMinor - taxMinorAmt);
+    const settleCode = refundMethod === 'card' ? '1100' : refundMethod === 'store_credit' ? '2200' : '1000';
+    const lines = [];
+    if (revenueMinorAmt > 0) lines.push({ accountId: getAccountingAccountId(branch.id, '4000'), debitMinor: revenueMinorAmt, creditMinor: 0, memo: `مرتجع فاتورة ${sale.invoice_number}` });
+    if (taxMinorAmt > 0) lines.push({ accountId: getAccountingAccountId(branch.id, '2100'), debitMinor: taxMinorAmt, creditMinor: 0, memo: `عكس ضريبة مرتجع ${sale.invoice_number}` });
+    lines.push({ accountId: getAccountingAccountId(branch.id, settleCode), debitMinor: 0, creditMinor: totalMinor, memo: `استرداد فاتورة ${sale.invoice_number}` });
+    if (totalCostReversedMinor > 0) {
+      lines.push({ accountId: getAccountingAccountId(branch.id, '1300'), debitMinor: totalCostReversedMinor, creditMinor: 0, memo: `إعادة تكلفة للمخزون ${sale.invoice_number}` });
+      lines.push({ accountId: getAccountingAccountId(branch.id, '5000'), debitMinor: 0, creditMinor: totalCostReversedMinor, memo: `عكس تكلفة البضاعة المباعة ${sale.invoice_number}` });
+    }
+    insertPostedJournalEntry({ branchId: branch.id, memo: `مرتجع فاتورة ${sale.invoice_number}`, referenceType: 'return', referenceId: returnId, lines, createdBy: payload.userId || null });
   }
 
   // عكس نقاط الولاء المرتبطة فعلياً بالفاتورة عند الإرجاع، بنسبة قيمة السلع المرتجعة،
@@ -5367,9 +5628,28 @@ function recalcAllCustomerBalancesForBranch(branchId) {
    ========================================================== */
 function listAccountingAccounts(){const b=getCurrentBranch();return db.prepare('SELECT * FROM accounting_accounts WHERE branch_id=? ORDER BY code').all(b.id);}
 function createAccountingAccount(input){const b=getCurrentBranch();const n=accounting.normalizeAccount(input,Number(getGlobalProfile()?.currency_minor_unit||2));const r=db.prepare(`INSERT INTO accounting_accounts(uuid,branch_id,code,name,account_type,currency_code,opening_balance_minor,is_active,updated_at,synced) VALUES(?,?,?,?,?,?,?,?,datetime('now'),0)`).run(uuid(),b.id,n.code,n.name,n.type,n.currencyCode,n.openingBalanceMinor,n.isActive);return db.prepare('SELECT * FROM accounting_accounts WHERE id=?').get(r.lastInsertRowid);}
+// يبحث عن حساب محاسبي بكوده داخل فرع معيّن — تُستخدم بكل نقاط الترحيل التلقائي
+// (مبيعات/مشتريات/مرتجعات/رواتب) بدل تكرار الاستعلام بكل مكان.
+function getAccountingAccountId(branchId, code) {
+  const row = db.prepare('SELECT id FROM accounting_accounts WHERE branch_id=? AND code=? AND is_active=1').get(branchId, String(code));
+  if (!row) throw new Error(`الحساب المحاسبي ${code} غير موجود أو غير نشط بهذا الفرع.`);
+  return row.id;
+}
+// مفتاح الفترة المحاسبية بصيغة YYYY-MM من أي تاريخ/طابع زمني.
+function accountingPeriodKeyOf(dateStr) { return String(dateStr || new Date().toISOString()).slice(0, 7); }
+function isAccountingPeriodLocked(branchId, dateStr) {
+  const row = db.prepare('SELECT status FROM accounting_periods WHERE branch_id=? AND period_key=?').get(branchId, accountingPeriodKeyOf(dateStr));
+  return !!row && row.status === 'locked';
+}
 function insertPostedJournalEntry({ branchId, memo = null, referenceType = null, referenceId = null, entryDate = null, lines = [], createdBy = null, currencyCode = null }) {
   const p = getGlobalProfile();
   const unit = Number(p?.currency_minor_unit || 2);
+  const finalEntryDate = entryDate || new Date().toISOString();
+  // قفل الفترة المحاسبية خط دفاع أخير: حتى لو فات نظام آخر (شراء/راتب/مرتجع) بالخطأ
+  // بتاريخ ضمن فترة مقفلة، هذه النقطة الوحيدة التي كل قيد يمر منها فعلياً تمنعه.
+  if (isAccountingPeriodLocked(branchId, finalEntryDate)) {
+    throw new Error(`الفترة المحاسبية ${accountingPeriodKeyOf(finalEntryDate)} مقفلة — لا يمكن إضافة أو تعديل قيود بتاريخ ضمنها. أعد فتح الفترة أولاً إذا كان التعديل ضرورياً.`);
+  }
   const normalized = lines.map((l) => ({
     ...l,
     debitMinor: l.debitMinor != null ? Number(l.debitMinor) : money.toMinor(l.debit || 0, unit),
@@ -5378,7 +5658,7 @@ function insertPostedJournalEntry({ branchId, memo = null, referenceType = null,
   accounting.validateJournalLines(normalized);
   const currency = String(currencyCode || p?.currency_code || 'USD').toUpperCase();
   const e = db.prepare(`INSERT INTO accounting_journal_entries(uuid,branch_id,reference_type,reference_id,memo,currency_code,entry_date,status,created_by,synced) VALUES(?,?,?,?,?,?,?,'posted',?,0)`)
-    .run(uuid(), branchId, referenceType, referenceId == null ? null : String(referenceId), memo, currency, entryDate || new Date().toISOString(), createdBy || null);
+    .run(uuid(), branchId, referenceType, referenceId == null ? null : String(referenceId), memo, currency, finalEntryDate, createdBy || null);
   const ins = db.prepare('INSERT INTO accounting_journal_lines(entry_id,account_id,debit_minor,credit_minor,memo) VALUES(?,?,?,?,?)');
   for (const line of normalized) ins.run(e.lastInsertRowid, Number(line.accountId), Number(line.debitMinor || 0), Number(line.creditMinor || 0), line.memo || null);
   return db.prepare('SELECT * FROM accounting_journal_entries WHERE id=?').get(e.lastInsertRowid);
@@ -5388,6 +5668,136 @@ function postJournalEntry(input = {}) {
   return db.transaction(() => insertPostedJournalEntry({ ...input, branchId: b.id }))();
 }
 function listJournalEntries(range={}){const b=getCurrentBranch();let sql='SELECT * FROM accounting_journal_entries WHERE branch_id=?';const a=[b.id];if(range.from){sql+=' AND entry_date>=?';a.push(range.from);}if(range.to){sql+=' AND entry_date<=?';a.push(range.to);}return db.prepare(sql+' ORDER BY entry_date DESC,id DESC LIMIT 1000').all(...a);}
+
+/* ---------------- إقفال الفترات المحاسبية ---------------- */
+function listAccountingPeriods() {
+  const b = getCurrentBranch();
+  return db.prepare('SELECT * FROM accounting_periods WHERE branch_id=? ORDER BY period_key DESC').all(b.id);
+}
+function lockAccountingPeriod(periodKey, userId) {
+  const key = String(periodKey || '').trim();
+  if (!/^\d{4}-\d{2}$/.test(key)) throw new Error('صيغة الفترة المحاسبية غير صالحة (المتوقع YYYY-MM).');
+  const b = getCurrentBranch();
+  db.prepare(`INSERT INTO accounting_periods(branch_id,period_key,status,locked_at,locked_by) VALUES(?,?,'locked',datetime('now'),?)
+    ON CONFLICT(branch_id,period_key) DO UPDATE SET status='locked', locked_at=datetime('now'), locked_by=excluded.locked_by`).run(b.id, key, userId || null);
+  logAudit({ userId, branchId: b.id, action: 'accounting_period_locked', entityType: 'accounting_period', entityId: key, level: 'warning', details: { periodKey: key } });
+  return { success: true, periodKey: key, status: 'locked' };
+}
+// إعادة فتح فترة مقفلة استثناء وليس عادة — تُسجَّل بمستوى تحذير مع السبب لأنها
+// تتيح لاحقاً قيوداً بتاريخ كان يُفترض أنه محسوم بتقارير سابقة.
+function reopenAccountingPeriod(periodKey, userId, reason) {
+  const key = String(periodKey || '').trim();
+  const text = String(reason || '').trim();
+  if (text.length < 10) throw new Error('سبب إعادة فتح الفترة المحاسبية يجب ألا يقل عن 10 محارف.');
+  const b = getCurrentBranch();
+  const row = db.prepare('SELECT * FROM accounting_periods WHERE branch_id=? AND period_key=?').get(b.id, key);
+  if (!row || row.status !== 'locked') throw new Error('هذه الفترة غير مقفلة أصلاً.');
+  db.prepare(`UPDATE accounting_periods SET status='open', locked_at=NULL, locked_by=NULL WHERE branch_id=? AND period_key=?`).run(b.id, key);
+  logAudit({ userId, branchId: b.id, action: 'accounting_period_reopened', entityType: 'accounting_period', entityId: key, level: 'warning', details: { periodKey: key, reason: text } });
+  return { success: true, periodKey: key, status: 'open' };
+}
+
+/* ---------------- تقارير مالية: ميزان المراجعة / الدخل / المركز المالي / دفتر الأستاذ ---------------- */
+// ميزان المراجعة: رصيد كل حساب حتى تاريخ معيّن (أو حتى الآن)، مبني على الرصيد
+// الافتتاحي + صافي حركة القيود المرحّلة فقط (status='posted').
+function getTrialBalance(asOfDate = null) {
+  const b = getCurrentBranch();
+  const cutoff = asOfDate ? `${asOfDate} 23:59:59` : '9999-12-31 23:59:59';
+  const unit = Number(getGlobalProfile()?.currency_minor_unit || 2);
+  const rows = db.prepare(`
+    SELECT a.id, a.code, a.name, a.account_type,
+      a.opening_balance_minor + COALESCE((
+        SELECT SUM(l.debit_minor - l.credit_minor) FROM accounting_journal_lines l
+        JOIN accounting_journal_entries e ON e.id = l.entry_id
+        WHERE l.account_id = a.id AND e.branch_id = a.branch_id AND e.status='posted' AND e.entry_date <= ?
+      ), 0) AS balance_minor
+    FROM accounting_accounts a WHERE a.branch_id=? AND a.is_active=1 ORDER BY a.code`).all(cutoff, b.id);
+  const accounts = rows.map((r) => ({
+    id: r.id, code: r.code, name: r.name, accountType: r.account_type,
+    debit: r.balance_minor > 0 ? money.fromMinor(r.balance_minor, unit) : 0,
+    credit: r.balance_minor < 0 ? money.fromMinor(-r.balance_minor, unit) : 0,
+    balance: money.fromMinor(r.balance_minor, unit),
+  }));
+  const totalDebit = accounts.reduce((s, r) => s + r.debit, 0);
+  const totalCredit = accounts.reduce((s, r) => s + r.credit, 0);
+  return { asOfDate: asOfDate || null, accounts, totalDebit, totalCredit, balanced: Math.abs(totalDebit - totalCredit) < (1 / 10 ** unit) };
+}
+// قائمة الدخل بين تاريخين: الإيرادات (رصيد دائن طبيعي) والمصاريف (رصيد مدين طبيعي).
+function getIncomeStatement(fromDate = null, toDate = null) {
+  const b = getCurrentBranch();
+  const from = fromDate ? `${fromDate} 00:00:00` : '0001-01-01 00:00:00';
+  const to = toDate ? `${toDate} 23:59:59` : '9999-12-31 23:59:59';
+  const unit = Number(getGlobalProfile()?.currency_minor_unit || 2);
+  const rows = db.prepare(`
+    SELECT a.code, a.name, a.account_type, COALESCE(SUM(l.credit_minor - l.debit_minor),0) AS net_minor
+    FROM accounting_accounts a
+    JOIN accounting_journal_lines l ON l.account_id=a.id
+    JOIN accounting_journal_entries e ON e.id=l.entry_id
+    WHERE a.branch_id=? AND e.branch_id=a.branch_id AND e.status='posted' AND e.entry_date BETWEEN ? AND ?
+      AND a.account_type IN ('revenue','expense')
+    GROUP BY a.id ORDER BY a.account_type DESC, a.code`).all(b.id, from, to);
+  const toLine = (r) => ({ code: r.code, name: r.name, amount: money.fromMinor(r.account_type === 'revenue' ? r.net_minor : -r.net_minor, unit) });
+  const revenue = rows.filter((r) => r.account_type === 'revenue').map(toLine);
+  const expense = rows.filter((r) => r.account_type === 'expense').map(toLine);
+  const totalRevenue = revenue.reduce((s, r) => s + r.amount, 0);
+  const totalExpense = expense.reduce((s, r) => s + r.amount, 0);
+  return { fromDate: fromDate || null, toDate: toDate || null, revenue, expense, totalRevenue, totalExpense, netIncome: Math.round((totalRevenue - totalExpense) * 10 ** unit) / 10 ** unit };
+}
+// المركز المالي (الميزانية) حتى تاريخ معيّن: أصول/خصوم/حقوق ملكية، مع ترحيل صافي
+// دخل الفترة كـ"أرباح مرحّلة" لأن حسابات الإيراد/المصروف لا تُعرض هنا مباشرة —
+// هذا ما يضمن Assets = Liabilities + Equity فعلياً.
+function getBalanceSheet(asOfDate = null) {
+  const b = getCurrentBranch();
+  const cutoff = asOfDate ? `${asOfDate} 23:59:59` : '9999-12-31 23:59:59';
+  const unit = Number(getGlobalProfile()?.currency_minor_unit || 2);
+  const rows = db.prepare(`
+    SELECT a.code, a.name, a.account_type,
+      a.opening_balance_minor + COALESCE((
+        SELECT SUM(l.debit_minor - l.credit_minor) FROM accounting_journal_lines l
+        JOIN accounting_journal_entries e ON e.id = l.entry_id
+        WHERE l.account_id = a.id AND e.branch_id = a.branch_id AND e.status='posted' AND e.entry_date <= ?
+      ), 0) AS balance_minor
+    FROM accounting_accounts a WHERE a.branch_id=? AND a.is_active=1 AND a.account_type IN ('asset','liability','equity')
+    ORDER BY a.code`).all(cutoff, b.id);
+  const toRow = (r, flip) => ({ code: r.code, name: r.name, balance: money.fromMinor(flip ? -r.balance_minor : r.balance_minor, unit) });
+  const assets = rows.filter((r) => r.account_type === 'asset').map((r) => toRow(r, false));
+  const liabilities = rows.filter((r) => r.account_type === 'liability').map((r) => toRow(r, true));
+  const equityAccounts = rows.filter((r) => r.account_type === 'equity').map((r) => toRow(r, true));
+  const netIncomeToDate = getIncomeStatement(null, asOfDate || null).netIncome;
+  const equity = [...equityAccounts, { code: '3900', name: 'أرباح مرحّلة (الفترة الحالية)', balance: netIncomeToDate }];
+  const totalAssets = Math.round(assets.reduce((s, r) => s + r.balance, 0) * 10 ** unit) / 10 ** unit;
+  const totalLiabilities = Math.round(liabilities.reduce((s, r) => s + r.balance, 0) * 10 ** unit) / 10 ** unit;
+  const totalEquity = Math.round(equity.reduce((s, r) => s + r.balance, 0) * 10 ** unit) / 10 ** unit;
+  return { asOfDate: asOfDate || null, assets, liabilities, equity, totalAssets, totalLiabilities, totalEquity, balanced: Math.abs(totalAssets - (totalLiabilities + totalEquity)) < (1 / 10 ** unit) };
+}
+// دفتر أستاذ حساب واحد: رصيد افتتاحي حتى بداية المدى ثم كل حركة بالتسلسل مع رصيد جارٍ.
+function getAccountLedger(accountId, fromDate = null, toDate = null) {
+  const b = getCurrentBranch();
+  const account = db.prepare('SELECT * FROM accounting_accounts WHERE id=? AND branch_id=?').get(Number(accountId), b.id);
+  if (!account) throw new Error('الحساب غير موجود في الفرع الحالي.');
+  const from = fromDate ? `${fromDate} 00:00:00` : '0001-01-01 00:00:00';
+  const to = toDate ? `${toDate} 23:59:59` : '9999-12-31 23:59:59';
+  const unit = Number(getGlobalProfile()?.currency_minor_unit || 2);
+  const openingBeforeMinor = db.prepare(`
+    SELECT COALESCE(SUM(l.debit_minor - l.credit_minor),0) AS v FROM accounting_journal_lines l
+    JOIN accounting_journal_entries e ON e.id=l.entry_id
+    WHERE l.account_id=? AND e.status='posted' AND e.entry_date < ?`).get(Number(accountId), from).v;
+  let running = Number(account.opening_balance_minor || 0) + Number(openingBeforeMinor || 0);
+  const openingBalance = money.fromMinor(running, unit);
+  const lines = db.prepare(`
+    SELECT l.debit_minor, l.credit_minor, l.memo, e.entry_date, e.memo AS entry_memo, e.reference_type, e.reference_id
+    FROM accounting_journal_lines l JOIN accounting_journal_entries e ON e.id=l.entry_id
+    WHERE l.account_id=? AND e.status='posted' AND e.entry_date BETWEEN ? AND ?
+    ORDER BY e.entry_date, l.id`).all(Number(accountId), from, to);
+  const rows = lines.map((l) => {
+    running += Number(l.debit_minor || 0) - Number(l.credit_minor || 0);
+    return {
+      date: l.entry_date, memo: l.memo || l.entry_memo || null, referenceType: l.reference_type, referenceId: l.reference_id,
+      debit: money.fromMinor(l.debit_minor, unit), credit: money.fromMinor(l.credit_minor, unit), balance: money.fromMinor(running, unit),
+    };
+  });
+  return { account: { id: account.id, code: account.code, name: account.name, type: account.account_type }, openingBalance, rows };
+}
 function recordSyncOutboxEvent({entityType,entityUuid=null,operation='event',payload={}}){const b=getCurrentBranch();const eventId=uuid();const json=JSON.stringify(payload);const checksum=crypto.createHash('sha256').update(json).digest('hex');db.prepare('INSERT INTO sync_outbox(event_id,branch_id,entity_type,entity_uuid,operation,payload_json,payload_checksum) VALUES(?,?,?,?,?,?,?)').run(eventId,b.id,String(entityType),entityUuid,operation,json,checksum);return eventId;}
 function listSyncConflicts(limit=200){const b=getCurrentBranch();return db.prepare('SELECT * FROM sync_conflicts WHERE branch_id=? ORDER BY id DESC LIMIT ?').all(b.id,Math.min(Math.max(Number(limit)||50,1),500));}
 function listBackupManifests(limit=100){return db.prepare('SELECT * FROM backup_manifests ORDER BY created_at DESC LIMIT ?').all(Math.min(Math.max(Number(limit)||50,1),500));}
@@ -5576,6 +5986,7 @@ module.exports = {
   deleteProduct,
   createSale,
   listSales,
+  listKnownDeliveryPersons,
   getSale,
   listInventory,
   adjustInventory,
@@ -5616,6 +6027,7 @@ module.exports = {
   mergeTables,
   splitTableSale,
   closeTableSale,
+  correctSalePaymentMethod,
   logAudit,
   listAuditLogs,
   getSetting,
@@ -5679,6 +6091,8 @@ module.exports = {
   backupTo,
   createPortableBackup, restorePortableBackup,
   listAccountingAccounts, createAccountingAccount, postJournalEntry, listJournalEntries,
+  getTrialBalance, getIncomeStatement, getBalanceSheet, getAccountLedger,
+  listAccountingPeriods, lockAccountingPeriod, reopenAccountingPeriod,
   recordSyncOutboxEvent, listSyncConflicts, listBackupManifests,
   saveFiscalDocument, listFiscalDocuments,
 };

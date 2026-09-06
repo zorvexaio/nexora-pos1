@@ -74,7 +74,7 @@ function renderReceipt(sale, branding, currency = {}) {
       <div class="receipt-meta">${t('receipt.invoiceNumber')} ${escapeHtml(sale.invoice_number || String(sale.id))}${sale.table_name ? ` — ${escapeHtml(sale.table_name)}` : ''}</div>
       ${currency.taxNumber ? `<div class="receipt-meta">${t('receipt.taxNumber')}: ${escapeHtml(currency.taxNumber)}</div>` : ''}
       <div class="receipt-meta">${formatDate(sale.created_at)}</div>
-      ${sale.customer_name ? `<div class="receipt-meta">${t('receipt.customer')}: ${escapeHtml(sale.customer_name)}</div>` : ''}
+      ${sale.customer_name ? `<div class="receipt-customer-name">👤 ${escapeHtml(sale.customer_name)}</div>` : ''}
       ${sale.order_type === 'delivery' ? `<div class="receipt-meta">${t('receipt.deliveryOrder')}${sale.delivery_person ? ` — ${t('receipt.deliveryPerson')}: ${escapeHtml(sale.delivery_person)}` : ''}</div>` : ''}
       ${sale.order_type === 'delivery' ? `<div class="receipt-meta">${sale.delivery_time ? `${t('receipt.deliveryTime')}: ${formatDate(sale.delivery_time)}` : t('receipt.deliverNow')}</div>` : ''}
     </div>
@@ -94,7 +94,7 @@ function renderReceipt(sale, branding, currency = {}) {
     }
     ${sale.order_type === 'delivery' && sale.delivery_fee ? `<div class="receipt-row"><span>${t('receipt.deliveryFee')}</span><span>${sale.delivery_fee.toFixed(2)}</span></div>` : ''}
     <div class="receipt-row receipt-total"><span>${t('receipt.total')}</span><span>${sale.grand_total.toFixed(2)} ${escapeHtml(currency.base || '')}</span></div>
-    ${currency.secondary && currency.secondary !== currency.base ? `<div class="receipt-row"><span>${t('receipt.secondaryCurrency')}</span><span>${(sale.grand_total * (sale.exchange_rate || currency.rate || 1)).toFixed(2)} ${escapeHtml(currency.secondary)}</span></div>` : ''}
+    ${currency.showSecondaryOnReceipt && currency.secondary && currency.secondary !== currency.base ? `<div class="receipt-row"><span>${t('receipt.secondaryCurrency')}</span><span>${(sale.grand_total * (sale.exchange_rate || currency.rate || 1)).toFixed(2)} ${escapeHtml(currency.secondary)}</span></div>` : ''}
     ${sale.due_amount ? `<div class="receipt-row"><span>${t('receipt.dueAmount')}</span><span>${sale.due_amount.toFixed(2)}</span></div>` : ''}
 
     <div class="receipt-divider"></div>
@@ -120,7 +120,7 @@ function formatDate(str) {
 
 function escapeHtml(str) {
   const div = document.createElement('div');
-  div.textContent = str;
+  div.textContent = str == null ? '' : String(str);
   return div.innerHTML;
 }
 

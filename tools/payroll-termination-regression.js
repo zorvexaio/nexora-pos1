@@ -7,7 +7,12 @@ const main = fs.readFileSync('main.js','utf8');
 const html = fs.readFileSync('renderer/pages/payroll.html','utf8');
 const pkg = JSON.parse(fs.readFileSync('package.json','utf8'));
 assert.strictEqual(pkg.version,'0.52.1');
-assert.match(db,/CURRENT_SCHEMA_VERSION\s*=\s*15/);
+{
+  // كان يطابق =15 حرفياً فيفشل تلقائياً مع أي ترحيلة لاحقة (فشل فعلياً منذ v16).
+  const m=db.match(/CURRENT_SCHEMA_VERSION\s*=\s*(\d+)/);
+  assert.ok(m,'A numeric schema version constant is required.');
+  assert.ok(Number(m[1])>=14,'Schema version must not regress below the payroll-termination migration (v14).');
+}
 assert.match(db,/payroll-termination-final-settlement-v14/);
 assert.match(db,/CREATE TABLE IF NOT EXISTS payroll_final_settlements/);
 assert.match(db,/settleEmployeeFinalPayroll/);

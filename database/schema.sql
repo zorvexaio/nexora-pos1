@@ -653,6 +653,7 @@ CREATE TABLE IF NOT EXISTS payroll_advances (
   first_deduction_month TEXT NOT NULL,
   reason TEXT,
   cash_movement_id INTEGER REFERENCES cash_movements(id),
+  disbursement_method TEXT NOT NULL DEFAULT 'cash' CHECK(disbursement_method IN ('cash','bank','other')),
   created_by INTEGER REFERENCES users(id),
   status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','completed')),
   synced INTEGER NOT NULL DEFAULT 0,

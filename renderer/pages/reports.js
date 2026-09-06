@@ -4,6 +4,7 @@ const toInput = document.getElementById('toInput');
 const applyRangeBtn = document.getElementById('applyRangeBtn');
 const exportExcelBtn = document.getElementById('exportExcelBtn');
 const exportPdfBtn = document.getElementById('exportPdfBtn');
+const printReportBtn = document.getElementById('printReportBtn');
 
 const statCount = document.getElementById('statCount');
 const statSubtotal = document.getElementById('statSubtotal');
@@ -71,6 +72,8 @@ const reportShell = document.querySelector('.reports-page');
 const invoicesBody = document.getElementById('invoicesBody');
 const invoicesEmpty = document.getElementById('invoicesEmpty');
 let invoiceSearchTimer = null;
+let currentUserRole = null; // يُملأ بعد guardPage — يتحكم بظهور زر "تصحيح طريقة الدفع"
+let currentInvoiceSaleId = null;
 
 function todayStr() {
   return new Intl.DateTimeFormat('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
@@ -79,6 +82,7 @@ function todayStr() {
 async function init() {
   const user = await guardPage(['admin', 'manager'], '../login.html');
   if (!user) return;
+  currentUserRole = user.role;
 
   const branch = await window.api.branches.current();
   branchNameEl.textContent = branch ? branch.name : '';
@@ -90,6 +94,9 @@ async function init() {
     btn.addEventListener('click', () => applyPreset(btn.dataset.range));
   });
   applyRangeBtn.addEventListener('click', loadReports);
+  // طباعة مباشرة من نفس الصفحة (نفس التبويب المفتوح حالياً) — بدل ما تكون
+  // الخيارات الوحيدة تحويل الملف لـ PDF أو Excel وفتحه ببرنامج تاني للطباعة.
+  printReportBtn.addEventListener('click', () => window.print());
   exportExcelBtn.addEventListener('click', () => exportReport('Excel'));
   exportPdfBtn.addEventListener('click', () => exportReport('Pdf'));
 
@@ -126,6 +133,7 @@ function closeInvoiceModal() {
 }
 
 async function openInvoiceDetail(saleId) {
+  currentInvoiceSaleId = saleId;
   invoiceModalTitle.textContent = 'تفاصيل الفاتورة';
   invoiceModalBody.innerHTML = '<div class="empty-state">جارٍ التحميل...</div>';
   invoiceModal.classList.remove('hidden');
@@ -136,6 +144,9 @@ async function openInvoiceDetail(saleId) {
     const itemsRows = (sale.items || []).map((it) => `
       <tr><td>${escapeHtml(it.product_name)}</td><td>${it.quantity}</td><td>${formatMoney(it.unit_price)}</td><td>${formatMoney(it.line_total)}</td></tr>
     `).join('');
+    // "تصحيح طريقة الدفع" يظهر فقط لمدير/أدمن (الصفحة كلها محصورة بهم أصلاً)
+    // وفقط على فاتورة مكتملة أو مرتجعة جزئياً — البقية (ملغاة/مفتوحة) لا تُصحَّح هنا.
+    const canCorrect = ['admin', 'manager'].includes(currentUserRole) && ['completed', 'partially_refunded'].includes(sale.status);
     invoiceModalBody.innerHTML = `
       <div class="invoice-modal-meta">
         <span>${formatDateTime(sale.created_at)}</span>
@@ -151,12 +162,92 @@ async function openInvoiceDetail(saleId) {
         <div><span>الضريبة</span><b>${formatMoney(sale.tax_total)}</b></div>
         <div><span>الخصم</span><b>${formatMoney(sale.discount_total)}</b></div>
         <div class="strong"><span>الإجمالي</span><b>${formatMoney(sale.grand_total)}</b></div>
-        <div><span>طريقة الدفع</span><b>${PAYMENT_LABELS[sale.payment_method] || escapeHtml(sale.payment_method)}</b></div>
+        <div><span>طريقة الدفع</span><b id="invoiceCurrentMethod">${PAYMENT_LABELS[sale.payment_method] || escapeHtml(sale.payment_method)}</b></div>
       </div>
+      ${canCorrect ? `
+      <div class="invoice-payment-correction no-print">
+        <button type="button" id="togglePaymentCorrectionBtn" class="btn btn-secondary btn-sm">تصحيح طريقة الدفع</button>
+        <div id="paymentCorrectionForm" class="payment-correction-form hidden">
+          <div class="form-field">
+            <label>الطريقة الجديدة</label>
+            <select id="correctionMethod">
+              <option value="cash">نقدي</option>
+              <option value="card">بطاقة</option>
+              <option value="mixed">مختلط</option>
+              <option value="credit" ${!sale.customer_id ? 'disabled' : ''}>آجل${!sale.customer_id ? ' (يتطلب عميلاً مرتبطاً)' : ''}</option>
+            </select>
+          </div>
+          <div id="correctionMixedFields" class="hidden">
+            <div class="form-field"><label>المبلغ النقدي</label><input id="correctionCash" type="text" inputmode="decimal" value="0" /></div>
+            <div class="form-field"><label>مبلغ البطاقة</label><input id="correctionCard" type="text" inputmode="decimal" value="0" /></div>
+          </div>
+          <div class="form-field">
+            <label>سبب التصحيح (إلزامي)</label>
+            <textarea id="correctionReason" rows="2" placeholder="مثال: تبيّن أن دفعة البطاقة مرفوضة، والعميل دفع نقداً فعلياً."></textarea>
+          </div>
+          <div class="modal-actions">
+            <button type="button" id="cancelCorrectionBtn" class="btn btn-secondary btn-sm">إلغاء</button>
+            <button type="button" id="submitCorrectionBtn" class="btn btn-primary btn-sm">حفظ التصحيح</button>
+          </div>
+        </div>
+      </div>` : ''}
     `;
+    if (canCorrect) wirePaymentCorrectionForm(sale);
   } catch (error) {
     invoiceModalBody.innerHTML = `<div class="empty-state">تعذر تحميل تفاصيل الفاتورة: ${escapeHtml(error.message || String(error))}</div>`;
   }
+}
+
+// يربط أحداث فورم "تصحيح طريقة الدفع" (تظهر/تُخفى فقط، السبب إلزامي، والتحقق يجري
+// أيضاً بالخلفية — هذا التحقق بالواجهة تجربة استخدام فقط وليس خط الدفاع الوحيد)
+function wirePaymentCorrectionForm(sale) {
+  const toggleBtn = document.getElementById('togglePaymentCorrectionBtn');
+  const form = document.getElementById('paymentCorrectionForm');
+  const methodSelect = document.getElementById('correctionMethod');
+  const mixedFields = document.getElementById('correctionMixedFields');
+  const cashInput = document.getElementById('correctionCash');
+  const cardInput = document.getElementById('correctionCard');
+  const reasonInput = document.getElementById('correctionReason');
+  const cancelBtn = document.getElementById('cancelCorrectionBtn');
+  const submitBtn = document.getElementById('submitCorrectionBtn');
+
+  toggleBtn.addEventListener('click', () => form.classList.toggle('hidden'));
+  cancelBtn.addEventListener('click', () => form.classList.add('hidden'));
+  methodSelect.addEventListener('change', () => {
+    mixedFields.classList.toggle('hidden', methodSelect.value !== 'mixed');
+    if (methodSelect.value === 'mixed') { cashInput.value = formatMoney(sale.grand_total); cardInput.value = '0'; }
+  });
+
+  submitBtn.addEventListener('click', async () => {
+    const reason = reasonInput.value.trim();
+    if (!reason) { showToast(ts('سبب التصحيح مطلوب.'), 'error'); reasonInput.focus(); return; }
+    const newMethod = methodSelect.value;
+    const payload = { saleId: sale.id, newMethod, reason };
+    if (newMethod === 'mixed') {
+      payload.cashAmount = parseLocaleNumber(normalizeDigits(cashInput.value)) || 0;
+      payload.cardAmount = parseLocaleNumber(normalizeDigits(cardInput.value)) || 0;
+      if (Math.abs((payload.cashAmount + payload.cardAmount) - Number(sale.grand_total)) > 0.01) {
+        showToast(ts('مجموع النقدي والبطاقة يجب أن يساوي إجمالي الفاتورة.'), 'error');
+        return;
+      }
+    }
+    if (!confirm(`تأكيد تصحيح طريقة الدفع للفاتورة ${sale.invoice_number || sale.id} إلى "${PAYMENT_LABELS[newMethod] || newMethod}"؟ هذا الإجراء يُسجَّل بسجل التدقيق ولا يمكن التراجع عنه إلا بتصحيح آخر.`)) return;
+    submitBtn.disabled = true;
+    try {
+      const result = await window.api.sales.correctPaymentMethod(payload);
+      showToast(ts('تم تصحيح طريقة الدفع.'), 'success');
+      if (result && result.relatedShiftClosed) {
+        showToast(ts('تنبيه: الوردية المرتبطة بهذه الفاتورة مقفولة أصلاً — تقرير إقفالها لن يتغيّر، والفرق موثّق بسجل التدقيق فقط.'), 'info', { duration: 8000 });
+      }
+      form.classList.add('hidden');
+      await openInvoiceDetail(sale.id);
+      await loadReports();
+    } catch (error) {
+      showToast(ts('تعذر تصحيح طريقة الدفع: ') + (error.message || error), 'error');
+    } finally {
+      submitBtn.disabled = false;
+    }
+  });
 }
 
 async function exportReport(kind) {
@@ -490,12 +581,6 @@ function renderDailyChart(days) {
 function formatDay(str) {
   const d = new Date(str + 'T00:00:00');
   return d.toLocaleDateString('ar-EG', { day: '2-digit', month: '2-digit' });
-}
-
-function escapeHtml(str) {
-  const div = document.createElement('div');
-  div.textContent = str;
-  return div.innerHTML;
 }
 
 init();

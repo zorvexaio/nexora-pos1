@@ -7,7 +7,12 @@ const main=fs.readFileSync(path.join(root,'main.js'),'utf8');
 const preload=fs.readFileSync(path.join(root,'preload.js'),'utf8');
 const ui=fs.readFileSync(path.join(root,'renderer/pages/payroll.js'),'utf8');
 const html=fs.readFileSync(path.join(root,'renderer/pages/payroll.html'),'utf8');
-assert.match(db,/CURRENT_SCHEMA_VERSION\s*=\s*15/);
+// كان هذا يطابق =15 حرفياً فيفشل تلقائياً بمجرد أي ترحيلة لاحقة (فشل فعلياً منذ v16)
+// بلا علاقة بميزة السلف نفسها. نتحقق بدلاً منه أن ترحيلة السلف v12 لا تزال مسجّلة،
+// وأن رقم المخطط الحالي لا يقل عنها — لا رقماً ثابتاً يحتاج تحديثاً كل إصدار.
+const schemaVersionMatch=db.match(/CURRENT_SCHEMA_VERSION\s*=\s*(\d+)/);
+assert.ok(schemaVersionMatch,'A numeric schema version constant is required.');
+assert.ok(Number(schemaVersionMatch[1])>=12,'Schema version must not regress below the payroll-advances migration (v12).');
 assert.match(db,/payroll-advances-v12/);
 assert.match(db,/CREATE TABLE IF NOT EXISTS payroll_advances/);
 assert.match(db,/CREATE TABLE IF NOT EXISTS payroll_advance_installments/);

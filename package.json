@@ -1,6 +1,6 @@
 {
   "name": "nexora-pos",
-  "version": "0.52.3",
+  "version": "0.52.6",
   "description": "Nexora POS - Hardened global-ready offline-first POS platform",
   "main": "main.js",
   "author": "",
@@ -85,7 +85,7 @@
   "dependencies": {
     "better-sqlite3-multiple-ciphers": "13.0.3",
     "electron-updater": "6.8.9",
-    "qrcode": "1.5.4",
+    "qrcode": "^1.5.4",
     "uuid": "^14.0.2"
   },
   "devDependencies": {
@@ -112,7 +112,7 @@
       {
         "provider": "github",
         "owner": "zorvexaio",
-        "repo": "nexora-pos1",
+        "repo": "nexora-pos",
         "releaseType": "release"
       }
     ],

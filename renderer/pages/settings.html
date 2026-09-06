@@ -20,7 +20,7 @@
         <a href="inventory.html" data-roles="admin,manager" data-i18n="nav.inventory">المخزون</a>
         <a href="customers.html" data-roles="admin,manager" data-i18n="nav.customers">العملاء</a>
         <a href="suppliers.html" data-roles="admin,manager" data-i18n="nav.suppliers">الموردون والشراء</a>
-        <a href="reports.html" data-roles="admin,manager" data-i18n="nav.reports">التقارير</a>
+        <a href="reports.html" data-roles="admin,manager" data-i18n="nav.reports">التقارير</a><a href="accounting.html" data-roles="admin" data-i18n="nav.accounting">المحاسبة</a>
         <a href="audit.html" data-roles="admin" data-i18n="nav.audit">سجل التدقيق</a>
         <a href="payroll.html" data-roles="admin" data-i18n="nav.payroll">الرواتب</a>
         <a href="users.html" data-roles="admin" data-i18n="nav.users">المستخدمون</a>
@@ -68,6 +68,8 @@
         <form id="currencyForm" class="form-grid">
           <div class="form-field"><label>العملة الأساسية</label><input id="fieldCurrencyBase" type="text" maxlength="8" placeholder="USD" required /></div>
           <div class="form-field"><label>العملة الثانوية</label><input id="fieldCurrencySecondary" type="text" maxlength="8" placeholder="TRY" /></div>
+          <div class="form-field checkbox full"><input id="fieldShowSecondaryOnReceipt" type="checkbox" /><label for="fieldShowSecondaryOnReceipt">إظهار سعر العملة الثانوية على الفاتورة المطبوعة</label></div>
+          <div class="field-hint full">إن لم يُفعَّل، تُطبع الفاتورة بالعملة الأساسية فقط حتى لو كانت العملة الثانوية مضبوطة (تبقى محفوظة لاستخدامها في مكان آخر إن احتجت).</div>
           <div class="form-field"><label>سعر الصرف (1 أساسية =)</label><input id="fieldExchangeRate" type="number" min="0.000001" step="0.000001" required /></div>
           <div class="form-field"><label>الرقم الضريبي للمنشأة</label><input id="fieldTaxNumber" type="text" /></div>
           <div class="form-field full"><button type="submit" id="saveCurrencyBtn" class="btn btn-primary">حفظ العملة والفوترة</button></div>
@@ -130,7 +132,7 @@
         </form>
       </div>
 
-      <div class="report-panel settings-panel">
+      <div class="report-panel settings-panel" data-business="restaurant,supermarket">
         <h2>البيع بالوزن (خضار وفواكه السوبرماركت)</h2>
         <form id="weighingForm" class="form-grid">
           <div class="form-field full">

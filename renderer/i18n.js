@@ -16,6 +16,9 @@ const TRANSLATIONS = {
     'common.noName': "بدون اسم",
     'customers.creditSale': "بيع آجل",
     'customers.payment': "تسديد",
+    'customers.creditCorrectionUp': "تصحيح دفع (زيادة دين)",
+    'customers.creditCorrectionDown': "تصحيح دفع (تخفيض دين)",
+    'customers.returnAdjustment': "تسوية مرتجع",
     'payroll.monthlySalaryFor': "الراتب الشهري لـ",
     'payroll.salaries': "رواتب",
     'common.status': "الحالة",
@@ -108,6 +111,7 @@ const TRANSLATIONS = {
     'common.close': 'إغلاق',
     'pos.searchPlaceholder': 'ابحث بالاسم أو امسح الباركود...',
     'pos.barcodeNotFound': 'باركود غير معروف — لم يُضَف أي شيء للسلة',
+    'pos.searchLookupFailed': 'تعذّر البحث — تحقق من الاتصال وحاول مرة ثانية',
     'pos.itemNoteTitle': 'ملاحظة على الصنف',
     'pos.itemNotePlaceholder': 'مثال: بدون ثوم، دبل لحمة، مقطّع صغير...',
     'pos.addNoteTooltip': 'إضافة/تعديل ملاحظة',
@@ -212,6 +216,9 @@ const TRANSLATIONS = {
     'pos.weightTooltip': 'وزن بالكيلوغرام — يُقرأ تلقائياً من باركود الميزان',
     'pos.kgUnit': 'كغم',
     'pos.qtyLockedTooltip': 'الكاشير لا يغيّر الكميات مباشرة',
+    'pos.removeLineTooltip': 'حذف الصنف (يتطلب اعتماد مدير)',
+    'pos.removeLineTooltipDirect': 'حذف الصنف',
+    'pos.approveRemoveLine': 'اعتماد حذف صنف من السلة',
     'pos.noCustomerResults': 'لا نتائج — سيُنشأ عميل جديد تلقائياً عند كتابة اسم وهاتف ثم الدفع',
     'role.admin': 'مدير عام',
     'role.manager': 'مدير فرع',
@@ -250,6 +257,9 @@ const TRANSLATIONS = {
     'customers.statement': "Hesap ekstresi",
     'customers.creditSale': "Vadeli satış",
     'customers.payment': "Ödeme",
+    'customers.creditCorrectionUp': "Ödeme düzeltmesi (borç arttı)",
+    'customers.creditCorrectionDown': "Ödeme düzeltmesi (borç azaldı)",
+    'customers.returnAdjustment': "İade düzeltmesi",
     'payroll.monthlySalaryFor': "Aylık maaş:",
     'payroll.salaries': "Maaşlar",
     'common.status': "Durum",
@@ -342,6 +352,7 @@ const TRANSLATIONS = {
     'common.close': 'Kapat',
     'pos.searchPlaceholder': 'İsimle ara veya barkod okut...',
     'pos.barcodeNotFound': 'Bilinmeyen barkod — sepete bir şey eklenmedi',
+    'pos.searchLookupFailed': 'Arama başarısız — bağlantıyı kontrol edip tekrar deneyin',
     'pos.itemNoteTitle': 'Ürün notu',
     'pos.itemNotePlaceholder': 'Örnek: sarımsaksız, ekstra et...',
     'pos.addNoteTooltip': 'Not ekle/düzenle',
@@ -446,6 +457,9 @@ const TRANSLATIONS = {
     'pos.weightTooltip': 'Kilogram ağırlık — tartı barkodundan otomatik okunur',
     'pos.kgUnit': 'kg',
     'pos.qtyLockedTooltip': 'Kasiyer miktarları doğrudan değiştiremez',
+    'pos.removeLineTooltip': 'Ürünü sil (yönetici onayı gerekir)',
+    'pos.removeLineTooltipDirect': 'Ürünü sil',
+    'pos.approveRemoveLine': 'Sepetten ürün silmeyi onayla',
     'pos.noCustomerResults': 'Sonuç yok — ödeme sırasında isim ve telefon girildiğinde otomatik yeni müşteri oluşturulur',
     'role.admin': 'Genel müdür',
     'role.manager': 'Şube müdürü',
@@ -480,6 +494,9 @@ const TRANSLATIONS = {
     'customers.statement': "Statement",
     'customers.creditSale': "Credit sale",
     'customers.payment': "Payment",
+    'customers.creditCorrectionUp': "Payment correction (debt increased)",
+    'customers.creditCorrectionDown': "Payment correction (debt decreased)",
+    'customers.returnAdjustment': "Return adjustment",
     'payroll.monthlySalaryFor': "Monthly salary for:",
     'payroll.salaries': "Salaries",
     'common.status': "Status",
@@ -572,6 +589,7 @@ const TRANSLATIONS = {
     'common.close': 'Close',
     'pos.searchPlaceholder': 'Search by name or scan barcode...',
     'pos.barcodeNotFound': 'Unknown barcode — nothing added to cart',
+    'pos.searchLookupFailed': 'Search failed — check your connection and try again',
     'pos.itemNoteTitle': 'Item note',
     'pos.itemNotePlaceholder': 'e.g. no garlic, extra meat...',
     'pos.addNoteTooltip': 'Add/edit note',
@@ -676,6 +694,9 @@ const TRANSLATIONS = {
     'pos.weightTooltip': 'Weight in kilograms — read automatically from the scale barcode',
     'pos.kgUnit': 'kg',
     'pos.qtyLockedTooltip': 'The cashier cannot change quantities directly',
+    'pos.removeLineTooltip': 'Remove item (requires manager approval)',
+    'pos.removeLineTooltipDirect': 'Remove item',
+    'pos.approveRemoveLine': 'Approve removing item from cart',
     'pos.noCustomerResults': 'No results — a new customer will be created automatically once a name and phone are entered at checkout',
     'role.admin': 'General manager',
     'role.manager': 'Branch manager',
@@ -705,6 +726,16 @@ const TRANSLATIONS = {
     'tableOrder.confirmAndClose': 'Confirm and close table',
   },
 };
+
+Object.assign(TRANSLATIONS.ar, {
+  'nav.accounting': 'المحاسبة',
+});
+Object.assign(TRANSLATIONS.tr, {
+  'nav.accounting': 'Muhasebe',
+});
+Object.assign(TRANSLATIONS.en, {
+  'nav.accounting': 'Accounting',
+});
 
 Object.assign(TRANSLATIONS.ar, {
   'settings.developer.title': 'رقم المطور',

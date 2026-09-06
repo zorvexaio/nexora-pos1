@@ -120,18 +120,4 @@ function formatDate(str) {
   return d.toLocaleString('ar-EG', { dateStyle: 'short', timeStyle: 'medium' });
 }
 
-function debounce(fn, ms) {
-  let t;
-  return (...args) => {
-    clearTimeout(t);
-    t = setTimeout(() => fn(...args), ms);
-  };
-}
-
-function escapeHtml(str) {
-  const div = document.createElement('div');
-  div.textContent = str == null ? '' : String(str);
-  return div.innerHTML;
-}
-
 init();

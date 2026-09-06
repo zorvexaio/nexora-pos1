@@ -39,8 +39,14 @@ if (mode === 'seed') {
   const branch = db.getCurrentBranch();
   const beforeUsers = db.listUsers(branch.id).length;
 
-  const a = db.addPayrollV2Employee('أحمد محمد', 'طباخ', 'monthly', 3500);
-  const b = db.addPayrollV2Employee('محمد علي', 'عامل نظافة', 'monthly', 2800);
+  // hire_date لازم يسبق بداية شهر الاختبار، وإلا آلية احتساب start_date التلقائي (أضيفت
+  // بمرحلة لاحقة لهذا الاختبار: تفترض التحاق العامل من تاريخ إضافته إن كان بعد بداية
+  // الشهر) هتعتبر العامل التحق اليوم (تاريخ تشغيل الاختبار الفعلي)، فيطلع base_amount=0
+  // لشهر بالكامل بالماضي. تاريخ ثابت قديم هنا يضمن نفس سلوك "عامل مستمر منذ بداية الشهر"
+  // اللي كان مفترضاً وقت كتابة هذا الاختبار.
+  const oldHireDate = '2020-01-01';
+  const a = db.addPayrollV2Employee('أحمد محمد', 'طباخ', 'monthly', 3500, { hireDate: oldHireDate });
+  const b = db.addPayrollV2Employee('محمد علي', 'عامل نظافة', 'monthly', 2800, { hireDate: oldHireDate });
   if (!a.success || !b.success) throw new Error('Worker creation failed.');
 
   const afterUsers = db.listUsers(branch.id).length;
@@ -64,19 +70,30 @@ if (mode === 'seed') {
 
   const day = (n) => `${monthKey}-${String(n).padStart(2, '0')}`;
   db.addPayrollV2Transaction({ monthId: month.id, employeeId: a.id, type: 'absence', amount: 0, quantity: 1, eventDate: day(10), reason: 'غياب' });
-  db.addPayrollV2Transaction({ monthId: month.id, employeeId: a.id, type: 'advance', amount: 300, quantity: 1, eventDate: day(11), reason: 'سلفة' });
+  // السلف انفصلت عن addPayrollV2Transaction لنظامها الخاص (جدول payroll_advances) —
+  // addPayrollV2Transaction({type:'advance'}) مرفوضة عمدًا بالكود الحالي (انظر
+  // CHANGES-accounting-engine-batch1.md). قسط واحد بشهر الاستحقاق نفسه يكافئ تمامًا
+  // السلفة الفورية القديمة من ناحية تأثيرها على advance_total لهذا الشهر.
+  db.createPayrollAdvance({ monthId: month.id, employeeId: a.id, amount: 300, installmentCount: 1, firstDeductionMonth: monthKey, reason: 'سلفة' });
   db.addPayrollV2Transaction({ monthId: month.id, employeeId: a.id, type: 'deduction', amount: 100, quantity: 1, eventDate: day(12), reason: 'خصم' });
-  db.addPayrollV2Transaction({ monthId: month.id, employeeId: a.id, type: 'overtime', amount: 100, quantity: 1, eventDate: day(13), reason: 'إضافي' });
+  // منذ إضافة ميزة احتساب الإضافي من الساعات، quantity هنا = عدد ساعات الإضافي (لا مبلغ
+  // ثابت) ويُحتسب كـ rate × ساعات × معامل / (أيام الشهر × ساعات العمل باليوم). نحسب القيمة
+  // المتوقعة بنفس الصيغة بدل افتراض مبلغ ثابت قديم لم يعد ممكناً عبر هذه الدالة.
+  const overtimeHours = 10;
+  const overtimeMultiplier = 1.5;
+  const workHoursPerDay = 8;
+  db.addPayrollV2Transaction({ monthId: month.id, employeeId: a.id, type: 'overtime', amount: 0, quantity: overtimeHours, eventDate: day(13), reason: 'إضافي', overtimeMultiplier });
   db.addPayrollV2Transaction({ monthId: month.id, employeeId: a.id, type: 'bonus', amount: 50, quantity: 1, eventDate: day(14), reason: 'مكافأة' });
 
-  const expected = 3500 - (3500 / dim) - 300 - 100 + 100 + 50;
+  const expectedOvertime = (3500 * overtimeHours * overtimeMultiplier) / (dim * workHoursPerDay);
+  const expected = 3500 - (3500 / dim) - 300 - 100 + expectedOvertime + 50;
   item = db.getPayrollV2Month(monthKey).items.find(x => Number(x.employee_id) === Number(a.id));
   approx(item.net_salary, expected);
   approx(item.base_amount, 3500); // شهر منتهٍ بالكامل ولم يُحدَّد تاريخ بدء مخصص => راتب الشهر كامل
   approx(item.absence_deduction, 3500 / dim);
   approx(item.advance_total, 300);
   approx(item.deduction_total, 100);
-  approx(item.overtime_total, 100);
+  approx(item.overtime_total, expectedOvertime);
   approx(item.bonus_total, 50);
 
   // تاريخ بدء مخصص (العامل الثاني التحق في اليوم العاشر من هذا الشهر تحديداً): يجب أن
@@ -115,8 +132,14 @@ if (mode === 'seed') {
   if (!item) throw new Error('Persisted payroll employee/month record is missing after reopen.');
   approx(item.net_salary, state.expectedNet);
   const tx = month.transactions.filter(x => Number(x.employee_id) === Number(state.employeeId));
-  if (tx.length !== 5) throw new Error(`Expected 5 persisted transactions after reopen, found ${tx.length}.`);
-  console.log('PASS: payroll worker, month, transactions, and net salary survive process reopen');
+  // السلفة لم تعد سطر payroll_transactions (انفصلت لجدول payroll_advances الخاص بها) —
+  // الأربعة الباقية هي: غياب، خصم، إضافي، مكافأة.
+  if (tx.length !== 4) throw new Error(`Expected 4 persisted transactions after reopen, found ${tx.length}.`);
+  const advances = db.listPayrollAdvances(state.employeeId);
+  if (advances.length !== 1 || Math.abs(Number(advances[0].principal) - 300) > 0.02) {
+    throw new Error(`Expected 1 persisted advance of 300, found ${JSON.stringify(advances)}.`);
+  }
+  console.log('PASS: payroll worker, month, transactions, advance, and net salary survive process reopen');
 } else {
   throw new Error(`Unknown mode: ${mode}`);
 }

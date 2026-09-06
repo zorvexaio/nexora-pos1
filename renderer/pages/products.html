@@ -20,7 +20,7 @@
         <a href="inventory.html" data-roles="admin,manager" data-i18n="nav.inventory">المخزون</a>
         <a href="customers.html" data-roles="admin,manager" data-i18n="nav.customers">العملاء</a>
         <a href="suppliers.html" data-roles="admin,manager" data-i18n="nav.suppliers">الموردون والشراء</a>
-        <a href="reports.html" data-roles="admin,manager" data-i18n="nav.reports">التقارير</a>
+        <a href="reports.html" data-roles="admin,manager" data-i18n="nav.reports">التقارير</a><a href="accounting.html" data-roles="admin" data-i18n="nav.accounting">المحاسبة</a>
         <a href="audit.html" data-roles="admin" data-i18n="nav.audit">سجل التدقيق</a>
         <a href="payroll.html" data-roles="admin" data-i18n="nav.payroll">الرواتب</a>
         <a href="users.html" data-roles="admin" data-i18n="nav.users">المستخدمون</a>
@@ -154,11 +154,11 @@
             <input id="fieldSku" type="text" />
           </div>
 
-          <div class="form-field checkbox full">
+          <div class="form-field checkbox full" data-business="restaurant,supermarket">
             <input id="fieldIsWeighted" type="checkbox" />
             <label for="fieldIsWeighted">بيع بالوزن (خضار/فواكه) — يُوزن على ميزان يطبع باركوداً، والسعر يُحسب تلقائياً عند المسح</label>
           </div>
-          <div class="form-field full" id="pluField" hidden>
+          <div class="form-field full" id="pluField" hidden data-business="restaurant,supermarket">
             <label>كود الصنف (PLU) — نفس الكود المُدخَل بالميزان لهذا الصنف</label>
             <input id="fieldPluCode" type="text" inputmode="numeric" maxlength="5" placeholder="مثال: 123" />
             <p class="field-hint">أرقام فقط، حتى 5 خانات — يُكمَّل تلقائياً بأصفار بادئة (مثال: 123 ← 00123) ليطابق صيغة باركود الميزان بالضبط.</p>

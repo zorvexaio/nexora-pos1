@@ -58,6 +58,17 @@ function renderTable(customers) {
   }
 }
 
+function ledgerEntryLabel(row) {
+  if (row.entry_type === 'credit_sale') return t('customers.creditSale', 'بيع آجل');
+  if (row.entry_type === 'payment') return t('customers.payment', 'تسديد');
+  if (row.entry_type === 'credit_correction') {
+    return Number(row.amount) > 0
+      ? t('customers.creditCorrectionUp', 'تصحيح دفع (زيادة دين)')
+      : t('customers.creditCorrectionDown', 'تصحيح دفع (تخفيض دين)');
+  }
+  if (row.entry_type === 'return_adjustment') return t('customers.returnAdjustment', 'تسوية مرتجع');
+  return t('customers.payment', 'تسديد');
+}
 async function openLedger(customer) {
   ledgerCustomer = customer;
   document.getElementById('ledgerTitle').textContent = `${t('customers.statement', 'كشف حساب')}: ${customer.name || t('common.noName', 'بدون اسم')}`;
@@ -77,7 +88,7 @@ async function openLedger(customer) {
   `;
   const rows = await window.api.customers.ledger(customer.id);
   const host = document.getElementById('ledgerRows');
-  host.innerHTML = rows.length ? rows.map((row) => `<div class="breakdown-row"><div class="breakdown-label"><span>${row.entry_type === 'credit_sale' ? t('customers.creditSale', 'بيع آجل') : t('customers.payment', 'تسديد')}</span><span>${new Date(row.created_at.replace(' ', 'T') + 'Z').toLocaleDateString('ar')}</span></div><div class="breakdown-label"><span>${Number(row.amount).toFixed(2)}</span><span>${ts('الرصيد')}: ${Number(row.balance_after).toFixed(2)}</span></div></div>`).join('') : '<div class="empty-state">لا توجد حركات.</div>';
+  host.innerHTML = rows.length ? rows.map((row) => `<div class="breakdown-row"><div class="breakdown-label"><span>${ledgerEntryLabel(row)}</span><span>${new Date(row.created_at.replace(' ', 'T') + 'Z').toLocaleDateString('ar')}</span></div><div class="breakdown-label"><span>${Number(row.amount).toFixed(2)}</span><span>${ts('الرصيد')}: ${Number(row.balance_after).toFixed(2)}</span></div></div>`).join('') : '<div class="empty-state">لا توجد حركات.</div>';
   document.getElementById('ledgerModal').classList.remove('hidden');
 }
 document.getElementById('closeLedgerBtn').addEventListener('click', () => document.getElementById('ledgerModal').classList.add('hidden'));
@@ -142,20 +153,6 @@ async function saveCustomer(e) {
     saveBtn.disabled = false;
     saveBtn.textContent = 'حفظ';
   }
-}
-
-function debounce(fn, ms) {
-  let t;
-  return (...args) => {
-    clearTimeout(t);
-    t = setTimeout(() => fn(...args), ms);
-  };
-}
-
-function escapeHtml(str) {
-  const div = document.createElement('div');
-  div.textContent = str;
-  return div.innerHTML;
 }
 
 init();

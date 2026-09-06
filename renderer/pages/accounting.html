@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: file:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-src 'none';">
+  <meta charset="UTF-8" />
+  <title>المحاسبة</title>
+  <link rel="stylesheet" href="../style.css" />
+  <style>
+    .accounting-table td.num, .accounting-table th.num { text-align: left; direction: ltr; font-variant-numeric: tabular-nums; }
+    .accounting-total-row td { font-weight: 700; border-top: 2px solid var(--line-strong); }
+    .balance-flag { font-size: 12px; padding: 2px 10px; border-radius: 999px; font-weight: 700; }
+    .balance-flag.ok { background: #ecfdf5; color: #059669; }
+    .balance-flag.bad { background: #fef2f2; color: #dc2626; }
+    .period-locked { color: #dc2626; font-weight: 700; }
+    .period-open { color: #059669; font-weight: 700; }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="brand" data-i18n="app.brand">نقطة البيع</div>
+      <nav class="nav-links">
+        <a href="../index.html" data-i18n="nav.pos">الكاشير</a>
+        <a href="tables.html" data-business="restaurant" data-i18n="nav.tables">الطاولات</a>
+        <a href="shift.html" data-i18n="nav.cashSession">الصندوق</a>
+        <a href="returns.html" data-roles="admin,manager" data-i18n="nav.returns">مرتجعات</a>
+        <a href="products.html" data-roles="admin,manager" data-i18n="nav.products">المنتجات</a>
+        <a href="bundles.html" data-roles="admin,manager" data-i18n="nav.bundles">الحزم</a>
+        <a href="inventory.html" data-roles="admin,manager" data-i18n="nav.inventory">المخزون</a>
+        <a href="customers.html" data-roles="admin,manager" data-i18n="nav.customers">العملاء</a>
+        <a href="suppliers.html" data-roles="admin,manager" data-i18n="nav.suppliers">الموردون والشراء</a>
+        <a href="reports.html" data-roles="admin,manager" data-i18n="nav.reports">التقارير</a>
+        <a href="accounting.html" class="active" data-roles="admin" data-i18n="nav.accounting">المحاسبة</a>
+        <a href="audit.html" data-roles="admin" data-i18n="nav.audit">سجل التدقيق</a>
+        <a href="payroll.html" data-roles="admin" data-i18n="nav.payroll">الرواتب</a>
+        <a href="users.html" data-roles="admin" data-i18n="nav.users">المستخدمون</a>
+        <a href="settings.html" data-roles="admin" data-i18n="nav.settings">الإعدادات</a>
+      </nav>
+      <div class="topbar-right">
+        <select id="langSwitcher" class="lang-switcher" title="اللغة / Dil / Language">
+          <option value="ar">AR</option>
+          <option value="tr">TR</option>
+          <option value="en">EN</option>
+        </select>
+        <div class="branch-name" id="branchName">—</div>
+        <div class="user-info">
+          <span id="currentUserName"></span>
+          <span id="currentUserRoleBadge" class="role-badge"></span>
+          <button id="logoutBtn" class="btn btn-secondary btn-sm" data-i18n="common.logout">خروج</button>
+        </div>
+      </div>
+    </header>
+
+    <div class="products-page">
+      <div class="page-header">
+        <h1>المحاسبة</h1>
+      </div>
+      <p style="color:#6b7280;margin-top:-8px">
+        تقارير مالية مبنية على القيود المرحّلة تلقائياً من المبيعات والمشتريات والمرتجعات وتسديد الديون والرواتب.
+        كل الأرقام هنا مبنية على قيود فعلية بدفتر الأستاذ، وليست تقديرية.
+      </p>
+
+      <div class="tabs" style="margin-bottom:16px;flex-wrap:wrap">
+        <button class="tab-btn active" data-tab="trial">ميزان المراجعة</button>
+        <button class="tab-btn" data-tab="income">قائمة الدخل</button>
+        <button class="tab-btn" data-tab="balance">المركز المالي</button>
+        <button class="tab-btn" data-tab="ledger">دفتر الأستاذ</button>
+        <button class="tab-btn" data-tab="journal">القيود</button>
+        <button class="tab-btn" data-tab="manual" id="manualTabBtn">قيد يدوي</button>
+        <button class="tab-btn" data-tab="periods" id="periodsTabBtn">إقفال الفترات</button>
+      </div>
+
+      <!-- ميزان المراجعة -->
+      <div id="tab-trial" class="tab-panel">
+        <div class="filters-row">
+          <label style="display:flex;align-items:center;gap:6px;">حتى تاريخ
+            <input id="trialAsOf" type="date" />
+          </label>
+          <button id="trialLoadBtn" class="btn btn-secondary">تحديث</button>
+        </div>
+        <table class="products-table accounting-table">
+          <thead><tr><th>الكود</th><th>الحساب</th><th>النوع</th><th class="num">مدين</th><th class="num">دائن</th></tr></thead>
+          <tbody id="trialBody"></tbody>
+          <tfoot><tr class="accounting-total-row"><td colspan="3">الإجمالي</td><td class="num" id="trialTotalDebit">0.00</td><td class="num" id="trialTotalCredit">0.00</td></tr></tfoot>
+        </table>
+        <p><span id="trialBalanceFlag" class="balance-flag ok">متوازن</span></p>
+      </div>
+
+      <!-- قائمة الدخل -->
+      <div id="tab-income" class="tab-panel hidden">
+        <div class="filters-row">
+          <label style="display:flex;align-items:center;gap:6px;">من <input id="incomeFrom" type="date" /></label>
+          <label style="display:flex;align-items:center;gap:6px;">إلى <input id="incomeTo" type="date" /></label>
+          <button id="incomeLoadBtn" class="btn btn-secondary">تحديث</button>
+        </div>
+        <div class="kpi-row">
+          <div class="kpi-card" data-tone="indigo"><div class="kpi-body"><div class="kpi-label">إجمالي الإيرادات</div><div class="kpi-value" id="incomeTotalRevenue">—</div></div></div>
+          <div class="kpi-card" data-tone="amber"><div class="kpi-body"><div class="kpi-label">إجمالي المصاريف</div><div class="kpi-value" id="incomeTotalExpense">—</div></div></div>
+          <div class="kpi-card kpi-highlight" data-tone="brand"><div class="kpi-body"><div class="kpi-label">صافي الدخل</div><div class="kpi-value" id="incomeNet">—</div></div></div>
+        </div>
+        <h3 style="margin-top:16px;">الإيرادات</h3>
+        <table class="products-table accounting-table"><thead><tr><th>الكود</th><th>الحساب</th><th class="num">المبلغ</th></tr></thead><tbody id="incomeRevenueBody"></tbody></table>
+        <h3 style="margin-top:16px;">المصاريف</h3>
+        <table class="products-table accounting-table"><thead><tr><th>الكود</th><th>الحساب</th><th class="num">المبلغ</th></tr></thead><tbody id="incomeExpenseBody"></tbody></table>
+      </div>
+
+      <!-- المركز المالي -->
+      <div id="tab-balance" class="tab-panel hidden">
+        <div class="filters-row">
+          <label style="display:flex;align-items:center;gap:6px;">حتى تاريخ <input id="balanceAsOf" type="date" /></label>
+          <button id="balanceLoadBtn" class="btn btn-secondary">تحديث</button>
+        </div>
+        <div class="kpi-row">
+          <div class="kpi-card" data-tone="indigo"><div class="kpi-body"><div class="kpi-label">إجمالي الأصول</div><div class="kpi-value" id="balanceTotalAssets">—</div></div></div>
+          <div class="kpi-card" data-tone="amber"><div class="kpi-body"><div class="kpi-label">إجمالي الخصوم</div><div class="kpi-value" id="balanceTotalLiabilities">—</div></div></div>
+          <div class="kpi-card kpi-highlight" data-tone="brand"><div class="kpi-body"><div class="kpi-label">حقوق الملكية</div><div class="kpi-value" id="balanceTotalEquity">—</div></div></div>
+        </div>
+        <p><span id="balanceFlag" class="balance-flag ok">متوازن</span></p>
+        <h3 style="margin-top:16px;">الأصول</h3>
+        <table class="products-table accounting-table"><thead><tr><th>الكود</th><th>الحساب</th><th class="num">الرصيد</th></tr></thead><tbody id="balanceAssetsBody"></tbody></table>
+        <h3 style="margin-top:16px;">الخصوم</h3>
+        <table class="products-table accounting-table"><thead><tr><th>الكود</th><th>الحساب</th><th class="num">الرصيد</th></tr></thead><tbody id="balanceLiabilitiesBody"></tbody></table>
+        <h3 style="margin-top:16px;">حقوق الملكية</h3>
+        <table class="products-table accounting-table"><thead><tr><th>الكود</th><th>الحساب</th><th class="num">الرصيد</th></tr></thead><tbody id="balanceEquityBody"></tbody></table>
+      </div>
+
+      <!-- دفتر الأستاذ -->
+      <div id="tab-ledger" class="tab-panel hidden">
+        <div class="filters-row">
+          <select id="ledgerAccountSelect"></select>
+          <label style="display:flex;align-items:center;gap:6px;">من <input id="ledgerFrom" type="date" /></label>
+          <label style="display:flex;align-items:center;gap:6px;">إلى <input id="ledgerTo" type="date" /></label>
+          <button id="ledgerLoadBtn" class="btn btn-secondary">تحديث</button>
+        </div>
+        <p>الرصيد الافتتاحي: <strong id="ledgerOpening">0.00</strong></p>
+        <table class="products-table accounting-table">
+          <thead><tr><th>التاريخ</th><th>البيان</th><th>المرجع</th><th class="num">مدين</th><th class="num">دائن</th><th class="num">الرصيد الجاري</th></tr></thead>
+          <tbody id="ledgerBody"></tbody>
+        </table>
+      </div>
+
+      <!-- القيود اليومية -->
+      <div id="tab-journal" class="tab-panel hidden">
+        <div class="filters-row">
+          <label style="display:flex;align-items:center;gap:6px;">من <input id="journalFrom" type="date" /></label>
+          <label style="display:flex;align-items:center;gap:6px;">إلى <input id="journalTo" type="date" /></label>
+          <button id="journalLoadBtn" class="btn btn-secondary">تحديث</button>
+        </div>
+        <table class="products-table accounting-table">
+          <thead><tr><th>التاريخ</th><th>البيان</th><th>المصدر</th><th>الحالة</th></tr></thead>
+          <tbody id="journalBody"></tbody>
+        </table>
+      </div>
+
+      <!-- قيد يدوي -->
+      <div id="tab-manual" class="tab-panel hidden">
+        <p style="color:#6b7280">
+          لتسجيل مصروف أو حركة نقدية لا تمر من أي نظام آخر بالتطبيق (إيجار، فاتورة كهرباء، تسوية...).
+          مجموع المدين يجب أن يساوي مجموع الدائن قبل الترحيل.
+        </p>
+
+        <div class="filters-row" style="align-items:flex-end;flex-wrap:wrap;gap:14px">
+          <label style="display:flex;flex-direction:column;gap:6px;font-size:12px;font-weight:700;color:#4b5563">التاريخ
+            <input id="manualEntryDate" type="date" />
+          </label>
+          <label style="display:flex;flex-direction:column;gap:6px;font-size:12px;font-weight:700;color:#4b5563;flex:1;min-width:220px">البيان
+            <input id="manualEntryMemo" type="text" placeholder="مثال: إيجار محل شهر يناير" />
+          </label>
+          <button id="manualToggleNewAccountBtn" class="btn btn-secondary">+ حساب جديد</button>
+        </div>
+
+        <div id="manualNewAccountRow" class="filters-row hidden" style="flex-wrap:wrap;gap:14px;background:#f8fafc;border:1px solid var(--line);border-radius:10px;padding:12px;margin-top:10px">
+          <label style="display:flex;flex-direction:column;gap:6px;font-size:12px;font-weight:700;color:#4b5563">الكود
+            <input id="newAccountCode" type="text" placeholder="6110" style="width:110px" />
+          </label>
+          <label style="display:flex;flex-direction:column;gap:6px;font-size:12px;font-weight:700;color:#4b5563;flex:1;min-width:180px">الاسم
+            <input id="newAccountName" type="text" placeholder="إيجار المحل (مصروف)" />
+          </label>
+          <label style="display:flex;flex-direction:column;gap:6px;font-size:12px;font-weight:700;color:#4b5563">النوع
+            <select id="newAccountType">
+              <option value="expense">مصروف</option>
+              <option value="asset">أصول</option>
+              <option value="liability">خصوم</option>
+              <option value="equity">حقوق ملكية</option>
+              <option value="revenue">إيراد</option>
+            </select>
+          </label>
+          <button id="createAccountBtn" class="btn btn-primary">إنشاء الحساب</button>
+        </div>
+
+        <table class="products-table accounting-table" style="margin-top:16px">
+          <thead><tr><th>الحساب</th><th>بيان السطر (اختياري)</th><th class="num">مدين</th><th class="num">دائن</th><th></th></tr></thead>
+          <tbody id="manualLinesBody"></tbody>
+          <tfoot><tr class="accounting-total-row"><td colspan="2">الإجمالي</td><td class="num" id="manualTotalDebit">0.00</td><td class="num" id="manualTotalCredit">0.00</td><td></td></tr></tfoot>
+        </table>
+
+        <div class="filters-row" style="justify-content:space-between;margin-top:10px">
+          <button id="manualAddLineBtn" class="btn btn-secondary">+ إضافة سطر</button>
+          <div style="display:flex;align-items:center;gap:12px">
+            <span id="manualBalanceFlag" class="balance-flag bad">غير متوازن</span>
+            <button id="manualPostBtn" class="btn btn-primary" disabled>ترحيل القيد</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- إقفال الفترات -->
+      <div id="tab-periods" class="tab-panel hidden">
+        <p style="color:#6b7280">
+          إقفال فترة (شهر) يمنع إضافة أي قيد محاسبي جديد بتاريخ ضمنها — من المبيعات أو المشتريات أو المرتجعات أو الرواتب أو أي مصدر آخر.
+          استخدمها بعد ما تتأكد إن أرقام الشهر نهائية ولن تتغير.
+        </p>
+        <div class="filters-row" id="periodLockControls">
+          <input id="newPeriodKey" type="month" />
+          <button id="lockPeriodBtn" class="btn btn-danger">إقفال هذه الفترة</button>
+        </div>
+        <table class="products-table accounting-table">
+          <thead><tr><th>الفترة</th><th>الحالة</th><th>تاريخ الإقفال</th><th></th></tr></thead>
+          <tbody id="periodsBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <script src="../i18n.js"></script>
+  <script src="../common.js"></script>
+  <script src="accounting.js"></script>
+</body>
+</html>

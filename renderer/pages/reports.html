@@ -20,7 +20,7 @@
         <a href="inventory.html" data-roles="admin,manager" data-i18n="nav.inventory">المخزون</a>
         <a href="customers.html" data-roles="admin,manager" data-i18n="nav.customers">العملاء</a>
         <a href="suppliers.html" data-roles="admin,manager" data-i18n="nav.suppliers">الموردون والشراء</a>
-        <a href="reports.html" class="active" data-roles="admin,manager" data-i18n="nav.reports">التقارير</a>
+        <a href="reports.html" class="active" data-roles="admin,manager" data-i18n="nav.reports">التقارير</a><a href="accounting.html" data-roles="admin" data-i18n="nav.accounting">المحاسبة</a>
         <a href="audit.html" data-roles="admin" data-i18n="nav.audit">سجل التدقيق</a>
         <a href="payroll.html" data-roles="admin" data-i18n="nav.payroll">الرواتب</a>
         <a href="users.html" data-roles="admin" data-i18n="nav.users">المستخدمون</a>
@@ -47,7 +47,11 @@
           <h1>التقارير</h1>
           <p class="reports-subtitle">نظرة شاملة على المبيعات والربحية والفواتير خلال الفترة المحددة.</p>
         </div>
-        <div class="export-actions">
+        <div class="export-actions no-print">
+          <button id="printReportBtn" class="btn btn-secondary btn-sm">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9V2h12v7M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2M6 14h12v8H6z"/></svg>
+            طباعة
+          </button>
           <button id="exportExcelBtn" class="btn btn-secondary btn-sm">
             <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m-4-4 4 4 4-4M5 21h14"/></svg>
             تصدير Excel
@@ -83,7 +87,7 @@
         </div>
       </div>
 
-      <div class="filters-row reports-filters">
+      <div class="filters-row reports-filters no-print">
         <div class="range-presets">
           <button class="btn btn-secondary btn-sm" data-range="today">اليوم</button>
           <button class="btn btn-secondary btn-sm" data-range="week">آخر 7 أيام</button>
@@ -94,7 +98,7 @@
         <button id="applyRangeBtn" class="btn btn-primary btn-sm">تطبيق</button><span id="reportStatus" class="field-hint" role="status" aria-live="polite"></span>
       </div>
 
-      <div class="report-tabs" role="tablist">
+      <div class="report-tabs no-print" role="tablist">
         <button class="report-tab active" data-tab="overview" role="tab" aria-selected="true">نظرة عامة</button>
         <button class="report-tab" data-tab="products" role="tab" aria-selected="false">المنتجات</button>
         <button class="report-tab" data-tab="invoices" role="tab" aria-selected="false">الفواتير والديون</button>

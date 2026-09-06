@@ -14,6 +14,16 @@ function escapeHtml(str) {
   return div.innerHTML;
 }
 
+// دالة عامة لتأخير تنفيذ الاستدعاءات المتكررة (مثال: البحث أثناء الكتابة)
+// كانت معرّفة بنفس السطور حرفياً داخل 6 ملفات مختلفة — وُحّدت هنا.
+function debounce(fn, ms) {
+  let t;
+  return (...args) => {
+    clearTimeout(t);
+    t = setTimeout(() => fn(...args), ms);
+  };
+}
+
 function roleLabels() {
   return { admin: t('role.admin'), manager: t('role.manager'), cashier: t('role.cashier') };
 }
@@ -308,7 +318,9 @@ function applyBusinessVisibility(branch) {
   const type = branch ? branch.business_type || 'general' : 'general';
   document.querySelectorAll('[data-business]').forEach((element) => {
     const allowed = element.getAttribute('data-business').split(',');
-    element.hidden = !allowed.includes(type);
+    // "عام" يعني "يظهر كل شيء" كما هو موصوف فعليًا في شاشة الإعدادات —
+    // لذلك لا نخفي عناصر خاصة بأزياء/مطاعم/سوبرماركت عن محل نوعه "عام".
+    element.hidden = type !== 'general' && !allowed.includes(type);
   });
   const terminology = type === 'restaurant' ? t('common.itemTerm') : t('common.productTerm');
   document.querySelectorAll('[data-product-label]').forEach((element) => { element.textContent = terminology; });

@@ -1064,7 +1064,7 @@ ipcMain.handle('payroll:advances', (_event, { employeeId } = {}) => { requireAdm
 ipcMain.handle('payroll:createAdvance', (_event, payload) => {
   requireAdmin();
   const result=db.createPayrollAdvance({ ...payload, createdBy: currentUser.id });
-  db.logAudit({ userId: currentUser.id, action:'payroll_advance_created', entityType:'payroll_advance', entityId:result.id, details:{ employeeId:payload.employeeId, amount:payload.amount, installmentCount:payload.installmentCount, firstDeductionMonth:payload.firstDeductionMonth, paidFromRegister:!!payload.paidFromRegister } });
+  db.logAudit({ userId: currentUser.id, action:'payroll_advance_created', entityType:'payroll_advance', entityId:result.id, details:{ employeeId:payload.employeeId, amount:payload.amount, installmentCount:payload.installmentCount, firstDeductionMonth:payload.firstDeductionMonth, method:result.disbursementMethod, paidFromRegister:!!payload.paidFromRegister } });
   return result;
 });
 ipcMain.handle('payroll:advancePayments', (_event, advanceId) => { requireAdmin(); return db.listPayrollAdvancePayments(advanceId); });
@@ -1730,7 +1730,33 @@ ipcMain.handle('sale:create', (_event, sale) => {
   return Promise.all(printJobs).then(() => ({ ...result, printOutcome }));
 });
 ipcMain.handle('sales:list', (_event, filters) => { requireAccountReady(); return db.listSales(filters); });
+ipcMain.handle('sales:knownDeliveryPersons', () => { requireAccountReady(); return db.listKnownDeliveryPersons(); });
 ipcMain.handle('sales:get', (_event, id) => { requireAccountReady(); return db.getSale(id, db.getCurrentBranch().id); });
+// تصحيح طريقة الدفع على فاتورة محفوظة — للمدير/الأدمن فقط، ويُسجَّل كاملاً بسجل التدقيق.
+ipcMain.handle('sales:correctPaymentMethod', (_event, payload) => {
+  requireManagerOrAdmin();
+  const result = db.correctSalePaymentMethod({ ...payload, actorUserId: currentUser.id });
+  return result;
+});
+
+// المحاسبة: تقارير مالية (مدير/أدمن) + إقفال فترات (أدمن فقط لأنه إجراء حساس يمنع أي قيد لاحق بتاريخها)
+ipcMain.handle('accounting:trialBalance', (_event, asOfDate) => { requireManagerOrAdmin(); return db.getTrialBalance(asOfDate); });
+ipcMain.handle('accounting:incomeStatement', (_event, range) => { requireManagerOrAdmin(); return db.getIncomeStatement(range?.from, range?.to); });
+ipcMain.handle('accounting:balanceSheet', (_event, asOfDate) => { requireManagerOrAdmin(); return db.getBalanceSheet(asOfDate); });
+ipcMain.handle('accounting:accountLedger', (_event, payload) => { requireManagerOrAdmin(); return db.getAccountLedger(payload?.accountId, payload?.from, payload?.to); });
+ipcMain.handle('accounting:listAccounts', () => { requireManagerOrAdmin(); return db.listAccountingAccounts(); });
+ipcMain.handle('accounting:listJournalEntries', (_event, range) => { requireManagerOrAdmin(); return db.listJournalEntries(range || {}); });
+ipcMain.handle('accounting:listPeriods', () => { requireManagerOrAdmin(); return db.listAccountingPeriods(); });
+ipcMain.handle('accounting:lockPeriod', (_event, periodKey) => {
+  requireAdmin();
+  const result = db.lockAccountingPeriod(periodKey, currentUser.id);
+  return result;
+});
+ipcMain.handle('accounting:reopenPeriod', (_event, payload) => {
+  requireAdmin();
+  const result = db.reopenAccountingPeriod(payload?.periodKey, currentUser.id, payload?.reason);
+  return result;
+});
 ipcMain.handle('branches:list', () => { requireAdmin(); return db.listBranches(); });
 ipcMain.handle('branches:current', () => { requireAccountReady(); return db.getCurrentBranch(); });
 ipcMain.handle('branches:update', (_event, branch) => {
@@ -1830,6 +1856,10 @@ ipcMain.handle('shift:cashMovements', (_event, shiftId) => { requireAccountReady
 ipcMain.handle('currency:get', () => { requireAccountReady(); return ({
   base: db.getSetting('currency_base', 'USD'),
   secondary: db.getSetting('currency_secondary', 'TRY'),
+  // هل تظهر العملة الثانوية فعلياً على الفاتورة؟ منفصل تماماً عن مجرد ضبط
+  // رمزها - عشان صاحب المحل يقدر يحتفظ بسعر صرف محفوظ بدون ما يُجبر على
+  // إظهار عملتين في كل فاتورة لو مش عايز، أو يفعّلها وقتما يحب.
+  showSecondaryOnReceipt: db.getSetting('currency_show_secondary_on_receipt', '0') === '1',
   rate: Number(db.getSetting('currency_exchange_rate', '1')) || 1,
   taxNumber: db.getSetting('store_tax_number', ''),
 });
@@ -1839,6 +1869,7 @@ ipcMain.handle('currency:set', (_event, config) => {
   if (!(Number(config.rate) > 0)) throw new Error('سعر الصرف يجب أن يكون أكبر من صفر.');
   db.setSetting('currency_base', String(config.base || 'USD').trim().toUpperCase());
   db.setSetting('currency_secondary', String(config.secondary || '').trim().toUpperCase());
+  db.setSetting('currency_show_secondary_on_receipt', config.showSecondaryOnReceipt ? '1' : '0');
   db.setSetting('currency_exchange_rate', String(config.rate));
   db.setSetting('store_tax_number', String(config.taxNumber || '').trim());
   return { success: true };
