@@ -9,7 +9,7 @@ t('release version is compatible with v0.25 baseline', /^0\.(?:2[5-9]|[3-9]\d)\.
 t('sale validates customer branch', /if \(sale\.customerId != null\) \{[\s\S]*SELECT id FROM customers WHERE id=\? AND branch_id=\?/.test(db));
 t('sale validates table branch', /if \(sale\.tableId != null\) \{[\s\S]*restaurant_tables WHERE id=\? AND branch_id=\?/.test(db));
 t('sale validates optional shift is current branch and open', /if \(sale\.shiftId != null\) \{[\s\S]*SELECT id,status FROM shifts WHERE id=\? AND branch_id=\?[\s\S]*shift\.status !== 'open'/.test(db));
-t('sale pricing carries inventory tracking flag', /SELECT p\.id,p\.price,p\.cost,COALESCE\(i\.unit_cost,p\.cost,0\) AS branch_cost,p\.tax_rate,p\.tax_profile_id,p\.name,p\.track_inventory/.test(db) && /trackInventory: Boolean\(product\.track_inventory\)/.test(db));
+t('sale pricing carries inventory tracking flag', /SELECT p\.id,\s*p\.price,\s*p\.cost,\s*COALESCE\(i\.unit_cost,\s*p\.cost,\s*0\)\s*AS branch_cost,\s*p\.tax_rate,\s*p\.tax_profile_id,\s*p\.name,\s*p\.track_inventory/.test(db) && /trackInventory:\s*Boolean\(product\.track_inventory\)/.test(db));
 t('non-tracked sales do not mutate inventory', /if \(item\.trackInventory\) \{[\s\S]*stockResult = updateStock\.run/.test(db));
 t('split sale validates stock before commit', /for \(const item of picked\) \{[\s\S]*if \(product\.track_inventory\) \{[\s\S]*الكمية المتوفرة لم تعد كافية لتقسيم الطلب/.test(db));
 t('table close avoids stock mutation for non-tracked products', /if \(product\?\.track_inventory\) \{[\s\S]*تحديث مخزون المنتج أثناء إغلاق الطلب/.test(db));

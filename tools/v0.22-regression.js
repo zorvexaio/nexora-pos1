@@ -25,10 +25,13 @@ add('tax profiles applied before products', db.indexOf('// 1) tax profiles first
 add('sales applied before returns', db.indexOf('// 6) sales before returns/payments/ledgers') < db.indexOf('// 7) returns before payment_transactions'));
 add('returns applied before store-credit ledger and payments', db.indexOf('// 7) returns before payment_transactions') < db.indexOf('// 8) store-credit ledger before payments') && db.indexOf('// 8) store-credit ledger before payments') < db.indexOf('// 9) payments/cash after their parents exist'));
 add('purchase orders applied before supplier ledger', db.indexOf('// 5) purchase orders before supplier ledger') < db.indexOf('// 10) ledgers after their referenced sales/purchase orders exist.'));
-add('inventory snapshot precedes movement delta', db.indexOf('// 9) inventory snapshot first') < db.indexOf('for(const im of own(changes.inventory_movements||[])'));
+// ملاحظة: own() صار يستقبل اسم الكيان (entity) كوسيط ثاني لتفعيل التحقق الصارم من
+// ملكية الفرع لعمليات حركة المخزون (inventory_movements ضمن branchOwnedEntities) —
+// تعزيز أمني حقيقي، لا مجرد تنسيق. حدّثنا نمط البحث ليطابق الاستدعاء الحالي.
+add('inventory snapshot precedes movement delta', db.indexOf('// 9) inventory snapshot first') < db.indexOf("for(const im of own(changes.inventory_movements||[], 'inventory_movements')"));
 add('inventory movement UUID insert', /INSERT INTO inventory_movements\s*\(uuid\b/.test(db));
 const inventorySyncSection=db.slice(db.indexOf('// 9) inventory snapshot first'), db.indexOf('// 10) ledgers after their referenced sales/purchase orders exist'));
-const inventorySnapshotSection=inventorySyncSection.slice(0, inventorySyncSection.indexOf('for(const im of own(changes.inventory_movements||[])'));
+const inventorySnapshotSection=inventorySyncSection.slice(0, inventorySyncSection.indexOf("for(const im of own(changes.inventory_movements||[], 'inventory_movements')"));
 add('inventory snapshot avoids absolute quantity overwrite and preserves newer local state', inventorySnapshotSection.includes('UPDATE inventory SET min_quantity=?,unit_cost=CASE WHEN ? THEN unit_cost ELSE COALESCE(?,unit_cost) END,updated_at=CASE WHEN ? THEN updated_at ELSE ? END,synced=1') && !inventorySnapshotSection.includes('UPDATE inventory SET quantity='));
 const saleSchemaStart = schema.indexOf('CREATE TABLE IF NOT EXISTS sale_items');
 const saleSchemaEnd = schema.indexOf('CREATE TABLE IF NOT EXISTS bundle_items');

@@ -1,6 +1,6 @@
 {
   "name": "nexora-pos",
-  "version": "0.52.7",
+  "version": "0.52.6",
   "description": "Nexora POS - Hardened global-ready offline-first POS platform",
   "main": "main.js",
   "author": "",
@@ -112,7 +112,7 @@
       {
         "provider": "github",
         "owner": "zorvexaio",
-        "repo": "nexora-pos",
+        "repo": "nexora-pos1",
         "releaseType": "release"
       }
     ],

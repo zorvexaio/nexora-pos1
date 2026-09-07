@@ -56,12 +56,14 @@
         <h1>المحاسبة</h1>
       </div>
       <p style="color:#6b7280;margin-top:-8px">
-        تقارير مالية مبنية على القيود المرحّلة تلقائياً من المبيعات والمشتريات والمرتجعات وتسديد الديون والرواتب.
-        كل الأرقام هنا مبنية على قيود فعلية بدفتر الأستاذ، وليست تقديرية.
+        هاي الصفحة بتحسبلك أرباحك ووضعك المالي تلقائيًا من كل عملياتك (بيع، شراء، تحصيل ديون،
+        رواتب...) — ما تحتاج تدخل أي رقم بإيدك. ابدأ بتبويب <strong>"نظرة عامة"</strong> لفهم
+        وضعك بلغة بسيطة؛ باقي التبويبات تفاصيل محاسبية دقيقة لمن يحتاجها (محاسب، مراجعة سنوية...).
       </p>
 
       <div class="tabs" style="margin-bottom:16px;flex-wrap:wrap">
-        <button class="tab-btn active" data-tab="trial">ميزان المراجعة</button>
+        <button class="tab-btn active" data-tab="overview">نظرة عامة</button>
+        <button class="tab-btn" data-tab="trial">ميزان المراجعة</button>
         <button class="tab-btn" data-tab="income">قائمة الدخل</button>
         <button class="tab-btn" data-tab="balance">المركز المالي</button>
         <button class="tab-btn" data-tab="ledger">دفتر الأستاذ</button>
@@ -70,8 +72,49 @@
         <button class="tab-btn" data-tab="periods" id="periodsTabBtn">إقفال الفترات</button>
       </div>
 
+      <!-- نظرة عامة (بلغة بسيطة، مو محاسبية) -->
+      <div id="tab-overview" class="tab-panel">
+        <div class="filters-row">
+          <label style="display:flex;align-items:center;gap:6px;">من <input id="overviewFrom" type="date" /></label>
+          <label style="display:flex;align-items:center;gap:6px;">إلى <input id="overviewTo" type="date" /></label>
+          <button id="overviewLoadBtn" class="btn btn-secondary">تحديث</button>
+        </div>
+
+        <h3 style="margin-top:16px;">كيف كان أداؤك بهالفترة؟</h3>
+        <div class="kpi-row">
+          <div class="kpi-card" data-tone="indigo"><div class="kpi-body"><div class="kpi-label">مبيعاتك</div><div class="kpi-value" id="ovRevenue">—</div></div></div>
+          <div class="kpi-card" data-tone="amber"><div class="kpi-body"><div class="kpi-label">مصاريفك</div><div class="kpi-value" id="ovExpense">—</div></div></div>
+          <div class="kpi-card kpi-highlight" data-tone="brand"><div class="kpi-body"><div class="kpi-label">صافي ربحك</div><div class="kpi-value" id="ovNet">—</div></div></div>
+        </div>
+        <p id="ovNetExplain" style="color:#6b7280;margin-top:6px"></p>
+
+        <h3 style="margin-top:24px;">وضعك المالي الآن (لحظياً)</h3>
+        <div class="kpi-row">
+          <div class="kpi-card" data-tone="indigo"><div class="kpi-body"><div class="kpi-label">💵 الكاش والبنك عندك</div><div class="kpi-value" id="ovCash">—</div></div></div>
+          <div class="kpi-card" data-tone="indigo"><div class="kpi-body"><div class="kpi-label">📦 قيمة مخزونك</div><div class="kpi-value" id="ovInventory">—</div></div></div>
+          <div class="kpi-card" data-tone="amber"><div class="kpi-body"><div class="kpi-label">🧾 ديون العملاء إلك</div><div class="kpi-value" id="ovReceivable">—</div></div></div>
+          <div class="kpi-card" data-tone="amber"><div class="kpi-body"><div class="kpi-label">🏷️ ديونك للموردين</div><div class="kpi-value" id="ovPayable">—</div></div></div>
+          <div class="kpi-card kpi-highlight" data-tone="brand"><div class="kpi-body"><div class="kpi-label">🏦 صافي قيمة مشروعك</div><div class="kpi-value" id="ovEquity">—</div></div></div>
+        </div>
+        <p style="color:#6b7280;margin-top:10px">
+          "صافي قيمة مشروعك" = كل اللي تملكه (كاش + مخزون + ديون العملاء إلك) ناقص كل اللي عليك
+          (ديون للموردين وغيرها) — يعني لو صفّيت كل شيء اليوم، هاد يقريباً اللي بيضل معك.
+        </p>
+        <p style="color:#9ca3af;font-size:13px;margin-top:14px">
+          بدك تفاصيل أكتر (كل عملية لحالها، أو التأكد إن دفاتر الحسابات متوازنة بدقة محاسبية)؟
+          افتح "قائمة الدخل" أو "المركز المالي" لنفس الأرقام بتفصيل أكبر، أو "دفتر الأستاذ"
+          لكل حركة أثّرت على حساب معيّن.
+        </p>
+      </div>
+
       <!-- ميزان المراجعة -->
-      <div id="tab-trial" class="tab-panel">
+      <div id="tab-trial" class="tab-panel hidden">
+        <p style="color:#6b7280">
+          جدول تفصيلي بكل حساباتك وأرصدتها، لأغراض المراجعة المحاسبية الدقيقة — مو تقرير للقراءة
+          اليومية (استخدم "نظرة عامة" لهيك). عمودي <strong>مدين/دائن</strong> مصطلحات محاسبية:
+          كل عملية بالتطبيق بتسجّل نفس المبلغ مرتين (مدين بحساب ودائن بحساب تاني) — وشارة
+          "متوازن" تحت الجدول بتأكد إن كل شي مسجّل صح. ما تحتاج تفهمهم لتستخدم باقي الصفحة.
+        </p>
         <div class="filters-row">
           <label style="display:flex;align-items:center;gap:6px;">حتى تاريخ
             <input id="trialAsOf" type="date" />
@@ -88,6 +131,7 @@
 
       <!-- قائمة الدخل -->
       <div id="tab-income" class="tab-panel hidden">
+        <p style="color:#6b7280">تفصيل مبيعاتك ومصاريفك بندًا بندًا خلال فترة معينة — نفس أرقام "نظرة عامة" لكن مقسّمة حسب كل حساب.</p>
         <div class="filters-row">
           <label style="display:flex;align-items:center;gap:6px;">من <input id="incomeFrom" type="date" /></label>
           <label style="display:flex;align-items:center;gap:6px;">إلى <input id="incomeTo" type="date" /></label>
@@ -106,6 +150,7 @@
 
       <!-- المركز المالي -->
       <div id="tab-balance" class="tab-panel hidden">
+        <p style="color:#6b7280">تفصيل ممتلكاتك وديونك حساباً حساباً بلحظة معينة — نفس فكرة "صافي قيمة مشروعك" بـ"نظرة عامة" لكن بتفصيل أدق.</p>
         <div class="filters-row">
           <label style="display:flex;align-items:center;gap:6px;">حتى تاريخ <input id="balanceAsOf" type="date" /></label>
           <button id="balanceLoadBtn" class="btn btn-secondary">تحديث</button>
@@ -126,6 +171,7 @@
 
       <!-- دفتر الأستاذ -->
       <div id="tab-ledger" class="tab-panel hidden">
+        <p style="color:#6b7280">كل حركة أثّرت على حساب واحد بعينه (مثلاً: كل حركة على "الكاش")، بالترتيب الزمني — مفيد لو بدك تعرف "ليش تغيّر هالرقم".</p>
         <div class="filters-row">
           <select id="ledgerAccountSelect"></select>
           <label style="display:flex;align-items:center;gap:6px;">من <input id="ledgerFrom" type="date" /></label>
@@ -141,6 +187,7 @@
 
       <!-- القيود اليومية -->
       <div id="tab-journal" class="tab-panel hidden">
+        <p style="color:#6b7280">سجل خام بكل عملية محاسبية تسجّلت (تلقائيًا من مبيعاتك، أو يدويًا) — للمراجعة الدقيقة فقط.</p>
         <div class="filters-row">
           <label style="display:flex;align-items:center;gap:6px;">من <input id="journalFrom" type="date" /></label>
           <label style="display:flex;align-items:center;gap:6px;">إلى <input id="journalTo" type="date" /></label>

@@ -22,6 +22,8 @@ async function init() {
   const today = new Date().toISOString().slice(0, 10);
   document.getElementById('trialAsOf').value = today;
   document.getElementById('balanceAsOf').value = today;
+  document.getElementById('overviewFrom').value = today.slice(0, 8) + '01';
+  document.getElementById('overviewTo').value = today;
   document.getElementById('incomeFrom').value = today.slice(0, 8) + '01';
   document.getElementById('incomeTo').value = today;
   document.getElementById('journalFrom').value = today.slice(0, 8) + '01';
@@ -33,6 +35,7 @@ async function init() {
     btn.addEventListener('click', () => switchTab(btn.dataset.tab));
   });
 
+  document.getElementById('overviewLoadBtn').addEventListener('click', loadOverview);
   document.getElementById('trialLoadBtn').addEventListener('click', loadTrialBalance);
   document.getElementById('incomeLoadBtn').addEventListener('click', loadIncomeStatement);
   document.getElementById('balanceLoadBtn').addEventListener('click', loadBalanceSheet);
@@ -56,12 +59,13 @@ async function init() {
   addManualLine();
   recalcManualTotals();
 
-  await loadTrialBalance();
+  await loadOverview();
 }
 
 function switchTab(name) {
   document.querySelectorAll('.tab-btn').forEach((b) => b.classList.toggle('active', b.dataset.tab === name));
   document.querySelectorAll('.tab-panel').forEach((p) => p.classList.toggle('hidden', p.id !== `tab-${name}`));
+  if (name === 'trial' && !document.getElementById('trialBody').childElementCount) loadTrialBalance();
   if (name === 'income' && !document.getElementById('incomeRevenueBody').childElementCount) loadIncomeStatement();
   if (name === 'balance' && !document.getElementById('balanceAssetsBody').childElementCount) loadBalanceSheet();
   if (name === 'ledger' && !document.getElementById('ledgerBody').childElementCount) loadLedger();
@@ -70,6 +74,44 @@ function switchTab(name) {
 }
 
 const accountTypeLabel = (t) => ({ asset: 'أصول', liability: 'خصوم', equity: 'حقوق ملكية', revenue: 'إيراد', expense: 'مصروف' }[t] || t);
+
+// كود الحساب الافتراضي → اسم بسيط بالعربي، لبناء "نظرة عامة" بلغة غير محاسبية.
+// الحسابات المخصّصة اللي يضيفها الأدمن (خارج هالقائمة) تُجمع حسب نوعها فقط.
+const overviewCashCodes = ['1000', '1100'];
+const overviewInventoryCodes = ['1300'];
+const overviewReceivableCodes = ['1200'];
+const overviewPayableCodes = ['2000'];
+
+function sumByCode(rows, codes) {
+  return rows.filter((r) => codes.includes(r.code)).reduce((sum, r) => sum + Number(r.balance), 0);
+}
+
+async function loadOverview() {
+  const from = document.getElementById('overviewFrom').value || null;
+  const to = document.getElementById('overviewTo').value || null;
+  const [income, balance] = await Promise.all([
+    window.api.accounting.incomeStatement({ from, to }),
+    window.api.accounting.balanceSheet(new Date().toISOString().slice(0, 10)),
+  ]);
+
+  document.getElementById('ovRevenue').textContent = formatMoney(income.totalRevenue);
+  document.getElementById('ovExpense').textContent = formatMoney(income.totalExpense);
+  document.getElementById('ovNet').textContent = formatMoney(income.netIncome);
+  const netExplain = document.getElementById('ovNetExplain');
+  if (income.netIncome > 0) netExplain.textContent = `ربحت ${formatMoney(income.netIncome)} صافي بهالفترة (بعد كل المصاريف).`;
+  else if (income.netIncome < 0) netExplain.textContent = `خسرت ${formatMoney(Math.abs(income.netIncome))} صافي بهالفترة — مصاريفك تجاوزت مبيعاتك.`;
+  else netExplain.textContent = 'تعادلت مبيعاتك مع مصاريفك بالضبط بهالفترة.';
+
+  const cash = sumByCode(balance.assets, overviewCashCodes);
+  const inventory = sumByCode(balance.assets, overviewInventoryCodes);
+  const receivable = sumByCode(balance.assets, overviewReceivableCodes);
+  const payable = sumByCode(balance.liabilities, overviewPayableCodes);
+  document.getElementById('ovCash').textContent = formatMoney(cash);
+  document.getElementById('ovInventory').textContent = formatMoney(inventory);
+  document.getElementById('ovReceivable').textContent = formatMoney(receivable);
+  document.getElementById('ovPayable').textContent = formatMoney(payable);
+  document.getElementById('ovEquity').textContent = formatMoney(balance.totalEquity);
+}
 
 async function loadTrialBalance() {
   const asOf = document.getElementById('trialAsOf').value || null;

@@ -9,7 +9,7 @@ const assertions = [
   ['purchase validates product activity before creating purchase order', /productCheck = db\.prepare\('SELECT id, is_active FROM products WHERE id=\?'/],
   ['credit payment ledger prevents negative balance through applied amount', /const applied = Number\(customer\.balance \|\| 0\) - balanceAfter/],
   ['inventory has unique branch-product ownership', /UNIQUE\(branch_id, product_id\)/],
-  ['sales validate aggregated stock by product', /requestedByProduct\.set\(productId, \(requestedByProduct\.get\(productId\) \|\| 0\) \+ quantity\)/],
+  ['sales validate aggregated stock by product', /requestedByProduct\.set\(productId,\s*\(requestedByProduct\.get\(productId\)\s*\|\|\s*0\)\s*\+\s*quantity\)/],
   ['release remains compatible with v0.18 baseline', /^0\.(1[89]|[2-9]\d)\.\d+$/],
 ];
 let pass = 0;

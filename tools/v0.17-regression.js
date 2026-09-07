@@ -7,7 +7,11 @@ const main = fs.readFileSync(path.join(ROOT, 'main.js'), 'utf8');
 const reports = fs.readFileSync(path.join(ROOT, 'renderer', 'pages', 'reports.js'), 'utf8');
 
 const checks = [
-  ['pricing uses item quantity', /const lineGross = unitPrice \* Number\(item\.quantity\)/.test(db)],
+  // ملاحظة: منذ إعادة هيكلة التسعير ليعمل بوحدات صغرى (minor units) عبر core/money.js
+  // (لتفادي أخطاء الفاصلة العائمة بالحسابات المالية)، صار السطر يستخدم
+  // money.multiplyMinorQuantity(unitPriceMinor, item.quantity) بدل الضرب المباشر
+  // بالفاصلة العائمة. حدّثنا الفحص ليطابق التنفيذ الحالي الصحيح.
+  ['pricing uses item quantity', /multiplyMinorQuantity\(unitPriceMinor,\s*Number\(item\.quantity\)\)/.test(db)],
   ['pricing no longer references undefined quantity', !/const lineGross = unitPrice \* quantity;/.test(db)],
   ['shift summary is viewer-scoped', /getShiftSummary\(shiftId, branchId = null, viewerUserId = null, viewerRole = null\)/.test(db)],
   ['shift summary rejects cross-user cash visibility', /لا تملك صلاحية عرض تفاصيل جلسة صندوق فتحها موظف آخر/.test(db)],
