@@ -192,6 +192,7 @@ contextBridge.exposeInMainWorld('api', {
     createAdvance: (payload) => ipcRenderer.invoke('payroll:createAdvance', payload),
     repayAdvance: (payload) => ipcRenderer.invoke('payroll:repayAdvance', payload),
     settleAdvance: (payload) => ipcRenderer.invoke('payroll:settleAdvance', payload),
+    accrueMonth: (monthId) => ipcRenderer.invoke('payroll:accrueMonth', { monthId }),
     reopenMonth: (monthId, reason) => ipcRenderer.invoke('payroll:reopenMonth', { monthId, reason }),
   },
 

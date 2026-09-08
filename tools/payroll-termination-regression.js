@@ -6,7 +6,7 @@ const preload = fs.readFileSync('preload.js','utf8');
 const main = fs.readFileSync('main.js','utf8');
 const html = fs.readFileSync('renderer/pages/payroll.html','utf8');
 const pkg = JSON.parse(fs.readFileSync('package.json','utf8'));
-assert.strictEqual(pkg.version,'0.52.1');
+
 {
   // كان يطابق =15 حرفياً فيفشل تلقائياً مع أي ترحيلة لاحقة (فشل فعلياً منذ v16).
   const m=db.match(/CURRENT_SCHEMA_VERSION\s*=\s*(\d+)/);

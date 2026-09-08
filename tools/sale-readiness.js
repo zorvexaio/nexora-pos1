@@ -20,7 +20,8 @@ check(fs.existsSync(path.join(root, 'build', 'icon.ico')), 'Windows icon exists'
 check(fs.existsSync(path.join(root, 'build', 'icon.icns')), 'macOS icon exists');
 check(fs.existsSync(path.join(root, 'build', 'icon.png')), 'Linux icon exists');
 check(fs.existsSync(path.join(root, 'licensing', 'license.js')), 'License runtime exists');
-check(!fs.existsSync(path.join(root, 'license')), 'Legacy root license path is absent');
+const rootEntries = fs.readdirSync(root);
+check(!rootEntries.includes('license'), 'Legacy root license path is absent');
 
 for (const candidate of ['private.pem','private.key','license-private.pem','license-private.key','id_rsa']) {
   check(!fs.existsSync(path.join(root, candidate)), `No private credential ${candidate} is bundled`);

@@ -169,7 +169,7 @@ async function loadLedger() {
     .join('') || '<tr><td colspan="6" class="empty-state">لا توجد حركات بهذه الفترة</td></tr>';
 }
 
-const journalRefLabels = { sale: 'بيع', purchase_order: 'شراء', return: 'مرتجع', supplier_payment: 'دفعة مورد', customer_payment: 'تحصيل عميل', payroll_payment: 'راتب' };
+const journalRefLabels = { sale: 'بيع', purchase_order: 'شراء', return: 'مرتجع', supplier_payment: 'دفعة مورد', customer_payment: 'تحصيل عميل', payroll_payment: 'صرف راتب', payroll_accrual: 'استحقاق راتب' };
 
 async function loadJournal() {
   const from = document.getElementById('journalFrom').value || null;

@@ -14,7 +14,7 @@ const userDataPath = app.getPath('userData');
 const dbPath = path.join(userDataPath, 'pos.db');
 const keyPath = path.join(userDataPath, 'pos.db.key');
 const databaseExistedBeforeOpen = fs.existsSync(dbPath) && fs.statSync(dbPath).size > 0;
-const CURRENT_SCHEMA_VERSION = 18;
+const CURRENT_SCHEMA_VERSION = 19;
 
 function getEncryptionKey() {
   if (!safeStorage.isEncryptionAvailable()) {
@@ -204,6 +204,7 @@ function init() {
       [16, 'shifts-minor-trigger-null-fix-v16', migrateShiftsMinorTriggerNullFix],
       [17, 'accounting-extensions-v17', migrateAccountingExtensionsV17],
       [18, 'payroll-advance-disbursement-method-v18', migratePayrollAdvanceDisbursementMethodV18],
+      [19, 'payroll-accrual-v19', migratePayrollAccrualV19],
     ];
     for (const [version, name, migration] of versionedMigrations) applyVersionedMigration(version, name, migration);
     assertMigrationJournalIntegrity(versionedMigrations);
@@ -666,6 +667,68 @@ function migratePayrollAdvanceDisbursementMethodV18() {
   // الشاشة القديمة تفترض النقد ضمنياً أصلاً) بدل تخمين 'bank' أو 'other' بلا دليل.
   addColumnIfMissing('payroll_advances', "disbursement_method TEXT NOT NULL DEFAULT 'cash'");
 }
+
+// إصلاح خلل جوهري: قبل v19 كان مصروف الرواتب (6100) يُرحَّل فقط بلحظة الصرف الفعلي
+// وبقدر المبلغ المصروف حصراً (أساس نقدي). فإذا كان مستحق الشهر لعامل ما 8400 وصُرف له
+// حتى الآن 3500 فقط، تظهر قائمة الدخل مصروف 3500 لا غير، والفرق 4900 غير معترف به
+// بالمحاسبة أبداً (لا كمصروف ولا كالتزام) — هذا سبب شكوى "تناقض بين الحساب والدفع".
+// v19 يحوّل الترحيل لأساس استحقاقي حقيقي:
+//   1) عمود accrued_minor على payroll_employee_months: يحفظ كم من صافي الراتب
+//      (net_salary_minor) تم الاعتراف به مصروفاً فعلياً بدفتر اليومية لهذا الموظف/الشهر.
+//   2) حساب التزام جديد 2300 "رواتب مستحقة" — يقابل الفرق بين المستحق والمصروف فعلياً.
+//   3) syncPayrollEmployeeAccrual/accruePayrollMonth (أدناه) يرحّلان الفرق: مدين 6100 /
+//      دائن 2300 بكامل المستحق الجديد، بغض النظر عن توقيت الصرف الفعلي — والصرف الفعلي
+//      (recordPayrollPayment) بعد v19 يسدد فقط الالتزام 2300 (مدين 2300 / دائن نقد) دون
+//      إعادة تسجيل المصروف مرة ثانية.
+//   4) تصحيح فوري (catch-up) هنا لكل شهر مفتوح حالياً: يعترف بالفرق (مستحق - مصروف فعلياً
+//      حتى الآن عبر الدفعات التاريخية) كمصروف والتزام دفعة واحدة، بتاريخ اليوم (لا نُعدّل
+//      قيود فترات سابقة قد تكون مقفلة). الشهور المُقفلة بحالة 'paid' لا تحتاج تصحيحاً:
+//      إجمالي ما دُفع لها فعلياً يساوي المستحق بالتعريف (شرط إغلاق الشهر)، فمصروفها مُرحَّل
+//      بالكامل أصلاً (تراكمياً عبر قيود الدفعات السابقة)، ونُثبّت accrued_minor فيها فقط
+//      لضبط الحالة دون أي قيد جديد.
+function migratePayrollAccrualV19() {
+  addColumnIfMissing('payroll_employee_months', 'accrued_minor INTEGER NOT NULL DEFAULT 0');
+  addColumnIfMissing('payroll_months', 'accrued_at TEXT');
+  addColumnIfMissing('payroll_months', 'accrued_by INTEGER REFERENCES users(id)');
+  const branches = db.prepare('SELECT id FROM branches').all();
+  const currency = String(getGlobalProfile()?.currency_code || 'USD').toUpperCase();
+  const insertAccount = db.prepare('INSERT OR IGNORE INTO accounting_accounts(uuid,branch_id,code,name,account_type,currency_code) VALUES(?,?,?,?,?,?)');
+  const today = payrollTodayLocal().toISOString().slice(0, 10);
+  for (const branch of branches) {
+    insertAccount.run(uuid(), branch.id, '2300', 'رواتب مستحقة (التزام أجور)', 'liability', currency);
+    const accountRow = db.prepare("SELECT id FROM accounting_accounts WHERE branch_id=? AND code='2300' AND is_active=1").get(branch.id);
+    const expenseRow = db.prepare("SELECT id FROM accounting_accounts WHERE branch_id=? AND code='6100' AND is_active=1").get(branch.id);
+    if (!accountRow || !expenseRow) continue; // فرع بلا وحدة محاسبية مفعّلة بعد — لا شيء لتصحيحه هنا.
+    const months = db.prepare("SELECT * FROM payroll_months WHERE branch_id=?").all(branch.id);
+    for (const month of months) {
+      const employeeMonths = db.prepare('SELECT m.*,e.full_name FROM payroll_employee_months m JOIN payroll_employees e ON e.id=m.employee_id WHERE m.month_id=?').all(month.id);
+      for (const em of employeeMonths) {
+        // حارس أمان: لا تُعِد معالجة صف سبق ترحيله (accrued_minor محفوظ فعلاً) — يمنع
+        // تكرار القيد التصحيحي لو نُفِّذت هذه الدالة أكثر من مرة (مثلاً يدوياً بالاختبار).
+        if (Number(em.accrued_minor || 0) !== 0) continue;
+        const netMinor = Number(em.net_salary_minor || 0);
+        if (String(month.status || 'open') === 'paid') {
+          // مصروفه بالكامل أصلاً عبر قيود الدفعات التاريخية — فقط نضبط العلامة، بلا قيد جديد.
+          db.prepare('UPDATE payroll_employee_months SET accrued_minor=? WHERE id=?').run(netMinor, em.id);
+          continue;
+        }
+        const paidMinor = Number(db.prepare('SELECT COALESCE(SUM(amount_minor),0) x FROM payroll_payments WHERE branch_id=? AND month_id=? AND employee_id=?').get(branch.id, month.id, em.employee_id).x || 0);
+        const gapMinor = Math.max(0, netMinor - paidMinor); // الجزء المستحق غير المرحَّل محاسبياً بعد.
+        if (gapMinor > 0) {
+          db.prepare(`INSERT INTO accounting_journal_entries(uuid,branch_id,reference_type,reference_id,memo,currency_code,entry_date,status,created_by,synced) VALUES(?,?,?,?,?,?,?,'posted',NULL,0)`)
+            .run(uuid(), branch.id, 'payroll_accrual', em.id, `تصحيح استحقاق راتب (ترحيل v19): ${em.full_name} — ${month.month_key}`, currency, today);
+          const entryId = db.prepare('SELECT last_insert_rowid() id').get().id;
+          const insertLine = db.prepare('INSERT INTO accounting_journal_lines(entry_id,account_id,debit_minor,credit_minor,memo) VALUES(?,?,?,?,?)');
+          insertLine.run(entryId, expenseRow.id, gapMinor, 0, `استحقاق راتب غير مُرحَّل سابقاً: ${em.full_name} — ${month.month_key}`);
+          insertLine.run(entryId, accountRow.id, 0, gapMinor, `التزام راتب مستحق: ${em.full_name} — ${month.month_key}`);
+        }
+        // accrued_minor = paidMinor + gapMinor = netMinor دائماً بعد التصحيح (سواء وُجد قيد جديد أو لا).
+        db.prepare('UPDATE payroll_employee_months SET accrued_minor=? WHERE id=?').run(paidMinor + gapMinor, em.id);
+      }
+    }
+  }
+}
+
 function migrateAccountingExtensionsV17() {
   const branches = db.prepare('SELECT id FROM branches').all();
   const currency = String(getGlobalProfile()?.currency_code || 'USD').toUpperCase();
@@ -4396,6 +4459,59 @@ function getPayrollEmployeePaymentState(monthId, employeeId) {
   return { item, netMinor, paidMinor, remainingMinor: Math.max(0, netMinor - paidMinor), currencyMinorUnit: unit };
 }
 
+// يطابق المصروف المُرحَّل بدفتر اليومية (6100) مع صافي الراتب المستحق الحالي للموظف بهذا
+// الشهر (net_salary_minor بعد إعادة الحساب)، عبر قيد بالفرق مقابل التزام "رواتب مستحقة"
+// (2300). يُستخدم قبل أي صرف فعلي (recordPayrollPayment) لضمان أن ما يُصرف مغطّى دائماً
+// باستحقاق مُعترف به مسبقاً بالمحاسبة، ويُستخدم أيضاً بشكل مستقل (accruePayrollMonth)
+// كإجراء استحقاق شهري صريح يستطيع المحاسب تشغيله وقتما يريد (مثلاً لإقفال شهري) دون
+// انتظار صرف فعلي لأي عامل. إن قلّ المستحق عن آخر مبلغ مُرحَّل (تعديل حضور/خصم لاحق)
+// يُرحَّل قيد عكسي بالفرق تلقائياً بنفس الطريقة.
+function syncPayrollEmployeeAccrual(monthId, employeeId, { createdBy = null, entryDate = null } = {}) {
+  const b = getCurrentBranch();
+  const m = payrollMonth(monthId);
+  const em = recalcPayrollEmployeeMonth(m.id, Number(employeeId));
+  const netMinor = Number(em.net_salary_minor || 0);
+  const accruedMinor = Number(em.accrued_minor || 0);
+  const deltaMinor = netMinor - accruedMinor;
+  if (deltaMinor === 0) return { netMinor, accruedMinor, deltaMinor: 0 };
+  const date = String(entryDate || payrollTodayLocal().toISOString().slice(0, 10)).slice(0, 10);
+  const absMinor = Math.abs(deltaMinor);
+  const lines = deltaMinor > 0
+    ? [
+        { accountId: getAccountingAccountId(b.id, '6100'), debitMinor: absMinor, creditMinor: 0, memo: `استحقاق راتب ${em.full_name} — ${m.month_key}` },
+        { accountId: getAccountingAccountId(b.id, '2300'), debitMinor: 0, creditMinor: absMinor, memo: `التزام راتب مستحق ${em.full_name} — ${m.month_key}` },
+      ]
+    : [
+        { accountId: getAccountingAccountId(b.id, '2300'), debitMinor: absMinor, creditMinor: 0, memo: `تصحيح نزولي لالتزام راتب ${em.full_name} — ${m.month_key}` },
+        { accountId: getAccountingAccountId(b.id, '6100'), debitMinor: 0, creditMinor: absMinor, memo: `تصحيح نزولي لمصروف راتب ${em.full_name} — ${m.month_key}` },
+      ];
+  insertPostedJournalEntry({
+    branchId: b.id, memo: `استحقاق راتب: ${em.full_name} (${m.month_key})`, referenceType: 'payroll_accrual', referenceId: em.id, entryDate: date,
+    lines, createdBy,
+  });
+  db.prepare('UPDATE payroll_employee_months SET accrued_minor=?,synced=0 WHERE id=?').run(netMinor, em.id);
+  return { netMinor, accruedMinor: netMinor, deltaMinor };
+}
+
+// إجراء استحقاق صريح لكل عمال شهر رواتب معيّن دفعة واحدة — يسمح للمحاسب بترحيل كامل
+// مصروف الشهر بقائمة الدخل فوراً (وإظهار الالتزام المقابل بالمركز المالي) دون انتظار أي
+// صرف فعلي. آمن للتشغيل عدة مرات (يرحّل الفرق فقط إن تغيّر شيء منذ آخر تشغيل).
+function accruePayrollMonth(monthId, { createdBy = null } = {}) {
+  const b = getCurrentBranch();
+  const m = payrollMonth(monthId);
+  const rows = db.prepare('SELECT m.employee_id FROM payroll_employee_months m JOIN payroll_employees e ON e.id=m.employee_id WHERE m.month_id=? AND e.branch_id=?').all(m.id, b.id);
+  const tx = db.transaction(() => {
+    let totalDeltaMinor = 0, employeesAccrued = 0;
+    for (const r of rows) {
+      const result = syncPayrollEmployeeAccrual(m.id, r.employee_id, { createdBy });
+      if (result.deltaMinor !== 0) { totalDeltaMinor += result.deltaMinor; employeesAccrued += 1; }
+    }
+    db.prepare(`UPDATE payroll_months SET accrued_at=datetime('now'),accrued_by=?,synced=0 WHERE id=?`).run(createdBy || null, m.id);
+    return { employeesAccrued, totalDeltaMinor };
+  });
+  return tx();
+}
+
 function addPayrollV2Transaction({monthId,employeeId,type,amount,quantity,eventDate,reason,createdBy,paidFromRegister,overtimeMultiplier=1.5}) {
   const b=getCurrentBranch(), m=payrollMonth(monthId);
   const unit = Number(getGlobalProfile()?.currency_minor_unit || 2);
@@ -4644,6 +4760,10 @@ function recordPayrollPayment({monthId, employeeId, amount, method='cash', payme
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error('تاريخ صرف الراتب غير صالح.');
   if (date.slice(0,7) !== m.month_key) throw new Error('تاريخ صرف الراتب يجب أن يكون ضمن الشهر المحدد.');
   const tx = db.transaction(() => {
+    // نضمن أولاً أن كامل المستحق الحالي للموظف هذا الشهر مُعترف به مصروفاً بدفتر اليومية
+    // (مدين 6100 / دائن 2300 "رواتب مستحقة") قبل أي صرف فعلي — هذا يمنع نهائياً ظهور
+    // مصروف رواتب أقل من المستحق الحقيقي بقائمة الدخل (كان يظهر فقط بقدر ما صُرف نقداً).
+    syncPayrollEmployeeAccrual(m.id, employeeId, { createdBy, entryDate: date });
     let cashMovementId = null;
     if (method === 'cash') {
       const shift = getOpenShift();
@@ -4667,15 +4787,17 @@ function recordPayrollPayment({monthId, employeeId, amount, method='cash', payme
     const finalSalaryPayment = nextPaid >= state.netMinor;
     const scheduledRecoveryMinor = finalSalaryPayment ? money.toMinor(Number(state.item.advance_total || 0), unit) : 0;
     const recovery = scheduledRecoveryMinor > 0 ? recordPayrollSalaryAdvanceRecovery({monthId:m.id,employeeId:Number(employeeId),amountMinor:scheduledRecoveryMinor,createdBy,sourcePaymentId:Number(info.lastInsertRowid)}) : {recoveredMinor:0};
-    // قيد محاسبي: مدين مصروف رواتب بكامل المبلغ المصروف فعلياً هذه الدفعة، دائن حساب
-    // التسوية (نقد/بنك). ملاحظة: هذا ترحيل على أساس نقدي (وقت الصرف الفعلي) وليس
-    // استحقاقي (وقت اكتساب الراتب) — تحسين مستقبلي محتمل بدفعة لاحقة (مخصص رواتب مستحقة).
+    // قيد محاسبي (أساس استحقاقي، بعد v19): المصروف (6100) رُحِّل مسبقاً بالكامل بخطوة
+    // الاستحقاق أعلاه (syncPayrollEmployeeAccrual) — هذا القيد هنا يُسوّي فقط الالتزام:
+    // مدين "رواتب مستحقة" (2300) بمقدار الصرف الفعلي، دائن حساب التسوية (نقد/بنك). هذا
+    // يمنع تسجيل المصروف مرتين، ويجعل قائمة الدخل تعكس المستحق الحقيقي دوماً بينما يعكس
+    // المركز المالي الرصيد المتبقي غير المصروف بعد بحساب الالتزام.
     // استرداد السلف لا يُرحَّل هنا لأن صرف السلفة نفسها لم يُرحَّل أصلاً بهذه الدفعة.
     const settleCode = method === 'cash' ? '1000' : '1100';
     insertPostedJournalEntry({
       branchId: b.id, memo: `صرف راتب: ${state.item.full_name}`, referenceType: 'payroll_payment', referenceId: Number(info.lastInsertRowid), entryDate: date,
       lines: [
-        { accountId: getAccountingAccountId(b.id, '6100'), debitMinor: amountMinor, creditMinor: 0, memo: `راتب ${state.item.full_name}` },
+        { accountId: getAccountingAccountId(b.id, '2300'), debitMinor: amountMinor, creditMinor: 0, memo: `تسوية مستحق راتب ${state.item.full_name}` },
         { accountId: getAccountingAccountId(b.id, settleCode), debitMinor: 0, creditMinor: amountMinor, memo: `صرف راتب ${state.item.full_name}` },
       ], createdBy,
     });
@@ -6057,6 +6179,9 @@ module.exports = {
   addPayrollV2Transaction,
   removePayrollV2Transaction,
   recordPayrollPayment,
+  accruePayrollMonth,
+  syncPayrollEmployeeAccrual,
+  migratePayrollAccrualV19, // مُصدَّرة أيضاً كأداة دعم فنّي: تشغيلها يدوياً آمن ومتكرر (idempotent) إن احتاج الدعم إعادة فحص أي فرع/تركيب قديم.
   listPayrollPayments,
   createPayrollAdvance,
   listPayrollAdvances,

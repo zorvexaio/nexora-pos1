@@ -14,7 +14,7 @@ const checks = [];
 function add(id, status, detail, blocking=false){checks.push({id,status,detail,blocking});}
 function runNode(script,args=[]){const r=spawnSync(process.execPath,[path.join(root,'tools',script),...args],{cwd:root,encoding:'utf8'});return {ok:r.status===0,output:`${r.stdout||''}\n${r.stderr||''}`.trim()};}
 
-add('source-version', /^0\.52\.1$/.test(pkg.version) ? 'PASS':'FAIL', `package version=${pkg.version}`, true);
+add('source-version', fs.readFileSync(path.join(root,'VERSION'),'utf8').trim() === pkg.version ? 'PASS':'FAIL', `package version=${pkg.version}`, true);
 add('node-engine', pkg.engines?.node === '>=22.12.0' ? 'PASS':'FAIL', `required=${pkg.engines?.node}`, true);
 add('migration-chain', runNode('migration-chain-regression.js').ok ? 'PASS':'FAIL', 'schema journal is v2..v15 and schema.sql contains Payroll V2', true);
 const sourceSuite = runNode('test-engineering-source-runner.js');

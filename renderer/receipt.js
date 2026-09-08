@@ -112,7 +112,18 @@ function renderReceipt(sale, branding, currency = {}) {
 }
 
 function formatDate(str) {
-  const d = new Date(str.replace(' ', 'T') + 'Z');
+  // بعض الحقول (مثل sale.created_at) تُخزَّن بصيغة SQLite القديمة "YYYY-MM-DD HH:MM:SS"
+  // بدون منطقة زمنية، بينما حقول أخرى (مثل sale.delivery_time، الناتجة عن
+  // computeDeliveryTimeIso() بصفحة الكاشير) تُخزَّن كصيغة ISO كاملة تحتوي أصلاً على
+  // "T" و"Z" (مثال: 2026-09-09T02:30:00.000Z). المنطق القديم كان يضيف "Z" دائماً
+  // بشكل أعمى، فإذا كانت القيمة تحتوي "Z" أصلاً يصير عندنا "...ZZ" وهو تاريخ غير
+  // صالح (Invalid Date) — وهذا بالضبط ما كان يظهر بالفاتورة بدل وقت التسليم الفعلي.
+  // الإصلاح: نضيف "Z" فقط إذا لم تكن القيمة تحتوي أصلاً على منطقة زمنية صريحة.
+  const normalized = String(str || '').trim();
+  const hasTimezone = /Z$|[+-]\d{2}:?\d{2}$/.test(normalized);
+  const isoCandidate = normalized.includes('T') ? normalized : normalized.replace(' ', 'T');
+  const d = new Date(hasTimezone ? isoCandidate : isoCandidate + 'Z');
+  if (isNaN(d.getTime())) return normalized || '—';
   const lang = document.documentElement.getAttribute('data-lang') || 'ar';
   const LOCALES = { ar: 'ar-EG', tr: 'tr-TR', en: 'en-US' };
   return d.toLocaleString(LOCALES[lang] || 'ar-EG', { dateStyle: 'medium', timeStyle: 'short' });

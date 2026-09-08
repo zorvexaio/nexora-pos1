@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: file:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-src 'none';">
-  <title>الحزم والخصومات التجميعية</title>
+  <title>العروض والخصومات التجميعية</title>
   <link rel="stylesheet" href="../style.css" />
 </head>
 <body>
@@ -16,7 +16,7 @@
         <a href="shift.html" data-i18n="nav.cashSession">الصندوق</a>
         <a href="returns.html" data-roles="admin,manager" data-i18n="nav.returns">مرتجعات</a>
         <a href="products.html" data-roles="admin,manager" data-i18n="nav.products">المنتجات</a>
-        <a href="bundles.html" class="active" data-roles="admin,manager" data-i18n="nav.bundles">الحزم</a>
+        <a href="bundles.html" class="active" data-roles="admin,manager" data-i18n="nav.bundles">العروض</a>
         <a href="inventory.html" data-roles="admin,manager" data-i18n="nav.inventory">المخزون</a>
         <a href="customers.html" data-roles="admin,manager" data-i18n="nav.customers">العملاء</a>
         <a href="suppliers.html" data-roles="admin,manager" data-i18n="nav.suppliers">الموردون والشراء</a>
@@ -43,11 +43,11 @@
 
     <div class="products-page">
       <div class="page-header">
-        <h1>الحزم والخصومات التجميعية</h1>
-        <button id="addBundleBtn" class="btn btn-primary">+ حزمة جديدة</button>
+        <h1>العروض والخصومات التجميعية</h1>
+        <button id="addBundleBtn" class="btn btn-primary">+ عرض جديد</button>
       </div>
       <div class="empty-state" style="font-size:12px;margin-bottom:8px;">
-        الحزمة: مجموعة منتجات محددة، إذا توفّرت كلها بسلة الكاشير بالكمية المطلوبة، يُطبَّق الخصم تلقائياً بدون أي تدخّل من الكاشير.
+        العرض: مجموعة منتجات محددة، إذا توفّرت كلها بسلة الكاشير بالكمية المطلوبة، يُطبَّق الخصم تلقائياً بدون أي تدخّل من الكاشير.
       </div>
 
       <table class="products-table">
@@ -62,28 +62,28 @@
         </thead>
         <tbody id="bundlesTableBody"></tbody>
       </table>
-      <div id="emptyState" class="empty-state" style="display:none">لا توجد حزم بعد.</div>
+      <div id="emptyState" class="empty-state" style="display:none">لا توجد عروض بعد.</div>
     </div>
   </div>
 
-  <!-- نافذة إضافة/تعديل حزمة -->
+  <!-- نافذة إضافة/تعديل عرض -->
   <div id="bundleModal" class="modal-overlay hidden">
     <div class="modal">
-      <h2 id="modalTitle">حزمة جديدة</h2>
+      <h2 id="modalTitle">عرض جديد</h2>
       <form id="bundleForm">
         <input type="hidden" id="bundleId" />
 
         <div class="form-grid">
           <div class="form-field full">
-            <label>اسم الحزمة *</label>
+            <label>اسم العرض *</label>
             <input id="fieldName" type="text" required placeholder="مثال: عرض الغداء" />
           </div>
 
           <div class="form-field">
             <label>نوع الخصم</label>
             <select id="fieldDiscountType">
-              <option value="percent">نسبة % على إجمالي منتجات الحزمة</option>
-              <option value="fixed_price">سعر ثابت للحزمة كاملة</option>
+              <option value="percent">نسبة % على إجمالي منتجات العرض</option>
+              <option value="fixed_price">سعر ثابت للعرض كامل</option>
             </select>
           </div>
           <div class="form-field">
@@ -93,11 +93,11 @@
 
           <div class="form-field checkbox full">
             <input id="fieldIsActive" type="checkbox" checked />
-            <label for="fieldIsActive">حزمة فعّالة (تُطبَّق تلقائياً بالكاشير)</label>
+            <label for="fieldIsActive">عرض فعّال (يُطبَّق تلقائياً بالكاشير)</label>
           </div>
         </div>
 
-        <h3 style="margin:14px 0 6px;">منتجات الحزمة</h3>
+        <h3 style="margin:14px 0 6px;">منتجات العرض</h3>
         <div class="form-grid">
           <div class="form-field">
             <label>المنتج</label>
@@ -108,7 +108,7 @@
             <input id="itemQuantityInput" type="number" step="0.01" min="0.01" value="1" />
           </div>
         </div>
-        <button type="button" id="addItemBtn" class="btn btn-secondary btn-sm">+ إضافة للحزمة</button>
+        <button type="button" id="addItemBtn" class="btn btn-secondary btn-sm">+ إضافة للعرض</button>
 
         <table class="products-table" style="margin-top:10px;">
           <thead>
@@ -116,7 +116,7 @@
           </thead>
           <tbody id="bundleItemsBody"></tbody>
         </table>
-        <div id="bundleItemsEmpty" class="empty-state" style="font-size:12px;">لم تُضف أي منتجات للحزمة بعد.</div>
+        <div id="bundleItemsEmpty" class="empty-state" style="font-size:12px;">لم تُضف أي منتجات للعرض بعد.</div>
 
         <div class="modal-actions">
           <button type="button" id="cancelBtn" class="btn btn-secondary">إلغاء</button>

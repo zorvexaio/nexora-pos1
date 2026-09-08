@@ -98,7 +98,7 @@ async function toggleActive(b) {
 }
 
 async function removeBundle(b) {
-  if (!confirm(`${t('bundles.confirmDeletePrefix', 'حذف حزمة')} "${b.name}"؟`)) return;
+  if (!confirm(`${t('bundles.confirmDeletePrefix', 'حذف عرض')} "${b.name}"؟`)) return;
   await window.api.bundles.delete(b.id);
   await loadBundles();
 }
@@ -116,7 +116,7 @@ function bundleToPayload(b) {
 
 function openModal(bundle) {
   currentEditId = bundle ? bundle.id : null;
-  modalTitle.textContent = bundle ? 'تعديل حزمة' : 'حزمة جديدة';
+  modalTitle.textContent = bundle ? 'تعديل عرض' : 'عرض جديد';
   fieldName.value = bundle ? bundle.name : '';
   fieldDiscountType.value = bundle ? bundle.discount_type : 'percent';
   fieldDiscountValue.value = bundle ? bundle.discount_value : '';
@@ -134,7 +134,7 @@ function closeModal() {
 }
 
 function updateDiscountValueLabel() {
-  discountValueLabel.textContent = fieldDiscountType.value === 'fixed_price' ? t('bundles.fixedPriceLabel','السعر الثابت للحزمة') : t('bundles.discountValue','قيمة الخصم %');
+  discountValueLabel.textContent = fieldDiscountType.value === 'fixed_price' ? t('bundles.fixedPriceLabel','السعر الثابت للعرض') : t('bundles.discountValue','قيمة الخصم %');
 }
 
 function addItemToBundle() {
@@ -183,11 +183,11 @@ async function saveBundle(e) {
   // الشرط الصحيح: منتج واحد على الأقل، وإذا كان منتجاً واحداً فقط لازم كميته أكبر من 1
   // (وإلا الخصم على قطعة وحدة مالوش معنى "تجميعي" — يُعدَّل سعر المنتج مباشرة بدل حزمة).
   if (currentItems.length === 0) {
-    alert(ts('أضف منتجاً واحداً على الأقل للحزمة.'));
+    alert(ts('أضف منتجاً واحداً على الأقل للعرض.'));
     return;
   }
   if (currentItems.length === 1 && Number(currentItems[0].quantity) <= 1) {
-    alert(ts('لعرض منتج واحد فقط، يجب أن تكون الكمية المطلوبة أكبر من 1 (مثال: 3 قطع بسعر خاص). لخصم على قطعة واحدة، عدّل سعر المنتج مباشرة بدل إنشاء حزمة.'));
+    alert(ts('لعرض منتج واحد فقط، يجب أن تكون الكمية المطلوبة أكبر من 1 (مثال: 3 قطع بسعر خاص). لخصم على قطعة واحدة، عدّل سعر المنتج مباشرة بدل إنشاء عرض.'));
     return;
   }
 

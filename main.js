@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, clipboard } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, clipboard, Menu } = require('electron');
 const path = require('path');
 const { pathToFileURL } = require('url');
 const fs = require('fs');
@@ -655,6 +655,25 @@ app.on('web-contents-created', (_event, webContents) => {
     const allowed = url.startsWith('file://');
     if (!allowed) event.preventDefault();
   });
+  // Electron لا يعرض أي قائمة عند الضغط بزر الفأرة الأيمن افتراضياً (خلافاً لمتصفح
+  // عادي) — لازم نبنيها يدوياً. بدونها المستخدم ما عنده أي طريقة لنسخ/لصق نص
+  // (مثلاً اسم منتج، رقم فاتورة، ملاحظة) غير اختصارات الكيبورد، وهاد مو واضح للكل.
+  webContents.on('context-menu', (_e, params) => {
+    const items = [];
+    if (params.isEditable) {
+      items.push({ label: 'قص', enabled: params.editFlags.canCut, click: () => webContents.cut() });
+      items.push({ label: 'نسخ', enabled: params.editFlags.canCopy, click: () => webContents.copy() });
+      items.push({ label: 'لصق', enabled: params.editFlags.canPaste, click: () => webContents.paste() });
+      if (params.editFlags.canSelectAll) {
+        items.push({ type: 'separator' });
+        items.push({ label: 'تحديد الكل', click: () => webContents.selectAll() });
+      }
+    } else if (params.selectionText) {
+      items.push({ label: 'نسخ', click: () => webContents.copy() });
+    }
+    if (!items.length) return;
+    Menu.buildFromTemplate(items).popup({ window: BrowserWindow.fromWebContents(webContents) || undefined });
+  });
 });
 
 // طبقة CSP دفاعية تمنع حقن script/صفحات خارجية حتى لو تسرب محتوى غير موثوق إلى renderer.
@@ -1081,6 +1100,16 @@ function buildPayrollSlipHtml(state, month, profile={}) {
 }
 ipcMain.handle('payroll:printSlip', async (_event,{monthId,employeeId}={})=>{requireAdmin();const state=db.getPayrollV2Employee(Number(monthId),Number(employeeId));const month=db.getPayrollV2Month(state.employee?.month_key||String(new Date().toISOString()).slice(0,7));const html=buildPayrollSlipHtml(state,month,db.getGlobalProfile()||{});const win=new BrowserWindow({show:false,webPreferences:{contextIsolation:true,nodeIntegration:false,sandbox:true}});try{await win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);return await new Promise(resolve=>win.webContents.print({silent:false,printBackground:true},(success,failureReason)=>resolve({success,reason:failureReason||null})));}finally{win.destroy();}});
 ipcMain.handle('payroll:exportSlipPdf', async (_event,{monthId,employeeId}={})=>{requireAdmin();const state=db.getPayrollV2Employee(Number(monthId),Number(employeeId));const month=db.getPayrollV2Month(state.employee?.month_key||String(new Date().toISOString()).slice(0,7));const html=buildPayrollSlipHtml(state,month,db.getGlobalProfile()||{});const choice=await dialog.showSaveDialog(mainWindow,{title:'حفظ قسيمة الراتب PDF',defaultPath:`payslip-${employeeId}-${month.month_key}.pdf`,filters:[{name:'PDF',extensions:['pdf']}]});if(choice.canceled||!choice.filePath)return{success:false,canceled:true};const win=new BrowserWindow({show:false,webPreferences:{contextIsolation:true,nodeIntegration:false,sandbox:true}});try{await win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);const pdf=await win.webContents.printToPDF({printBackground:true,pageSize:'A4'});fs.writeFileSync(choice.filePath,pdf);return{success:true,path:choice.filePath};}finally{win.destroy();}});
+
+ipcMain.handle('payroll:accrueMonth', (_event, { monthId } = {}) => {
+  // ترحيل استحقاق صريح: يعترف بكامل مصروف رواتب الشهر بقائمة الدخل فوراً (مدين 6100)
+  // مقابل التزام "رواتب مستحقة" (دائن 2300)، بغض النظر عن نسبة ما صُرف فعلياً. يمكن
+  // للمحاسب تشغيله في أي وقت (مثلاً عند إقفال شهري) وهو آمن للتكرار.
+  requireAdmin();
+  const result = db.accruePayrollMonth(Number(monthId), { createdBy: currentUser.id });
+  db.logAudit({ userId: currentUser.id, action: 'payroll_month_accrued', entityType: 'payroll_month', entityId: monthId, details: result });
+  return result;
+});
 
 ipcMain.handle('payroll:reopenMonth', (_event, { monthId, reason } = {}) => {
   requireAdmin();

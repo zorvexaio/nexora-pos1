@@ -633,6 +633,13 @@ table.products-table, table.audit-table {
   .receipt-body { background: #fff; padding: 0; align-items: stretch; }
   .receipt { box-shadow: none; width: 100%; border-radius: 0; }
 
+  /* الألوان الرمادية الفاتحة (meta, item-note, footer...) مصمَّمة للشاشة، وعلى طابعات
+     الفواتير الحرارية بالذات بتطبع باهتة أو غير واضحة أبداً — وهاد سبب حقيقي لفرق
+     الوضوح مقارنة ببرامج تانية بتفرض أسود صافي دايماً وقت الطباعة. نفرض هون نفس الشي:
+     كل نص الفاتورة أسود صافي عند الطباعة (الشاشة تبقى بألوانها الأصلية كما هي). */
+  .receipt, .receipt * { color: #000 !important; }
+  .receipt-divider, .receipt-total, .receipt-row { border-color: #000 !important; }
+
   /* طباعة عامة لأي صفحة داخل التطبيق (مثلاً زر "طباعة" بصفحة التقارير) —
      سابقاً ما كان في أي قاعدة طباعة عامة، فلو حدا ضغط Ctrl+P بأي صفحة غير
      الفاتورة كانت تطبع الشريط العلوي والقائمة الجانبية كمان بدون داعي. */

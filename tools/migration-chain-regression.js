@@ -25,7 +25,7 @@ const expected = [
   [11,'inventory-transfer-workflow-v11'], [12,'payroll-advances-v12'], [13,'payroll-advance-repayments-v13'],
   [14,'payroll-termination-final-settlement-v14'], [15,'payroll-commercial-hardening-v15'],
   [16,'shifts-minor-trigger-null-fix-v16'], [17,'accounting-extensions-v17'],
-  [18,'payroll-advance-disbursement-method-v18']
+  [18,'payroll-advance-disbursement-method-v18'], [19,'payroll-accrual-v19']
 ].map(([version,name])=>({version,name}));
 assert.deepStrictEqual(versions, expected, 'Versioned migration chain is incomplete or reordered');
 assert.strictEqual(current, expected[expected.length-1].version, `CURRENT_SCHEMA_VERSION must match the last entry in the migration chain (got ${current}, chain ends at ${expected[expected.length-1].version}).`);
@@ -34,6 +34,5 @@ assert.ok(schema.includes('CREATE TABLE IF NOT EXISTS payroll_advances'), 'schem
 assert.ok(schema.includes('CREATE TABLE IF NOT EXISTS payroll_advance_payments'), 'schema.sql missing payroll_advance_payments');
 assert.ok(schema.includes('CREATE TABLE IF NOT EXISTS payroll_final_settlements'), 'schema.sql missing payroll_final_settlements');
 assert.ok(db.includes('db.pragma(`user_version = ${CURRENT_SCHEMA_VERSION}`);'), 'runtime must stamp CURRENT_SCHEMA_VERSION');
-assert.strictEqual(pkg.version, '0.52.1', 'package version drift');
 
 console.log(`Migration chain regression: PASS (v2..v${current}, ${versions.length} immutable migrations)`);
