@@ -3,6 +3,30 @@
 // المحاسبة (قائمة الدخل + ميزان المراجعة) يعكس المستحق الحقيقي 8400 كمصروف، مع ظهور
 // الفرق كالتزام "رواتب مستحقة" (2300) بدل أن يكون مفقوداً تماماً كما كان سابقاً.
 const assert = require('assert');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const Module = require('module');
+
+// يعزل الاختبار عن قاعدة البيانات الحقيقية (production pos.db) بمجلد مؤقت مستقل،
+// ويموّه موديول electron بنفس نمط loyalty-redemption-regression.js/claude-accounting-e2e.js
+// حتى يعمل تحت node العادي بدون فتح تطبيق Electron فعلي.
+const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nexora-payroll-accrual-v19-'));
+const originalLoad = Module._load;
+Module._load = function (request, parent, isMain) {
+  if (request === 'electron') {
+    return {
+      app: { getPath: () => dataDir },
+      safeStorage: {
+        isEncryptionAvailable: () => true,
+        encryptString: (value) => Buffer.from(String(value), 'utf8'),
+        decryptString: (value) => Buffer.from(value).toString('utf8'),
+      },
+    };
+  }
+  return originalLoad.apply(this, arguments);
+};
+
 const db = require('../database/db.js');
 db.init(); // إنشاء الجداول إن لم تكن موجودة — بالضبط كما يفعل main.js عند الإقلاع.
 

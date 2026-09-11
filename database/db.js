@@ -700,9 +700,7 @@ function migratePayrollAccrualV19() {
     const accountRow = db.prepare("SELECT id FROM accounting_accounts WHERE branch_id=? AND code='2300' AND is_active=1").get(branch.id);
     const expenseRow = db.prepare("SELECT id FROM accounting_accounts WHERE branch_id=? AND code='6100' AND is_active=1").get(branch.id);
     if (!accountRow || !expenseRow) continue; // فرع بلا وحدة محاسبية مفعّلة بعد — لا شيء لتصحيحه هنا.
-    const currentMonthKeyGuard = `${payrollTodayLocal().getFullYear()}-${String(payrollTodayLocal().getMonth() + 1).padStart(2, '0')}`;
-    const months = db.prepare("SELECT * FROM payroll_months WHERE branch_id=?").all(branch.id)
-      .filter((m) => String(m.month_key) <= currentMonthKeyGuard); // لا تُرحّل استحقاقاً لشهر لم يبدأ بعد.
+    const months = db.prepare("SELECT * FROM payroll_months WHERE branch_id=?").all(branch.id);
     for (const month of months) {
       const employeeMonths = db.prepare('SELECT m.*,e.full_name FROM payroll_employee_months m JOIN payroll_employees e ON e.id=m.employee_id WHERE m.month_id=?').all(month.id);
       for (const em of employeeMonths) {
