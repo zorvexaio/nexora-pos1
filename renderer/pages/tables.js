@@ -50,7 +50,7 @@ async function loadTables() {
   } catch (err) {
     latestTables = [];
     renderPageEmptyState(grid, { icon: '!', title: 'تعذر تحميل الطاولات', message: err.message || 'حدث خطأ غير متوقع.', actionText: 'إعادة المحاولة', onAction: loadTables });
-    showToast('تعذر تحميل الطاولات: ' + (err.message || err), 'error');
+    showToast(t('tables.toast.loadFailed') + (err.message || err), 'error');
   } finally {
     grid.setAttribute('aria-busy', 'false');
   }
@@ -58,24 +58,24 @@ async function loadTables() {
 
 function openMergeModal() {
   const occupied = latestTables.filter(t => t.occupied);
-  if (!occupied.length) { showToast('لا توجد طاولة مشغولة لدمجها.', 'info'); return; }
+  if (!occupied.length) { showToast(t('tables.toast.noOccupiedTable'), 'info'); return; }
   mergeSourceTable.innerHTML = occupied.map(row => `<option value="${row.id}">${escapeHtml(row.name)} — ${window.t ? window.t('tables.occupiedPrefix', 'مشغولة') : 'مشغولة'} — ${row.openTotal.toFixed(2)}</option>`).join('');
   mergeTargetTable.innerHTML = latestTables.map(t => `<option value="${t.id}">${escapeHtml(t.name)}${t.occupied ? ' ' + ts('(مشغولة)') : ''}</option>`).join('');
   const alternative = latestTables.find(t => t.id !== occupied[0].id);
-  if (!alternative) { showToast('أضف طاولة ثانية أولاً.', 'info'); return; }
+  if (!alternative) { showToast(t('tables.toast.addSecondTableFirst'), 'info'); return; }
   mergeTargetTable.value = String(alternative.id);
   mergeTablesModal.classList.remove('hidden');
 }
 
 async function mergeSelectedTables() {
   const source = Number(mergeSourceTable.value), target = Number(mergeTargetTable.value);
-  if (source === target) { showToast('اختر طاولة هدف مختلفة.', 'info'); return; }
+  if (source === target) { showToast(t('tables.toast.selectDifferentTarget'), 'info'); return; }
   if (!confirm(ts('سيتم نقل كل الأصناف إلى الطاولة الهدف. متابعة؟'))) return;
   try {
     await window.api.tables.merge(source, target);
     mergeTablesModal.classList.add('hidden');
     await loadTables();
-  } catch (err) { showToast('تعذر الدمج: ' + err.message, 'error'); }
+  } catch (err) { showToast(t('tables.toast.mergeFailed') + err.message, 'error'); }
 }
 
 function renderTables(tables) {
@@ -131,7 +131,7 @@ function renderTables(tables) {
           if (result && result.success === false) { showToast(result.message, 'error'); return; }
           if (result && result.released) showToast(window.t ? window.t('tables.releaseDone', 'تم تحرير الطاولة.') : 'تم تحرير الطاولة.', 'success');
           await loadTables();
-        } catch (err) { showToast('تعذر التحرير: ' + err.message, 'error'); }
+        } catch (err) { showToast(t('tables.toast.releaseFailed') + err.message, 'error'); }
       });
     }
     tablesGrid.appendChild(card);

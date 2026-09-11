@@ -48,6 +48,8 @@ contextBridge.exposeInMainWorld('api', {
   },
   categories: {
     list: () => ipcRenderer.invoke('categories:list'),
+    setImage: (categoryId, imagePath) => ipcRenderer.invoke('categories:setImage', { categoryId, imagePath }),
+    move: (categoryId, direction) => ipcRenderer.invoke('categories:move', { categoryId, direction }),
     create: (category) => ipcRenderer.invoke('categories:create', category),
   },
   customers: {
@@ -57,6 +59,13 @@ contextBridge.exposeInMainWorld('api', {
     update: (customer) => ipcRenderer.invoke('customers:update', customer),
     ledger: (id) => ipcRenderer.invoke('customers:ledger', id),
     receivePayment: (payload) => ipcRenderer.invoke('customers:receivePayment', payload),
+  },
+  loyalty: {
+    settings: (payload) => ipcRenderer.invoke('loyalty:settings', payload),
+    redemptionQuote: (customerId, payable) => ipcRenderer.invoke('loyalty:redemptionQuote', { customerId, payable }),
+  },
+  tax: {
+    defaultRate: (payload) => ipcRenderer.invoke('tax:defaultRate', payload),
   },
   suppliers: {
     list: () => ipcRenderer.invoke('suppliers:list'),
@@ -76,6 +85,7 @@ contextBridge.exposeInMainWorld('api', {
     delete: (id) => ipcRenderer.invoke('tables:delete', id),
     openSale: (tableId) => ipcRenderer.invoke('tables:openSale', tableId),
     getOpenSale: (tableId) => ipcRenderer.invoke('tables:getOpenSale', tableId),
+    setCustomer: (saleId, customerId) => ipcRenderer.invoke('tables:setCustomer', { saleId, customerId }),
     setItems: (saleId, items) => ipcRenderer.invoke('tables:setItems', { saleId, items }),
     merge: (sourceTableId, targetTableId) => ipcRenderer.invoke('tables:merge', { sourceTableId, targetTableId }),
     split: (saleId, selected, payment) => ipcRenderer.invoke('tables:split', { saleId, selected, payment }),
@@ -143,6 +153,7 @@ contextBridge.exposeInMainWorld('api', {
     open: (saleId) => ipcRenderer.invoke('receipt:open', saleId),
     print: () => ipcRenderer.invoke('receipt:print'),
     qr: (saleId) => ipcRenderer.invoke('receipt:qr', saleId),
+    barcodeEnabled: (payload) => ipcRenderer.invoke('receipt:barcodeEnabled', payload),
   },
   global: {
     get: () => ipcRenderer.invoke('global:get'),

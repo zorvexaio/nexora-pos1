@@ -205,6 +205,7 @@ async function init() {
   loadDeliveryPersonSuggestions();
 
   await loadProducts();
+  initCategoryTabs();
   restoreDraftIfAny();
 
   searchInput.addEventListener('input', debounce(() => loadProducts(searchInput.value), 325));
@@ -298,12 +299,45 @@ function selectedOrderType() {
   return document.querySelector('input[name="orderType"]:checked').value;
 }
 
+let selectedCategoryId = null;
+const categoryTabs = document.getElementById('categoryTabs');
+const qtyBufferInput = document.getElementById('qtyBufferInput');
+
+// تبويبات الفئات (بالصور) تظهر فقط لو فيه فئات معرّف لها صورة — متجر بلا صور فئات
+// (زي أغلب السوبرماركت) يفضل بحث نصي بسيط بدون أي تبويبات تشغل مساحة الشاشة.
+async function initCategoryTabs() {
+  try {
+    const categories = await window.api.categories.list();
+    const withImages = categories.filter((c) => c.image_path);
+    if (!withImages.length) { categoryTabs.classList.add('hidden'); return; }
+    categoryTabs.classList.remove('hidden');
+    const allTab = `<button type="button" class="category-tab active" data-cat="">
+      <span class="category-tab-icon">🍽️</span><span>${t('pos.allCategories', 'الكل')}</span>
+    </button>`;
+    const tabs = withImages.map((c) => `
+      <button type="button" class="category-tab" data-cat="${c.id}">
+        <img src="${escapeHtml(c.image_path)}" alt="" />
+        <span>${escapeHtml(c.name)}</span>
+      </button>
+    `).join('');
+    categoryTabs.innerHTML = allTab + tabs;
+    categoryTabs.querySelectorAll('.category-tab').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        categoryTabs.querySelectorAll('.category-tab').forEach((b) => b.classList.remove('active'));
+        btn.classList.add('active');
+        selectedCategoryId = btn.dataset.cat || null;
+        loadProducts(searchInput.value);
+      });
+    });
+  } catch (err) { console.error('تعذّر تحميل تبويبات الفئات', err); }
+}
+
 async function loadProducts(search = '') {
   const seq = ++productSearchRequestSeq;
   productsGrid.setAttribute('aria-busy', 'true');
   if (!products.length) setPageLoading(productsGrid, true, t('common.loading', 'جارٍ التحميل...'));
   try {
-    const result = await window.api.products.list({ search, topLevelOnly: !search, limit: search ? 80 : 250 });
+    const result = await window.api.products.list({ search, categoryId: selectedCategoryId || undefined, topLevelOnly: !search, limit: search ? 80 : 250 });
     if (seq !== productSearchRequestSeq) return;
     products = Array.isArray(result) ? result : [];
     renderProducts();
@@ -567,11 +601,16 @@ async function openVariantPicker(parentProduct) {
 }
 
 function addToCart(product) {
+  // دعم "كمية سريعة": الكاشير يكتب رقماً بخانة الكمية أولاً (مثلاً 10 لعشر عبوات بسكويت)
+  // ثم يضغط على المنتج مرة واحدة فيُضاف بهذه الكمية دفعة واحدة بدل الضغط 10 مرات.
+  // القيمة ترجع تلقائياً لـ 1 بعد كل إضافة حتى لا تُطبَّق سهواً على المنتج التالي.
+  const qty = Math.max(1, Math.floor(Number(qtyBufferInput?.value) || 1));
+  if (qtyBufferInput && qtyBufferInput.value !== '1') qtyBufferInput.value = 1;
   // ندمج فقط مع سطر موجود بلا ملاحظة (نفس الصنف بلا تخصيص) — سطر عليه ملاحظة (مثلاً
   // "شاورما بدون ثوم") يبقى منفصلاً حتى لا تختلط ملاحظته مع طلب عادي لنفس الصنف.
   const existing = cart.find((i) => i.productId === product.id && !i.notes);
   if (existing) {
-    existing.quantity += 1;
+    existing.quantity += qty;
   } else {
     cart.push({
       lineId: nextLineId++,
@@ -579,7 +618,7 @@ function addToCart(product) {
       name: product.name,
       price: product.price,
       taxRate: product.tax_rate || 0,
-      quantity: 1,
+      quantity: qty,
       notes: '',
     });
   }
@@ -892,6 +931,86 @@ let currentSaleTotals = null; // { subtotal, taxTotal, grandTotal }
 let pendingSaleRequestId = null;
 let selectedCustomerId = null;
 
+/* ---------------- استبدال نقاط الولاء (داخل نافذة الدفع، بعد اختيار عميل) ---------------- */
+const loyaltyRedeemBox = document.getElementById('loyaltyRedeemBox');
+const loyaltyPointsInput = document.getElementById('loyaltyPointsInput');
+const loyaltyMaxBtn = document.getElementById('loyaltyMaxBtn');
+const loyaltyRedeemHint = document.getElementById('loyaltyRedeemHint');
+let loyaltyQuote = null; // { availablePoints, redeemPointsPerCurrencyUnit, maxRedeemablePoints, maxRedeemableValue }
+let loyaltyRedeemedPoints = 0;
+
+// القيمة النقدية الفعلية لعدد النقاط المطلوب استبدالها حالياً (بعد قصّها على الحد
+// الأقصى المسموح به فعلياً — نفس المنطق يُعاد التحقق منه بالكامل بالخلفية أيضاً).
+function loyaltyRedeemedValue() {
+  if (!loyaltyQuote || loyaltyRedeemedPoints <= 0 || !loyaltyQuote.redeemPointsPerCurrencyUnit) return 0;
+  const points = Math.min(loyaltyRedeemedPoints, loyaltyQuote.maxRedeemablePoints);
+  return points / loyaltyQuote.redeemPointsPerCurrencyUnit;
+}
+
+// الإجمالي الفعلي المطلوب دفعه فعلياً بعد خصم استبدال النقاط (إن وُجد). كل مكان بنافذة
+// الدفع كان يستخدم currentSaleTotals.grandTotal مباشرة سابقاً — استبدلناه بهذه الدالة
+// أينما يخص "كم يدفع الزبون فعلياً الآن"، مع إبقاء currentSaleTotals.grandTotal كما هو
+// (يمثّل المبلغ المستحق قبل أي استبدال، وهو الأساس الذي تُحسب عليه حدود الاستبدال).
+function effectiveGrandTotal() {
+  return Math.max(0, (currentSaleTotals?.grandTotal || 0) - loyaltyRedeemedValue());
+}
+
+function resetLoyaltyState() {
+  loyaltyQuote = null;
+  loyaltyRedeemedPoints = 0;
+  loyaltyPointsInput.value = 0;
+  loyaltyRedeemBox.classList.add('hidden');
+  loyaltyRedeemHint.textContent = '';
+}
+
+function updateLoyaltyHint() {
+  if (!loyaltyQuote) { loyaltyRedeemHint.textContent = ''; return; }
+  loyaltyRedeemHint.textContent = `الرصيد المتاح: ${loyaltyQuote.availablePoints} نقطة — أقصى استبدال ممكن بهذه الفاتورة: ${loyaltyQuote.maxRedeemablePoints} نقطة (خصم ${loyaltyQuote.maxRedeemableValue.toFixed(2)})`;
+}
+
+async function refreshLoyaltyQuote() {
+  if (!selectedCustomerId) { resetLoyaltyState(); return; }
+  try {
+    loyaltyQuote = await window.api.loyalty.redemptionQuote(selectedCustomerId, currentSaleTotals.grandTotal);
+  } catch (err) {
+    console.error('تعذّر جلب رصيد نقاط الولاء', err);
+    loyaltyQuote = null;
+  }
+  if (!loyaltyQuote || loyaltyQuote.maxRedeemablePoints <= 0) {
+    loyaltyRedeemBox.classList.add('hidden');
+    loyaltyRedeemedPoints = 0;
+    loyaltyPointsInput.value = 0;
+    updateLoyaltyHint();
+    return;
+  }
+  loyaltyRedeemBox.classList.remove('hidden');
+  loyaltyPointsInput.max = loyaltyQuote.maxRedeemablePoints;
+  if (loyaltyRedeemedPoints > loyaltyQuote.maxRedeemablePoints) loyaltyRedeemedPoints = loyaltyQuote.maxRedeemablePoints;
+  loyaltyPointsInput.value = loyaltyRedeemedPoints;
+  updateLoyaltyHint();
+}
+
+function onLoyaltyRedeemChange() {
+  let val = Math.floor(Number(loyaltyPointsInput.value) || 0);
+  if (loyaltyQuote) val = Math.max(0, Math.min(val, loyaltyQuote.maxRedeemablePoints));
+  else val = 0;
+  loyaltyRedeemedPoints = val;
+  loyaltyPointsInput.value = val;
+  // بافتراض الدفع نقداً بالمبلغ المضبوط تماماً: نحدّث الاستلام النقدي تلقائياً كل ما
+  // تغيّرت قيمة الاستبدال، طالما الكاشير لسا ما عدّل الاستلام يدوياً (يبقى قابلاً للتعديل بعدها بحرية).
+  if (selectedPaymentMethod() === 'cash' && document.activeElement !== cashReceivedInput) {
+    cashReceivedInput.value = effectiveGrandTotal().toFixed(2);
+  }
+  updatePaymentView();
+}
+loyaltyPointsInput.addEventListener('input', onLoyaltyRedeemChange);
+loyaltyMaxBtn.addEventListener('click', () => {
+  if (!loyaltyQuote) return;
+  loyaltyRedeemedPoints = loyaltyQuote.maxRedeemablePoints;
+  loyaltyPointsInput.value = loyaltyRedeemedPoints;
+  onLoyaltyRedeemChange();
+});
+
 /* ---------------- اختيار العميل داخل نافذة الدفع ---------------- */
 const customerSearchInput = document.getElementById('customerSearchInput');
 const customerResults = document.getElementById('customerResults');
@@ -967,12 +1086,14 @@ function selectCustomer(c) {
   // اختيار العميل هو الشرط الذي يفتح مسار الآجل. سابقاً لا يُحدَّث نموذج الدفع
   // بعد الاختيار، فتظل العملية وكأن العميل غير محدد إلى أن يغيّر المستخدم الطريقة.
   updatePaymentView();
+  refreshLoyaltyQuote().then(updatePaymentView);
 }
 
 clearCustomerBtn.addEventListener('click', () => {
   selectedCustomerId = null;
   selectedCustomerBox.classList.add('hidden');
   creditApproval = null;
+  resetLoyaltyState();
   updatePaymentView();
 });
 
@@ -1105,6 +1226,7 @@ function openPaymentModal() {
   selectedCustomerBox.classList.add('hidden');
   customerSearchInput.value = '';
   customerResults.classList.add('hidden');
+  resetLoyaltyState();
   updatePaymentView();
   paymentModal.classList.remove('hidden');
   cashReceivedInput.focus();
@@ -1124,16 +1246,17 @@ function updatePaymentView() {
   cashFields.classList.toggle('hidden', method !== 'cash');
   mixedFields.classList.toggle('hidden', method !== 'mixed');
   paymentError.classList.add('hidden');
+  paymentTotalDisplay.textContent = effectiveGrandTotal().toFixed(2);
 
   if (method === 'credit' || method === 'store_credit') {
     if (!selectedCustomerId) showPaymentError(t('pos.selectCustomerFirst'));
   } else if (method === 'cash') {
     const received = parseLocaleNumber(cashReceivedInput.value) || 0;
-    const change = received - currentSaleTotals.grandTotal;
+    const change = received - effectiveGrandTotal();
     changeDueDisplay.textContent = Math.max(change, 0).toFixed(2);
   } else if (method === 'mixed') {
     const cashPart = parseLocaleNumber(mixedCashInput.value) || 0;
-    const remaining = currentSaleTotals.grandTotal - cashPart;
+    const remaining = effectiveGrandTotal() - cashPart;
     mixedRemainingDisplay.textContent = remaining.toFixed(2);
     if (!mixedCardInput.value && document.activeElement !== mixedCardInput) {
       mixedCardInput.value = Math.max(remaining, 0).toFixed(2);
@@ -1159,7 +1282,7 @@ cashReceivedInput.addEventListener('input', updatePaymentView);
 mixedCashInput.addEventListener('input', updatePaymentView);
 mixedCardInput.addEventListener('input', () => {
   mixedRemainingDisplay.textContent = (
-    currentSaleTotals.grandTotal - (parseLocaleNumber(mixedCashInput.value) || 0) - (parseLocaleNumber(mixedCardInput.value) || 0)
+    effectiveGrandTotal() - (parseLocaleNumber(mixedCashInput.value) || 0) - (parseLocaleNumber(mixedCardInput.value) || 0)
   ).toFixed(2);
 });
 cancelPaymentBtn.addEventListener('click', closePaymentModal);
@@ -1167,7 +1290,7 @@ confirmPaymentBtn.addEventListener('click', confirmPayment);
 
 async function confirmPayment() {
   const method = selectedPaymentMethod();
-  const total = currentSaleTotals.grandTotal;
+  const total = effectiveGrandTotal();
   let cashAmount = 0;
   let cardAmount = 0;
   let changeDue = 0;
@@ -1241,6 +1364,7 @@ async function confirmPayment() {
     cardAmount,
     changeDue,
     customerId: selectedCustomerId,
+    loyaltyPointsToRedeem: selectedCustomerId ? loyaltyRedeemedPoints : 0,
     creditApprovedBy: null,
     creditApprovalGrantId: creditApproval ? creditApproval.grantId : null,
     exchangeRate: currencyConfig.rate,
@@ -1263,6 +1387,7 @@ async function confirmPayment() {
     resetOrderExtras();
     pendingSaleRequestId = null;
     closePaymentModal();
+    resetLoyaltyState();
     await loadProducts(searchInput.value); // تحديث المخزون المعروض
     if (sale.deliveryPerson) loadDeliveryPersonSuggestions(); // اقتراح الاسم الجديد من المرة الجاية
     // ترسل الفاتورة وتذكرة السفري تلقائياً عند تفعيل الطابعة في الإعدادات.

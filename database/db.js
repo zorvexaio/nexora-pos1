@@ -14,7 +14,7 @@ const userDataPath = app.getPath('userData');
 const dbPath = path.join(userDataPath, 'pos.db');
 const keyPath = path.join(userDataPath, 'pos.db.key');
 const databaseExistedBeforeOpen = fs.existsSync(dbPath) && fs.statSync(dbPath).size > 0;
-const CURRENT_SCHEMA_VERSION = 19;
+const CURRENT_SCHEMA_VERSION = 20;
 
 function getEncryptionKey() {
   if (!safeStorage.isEncryptionAvailable()) {
@@ -205,6 +205,7 @@ function init() {
       [17, 'accounting-extensions-v17', migrateAccountingExtensionsV17],
       [18, 'payroll-advance-disbursement-method-v18', migratePayrollAdvanceDisbursementMethodV18],
       [19, 'payroll-accrual-v19', migratePayrollAccrualV19],
+      [20, 'payroll-future-accrual-correction-v20', migratePayrollFutureAccrualCorrectionV20],
     ];
     for (const [version, name, migration] of versionedMigrations) applyVersionedMigration(version, name, migration);
     assertMigrationJournalIntegrity(versionedMigrations);
@@ -699,7 +700,9 @@ function migratePayrollAccrualV19() {
     const accountRow = db.prepare("SELECT id FROM accounting_accounts WHERE branch_id=? AND code='2300' AND is_active=1").get(branch.id);
     const expenseRow = db.prepare("SELECT id FROM accounting_accounts WHERE branch_id=? AND code='6100' AND is_active=1").get(branch.id);
     if (!accountRow || !expenseRow) continue; // فرع بلا وحدة محاسبية مفعّلة بعد — لا شيء لتصحيحه هنا.
-    const months = db.prepare("SELECT * FROM payroll_months WHERE branch_id=?").all(branch.id);
+    const currentMonthKeyGuard = `${payrollTodayLocal().getFullYear()}-${String(payrollTodayLocal().getMonth() + 1).padStart(2, '0')}`;
+    const months = db.prepare("SELECT * FROM payroll_months WHERE branch_id=?").all(branch.id)
+      .filter((m) => String(m.month_key) <= currentMonthKeyGuard); // لا تُرحّل استحقاقاً لشهر لم يبدأ بعد.
     for (const month of months) {
       const employeeMonths = db.prepare('SELECT m.*,e.full_name FROM payroll_employee_months m JOIN payroll_employees e ON e.id=m.employee_id WHERE m.month_id=?').all(month.id);
       for (const em of employeeMonths) {
@@ -726,6 +729,34 @@ function migratePayrollAccrualV19() {
         db.prepare('UPDATE payroll_employee_months SET accrued_minor=? WHERE id=?').run(paidMinor + gapMinor, em.id);
       }
     }
+  }
+}
+
+// v20: تصحيح خطأ حقيقي وقع في هجرة v19 — كانت تُرحّل استحقاق راتب حتى لأشهر لم تبدأ بعد
+// (شهر مستقبلي) لأنها لم تكن تستثني الأشهر اللاحقة للشهر الحالي. هذه الدالة تعكس فقط
+// القيود التي أُنشئت فعلاً لشهر مستقبلي (month_key أكبر من شهر اليوم وقت وجود القيد)،
+// وتُصفّر accrued_minor المقابل لها. آمنة للتكرار: لا تُنشئ عكساً لقيد سبق عكسه.
+function migratePayrollFutureAccrualCorrectionV20() {
+  const currentMonthKey = `${payrollTodayLocal().getFullYear()}-${String(payrollTodayLocal().getMonth() + 1).padStart(2, '0')}`;
+  const badRows = db.prepare(`
+    SELECT e.id AS entry_id, e.branch_id, e.reference_id AS em_id, m.month_key, m.id AS month_id,
+           em.employee_id, em.accrued_minor
+    FROM accounting_journal_entries e
+    JOIN payroll_employee_months em ON em.id = e.reference_id
+    JOIN payroll_months m ON m.id = em.month_id
+    WHERE e.reference_type = 'payroll_accrual' AND e.status = 'posted' AND m.month_key > ?
+  `).all(currentMonthKey);
+  const alreadyCorrected = new Set(
+    db.prepare(`SELECT reference_id FROM accounting_journal_entries WHERE reference_type = 'payroll_accrual_future_correction_v20'`).all().map((r) => r.reference_id)
+  );
+  for (const row of badRows) {
+    if (alreadyCorrected.has(row.entry_id)) continue; // سبق تصحيح هذا القيد.
+    const lines = db.prepare('SELECT account_id, debit_minor, credit_minor FROM accounting_journal_lines WHERE entry_id=?').all(row.entry_id);
+    if (!lines.length) continue;
+    const reversedLines = lines.map((l) => ({ accountId: l.account_id, debitMinor: Number(l.credit_minor || 0), creditMinor: Number(l.debit_minor || 0), memo: `عكس استحقاق مستقبلي خاطئ (v20) — شهر ${row.month_key}` }));
+    insertPostedJournalEntry({ branchId: row.branch_id, memo: `تصحيح v20: إلغاء استحقاق راتب لشهر مستقبلي (${row.month_key}) لم يبدأ بعد`, referenceType: 'payroll_accrual_future_correction_v20', referenceId: row.entry_id, lines: reversedLines, createdBy: null });
+    const gap = lines.reduce((s, l) => s + Number(l.debit_minor || 0), 0);
+    db.prepare('UPDATE payroll_employee_months SET accrued_minor = MAX(0, accrued_minor - ?) WHERE id=?').run(gap, row.em_id);
   }
 }
 
@@ -1268,6 +1299,19 @@ function runMigrations() {
   // cash_movements، حتى تنعكس فعلياً على رصيد الصندوق والتقارير المالية بدل ما تفضل
   // معزولة جوه شاشة الرواتب بس. NULL لو السلفة اتسجلت كقيد رواتب فقط بدون صرف فوري.
   tryAddColumn('payroll_transactions', `cash_movement_id INTEGER REFERENCES cash_movements(id)`);
+  // استبدال نقاط الولاء: عميل يدفع جزءاً من الفاتورة بنقاطه بدل نقود. نخزّن عدد
+  // النقاط المستبدَلة وقيمتها النقدية باللحظة (بسعر التحويل وقتها، حتى لو تغيّر
+  // السعر لاحقاً بالإعدادات لا يتأثر تاريخ الفواتير القديمة). loyalty_points_restored
+  // يتتبّع كم نقطة أُعيدت للعميل بسبب مرتجعات جزئية/كاملة لاحقة على نفس الفاتورة —
+  // نفس فكرة loyalty_points_reversed تماماً لكن بالاتجاه المعاكس (نقاط استُردّت
+  // مش نقاط اتلغت) لمنع أي ازدواج عند مرتجعات متعددة على نفس الفاتورة.
+  tryAddColumn('sales', `loyalty_points_redeemed REAL NOT NULL DEFAULT 0`);
+  tryAddColumn('sales', `loyalty_points_restored REAL NOT NULL DEFAULT 0`);
+  tryAddColumn('sales', `loyalty_redeemed_value REAL NOT NULL DEFAULT 0`);
+  tryAddColumn('sales', `loyalty_redeemed_value_minor INTEGER NOT NULL DEFAULT 0`);
+  // صورة الفئة: لعرض تبويبات بصرية بشاشة الكاشير (مثال: صورة شاورما، صورة مشروبات...)
+  tryAddColumn('categories', `image_path TEXT`);
+  tryAddColumn('categories', `sort_order INTEGER NOT NULL DEFAULT 0`);
 
   // Migrate existing payroll-only workers once. Their login account remains legacy data for compatibility,
   // but all new payroll operations use payroll_employees and never create a users row.
@@ -1554,7 +1598,32 @@ function adoptSharedBranch({ uuid: sharedUuid, name, businessType }) {
 
 /* ---------------- الفئات ---------------- */
 function listCategories() {
-  return db.prepare('SELECT * FROM categories ORDER BY name').all();
+  return db.prepare('SELECT * FROM categories ORDER BY sort_order ASC, name ASC').all();
+}
+
+// تحريك فئة خطوة واحدة لأعلى/أسفل بترتيب العرض بشاشة الكاشير — للمحلات اللي عندها
+// عدد كبير من الفئات لكن أغلب مبيعاتها من قليل منها (مثال: شاورما وفروج أهم من
+// فئات نادرة الطلب)، فيتقدر صاحب المحل يرتّبها حسب أولوية استخدامها الفعلي.
+function moveCategoryOrder(categoryId, direction) {
+  const all = db.prepare('SELECT id, sort_order FROM categories ORDER BY sort_order ASC, name ASC').all();
+  const idx = all.findIndex((c) => c.id === Number(categoryId));
+  if (idx === -1) throw new Error('الفئة غير موجودة.');
+  const swapWith = direction === 'up' ? idx - 1 : idx + 1;
+  if (swapWith < 0 || swapWith >= all.length) return { success: true }; // بالفعل في الطرف، لا شيء يتغيّر
+  const a = all[idx], b = all[swapWith];
+  const tx = db.transaction(() => {
+    db.prepare('UPDATE categories SET sort_order=? WHERE id=?').run(b.sort_order, a.id);
+    db.prepare('UPDATE categories SET sort_order=? WHERE id=?').run(a.sort_order, b.id);
+    // لو الفئتان بنفس sort_order (حالة شائعة لأن القيمة الافتراضية 0 لكل الفئات القديمة)
+    // فالتبديل وحده لا يكفي — نُعيد ترقيم الكل بالترتيب الحالي مرة واحدة لضمان تفرّد القيم.
+    if (a.sort_order === b.sort_order) {
+      const ordered = [...all];
+      [ordered[idx], ordered[swapWith]] = [ordered[swapWith], ordered[idx]];
+      ordered.forEach((c, i) => db.prepare('UPDATE categories SET sort_order=? WHERE id=?').run(i, c.id));
+    }
+  });
+  tx();
+  return { success: true };
 }
 
 function createCategory(c) {
@@ -1564,6 +1633,13 @@ function createCategory(c) {
   if (parentId !== null && (!Number.isInteger(parentId) || parentId <= 0)) throw new Error('الفئة الأب غير صالحة.');
   const info = db.prepare(`INSERT INTO categories (uuid, name, parent_id) VALUES (?, ?, ?)`).run(uuid(), name, parentId);
   return { id: info.lastInsertRowid };
+}
+
+function setCategoryImage(categoryId, imagePath) {
+  const category = db.prepare('SELECT id FROM categories WHERE id=?').get(Number(categoryId));
+  if (!category) throw new Error('الفئة غير موجودة.');
+  db.prepare('UPDATE categories SET image_path=? WHERE id=?').run(imagePath || null, Number(categoryId));
+  return { success: true };
 }
 
 function getOrCreateCategoryByName(name) {
@@ -2240,7 +2316,7 @@ function postSaleAccountingInTransaction(sale, saleId, branchId) {
   const accountRows = db.prepare('SELECT id,code FROM accounting_accounts WHERE branch_id=? AND is_active=1 AND code IN (?,?,?,?,?,?,?,?,?)').all(branchId, '1000','1100','1200','1300','2100','2200','4000','4100','5000');
   const byCode = new Map(accountRows.map((row) => [String(row.code), Number(row.id)]));
   const requireAccount = (code) => { const id = byCode.get(code); if (!id) throw new Error(`الحساب المحاسبي ${code} غير موجود.`); return id; };
-  const revenueMinor = Math.max(0, Number(sale.subtotalMinor || 0) - Number(sale.discountTotalMinor || 0) - Number(sale.bundleDiscountTotalMinor || 0));
+  const revenueMinor = Math.max(0, Number(sale.subtotalMinor || 0) - Number(sale.discountTotalMinor || 0) - Number(sale.bundleDiscountTotalMinor || 0) - Number(sale.loyaltyRedeemedValueMinor || 0));
   const taxMinor = Math.max(0, Number(sale.taxTotalMinor || 0));
   const deliveryMinor = Math.max(0, Number(sale.deliveryFeeMinor || 0));
   const costMinor = sale.items.reduce((sum, item) => sum + money.multiplyMinorQuantity(Number(item.costAtSaleMinor || 0), Number(item.quantity || 0)), 0);
@@ -2310,7 +2386,14 @@ const createSaleTx = db.transaction((sale) => {
   const rawDeliveryFee = Number(sale.deliveryFee) || 0;
   if (!Number.isFinite(rawDeliveryFee) || rawDeliveryFee < 0) throw new Error('رسوم التوصيل غير صالحة.');
   const deliveryFeeMinor = money.toMinor(rawDeliveryFee, minorUnit);
-  const grandTotalMinor = Math.max(0, subtotalMinor + taxTotalMinor - discountTotalMinor - bundleDiscountTotalMinor + deliveryFeeMinor);
+  // المبلغ المستحق قبل استبدال نقاط الولاء: هو سقف قيمة الاستبدال المسموحة (حتى لا
+  // يصير الإجمالي بالسالب). resolveLoyaltyRedemption يعيد التحقق الكامل من رصيد
+  // العميل ومن هذا السقف بنفسه، بصرف النظر عمّا أرسلته الواجهة.
+  const payableBeforeLoyaltyMinor = Math.max(0, subtotalMinor + taxTotalMinor - discountTotalMinor - bundleDiscountTotalMinor + deliveryFeeMinor);
+  const loyaltyRedemption = resolveLoyaltyRedemption(sale.customerId, sale.loyaltyPointsToRedeem, payableBeforeLoyaltyMinor);
+  const loyaltyRedeemedPoints = loyaltyRedemption.points;
+  const loyaltyRedeemedValueMinor = loyaltyRedemption.valueMinor;
+  const grandTotalMinor = Math.max(0, payableBeforeLoyaltyMinor - loyaltyRedeemedValueMinor);
   const grandTotal = money.fromMinor(grandTotalMinor, minorUnit);
   const deliveryFee = money.fromMinor(deliveryFeeMinor, minorUnit);
   const discountTotalMajor = money.fromMinor(discountTotalMinor, minorUnit);
@@ -2338,7 +2421,7 @@ const createSaleTx = db.transaction((sale) => {
   const changeDue = money.fromMinor(changeDueMinor, minorUnit);
   const dueAmount = money.fromMinor(dueAmountMinor, minorUnit);
 
-  sale = { ...sale, subtotal, taxTotal, discountTotal: discountTotalMajor, discountType, discountValue, discountApprovedBy, bundleDiscountTotal: bundleDiscountTotalMajor, grandTotal, deliveryFee, notes, deliveryTime, items: priced, subtotalMinor, taxTotalMinor, discountTotalMinor, bundleDiscountTotalMinor, deliveryFeeMinor, grandTotalMinor, minorUnit, cashAmount, cashAmountMinor, cardAmount, cardAmountMinor, changeDue, changeDueMinor, dueAmount, dueAmountMinor };
+  sale = { ...sale, subtotal, taxTotal, discountTotal: discountTotalMajor, discountType, discountValue, discountApprovedBy, bundleDiscountTotal: bundleDiscountTotalMajor, grandTotal, deliveryFee, notes, deliveryTime, items: priced, subtotalMinor, taxTotalMinor, discountTotalMinor, bundleDiscountTotalMinor, deliveryFeeMinor, grandTotalMinor, minorUnit, cashAmount, cashAmountMinor, cardAmount, cardAmountMinor, changeDue, changeDueMinor, dueAmount, dueAmountMinor, loyaltyRedeemedPoints, loyaltyRedeemedValueMinor, loyaltyRedeemedValue: money.fromMinor(loyaltyRedeemedValueMinor, minorUnit) };
 
   const invoiceNumber = nextInvoiceNumber();
   sale.invoiceNumber = invoiceNumber;
@@ -2353,7 +2436,7 @@ const createSaleTx = db.transaction((sale) => {
       cash_amount, cash_amount_minor, card_amount, card_amount_minor,
       change_due, change_due_minor, due_amount, due_amount_minor,
       exchange_rate, invoice_number, payment_reference, payment_provider, payment_currency,
-      client_request_id, loyalty_points_awarded, status
+      client_request_id, loyalty_points_awarded, loyalty_points_redeemed, loyalty_redeemed_value, loyalty_redeemed_value_minor, status
     ) VALUES (
       @uuid, @branch_id, @user_id, @customer_id, @table_id, @shift_id, @order_type,
       @delivery_fee, @delivery_fee_minor, @delivery_person, @notes, @delivery_time,
@@ -2364,7 +2447,7 @@ const createSaleTx = db.transaction((sale) => {
       @cash_amount, @cash_amount_minor, @card_amount, @card_amount_minor,
       @change_due, @change_due_minor, @due_amount, @due_amount_minor,
       @exchange_rate, @invoice_number, @payment_reference, @payment_provider, @payment_currency,
-      @client_request_id, @loyalty_points_awarded, 'completed'
+      @client_request_id, @loyalty_points_awarded, @loyalty_points_redeemed, @loyalty_redeemed_value, @loyalty_redeemed_value_minor, 'completed'
     )
   `).run({
     uuid: saleUuid,
@@ -2407,7 +2490,10 @@ const createSaleTx = db.transaction((sale) => {
     payment_provider: String(sale.paymentProvider || '').trim() || null,
     payment_currency: String(sale.paymentCurrency || getGlobalProfile().currency_code).trim().toUpperCase(),
     client_request_id: clientRequestId || null,
-    loyalty_points_awarded: sale.customerId ? Math.floor(grandTotal / 10) : 0,
+    loyalty_points_awarded: sale.customerId ? Math.floor(grandTotal / getLoyaltySettings().earnPerCurrencyUnit) : 0,
+    loyalty_points_redeemed: loyaltyRedeemedPoints,
+    loyalty_redeemed_value: sale.loyaltyRedeemedValue,
+    loyalty_redeemed_value_minor: loyaltyRedeemedValueMinor,
   });
 
   const saleId = saleInfo.lastInsertRowid;
@@ -2475,12 +2561,19 @@ const createSaleTx = db.transaction((sale) => {
     if (Number(sale.cardAmount) > 0) insertPayment.run(uuid(), branch.id, saleId, sale.shiftId || null, 'card', paymentCurrency, sale.cardAmount, cardAmountMinor, 1, sale.paymentProvider || null, sale.paymentReference || null, null, null, sale.userId || null);
   }
 
-  // نقاط ولاء: نقطة واحدة لكل 10 وحدات عملة من إجمالي الفاتورة (قابلة للتعديل لاحقاً)
+  // نقاط ولاء: معدّل قابل للتعديل من الإعدادات (افتراضياً نقطة واحدة لكل 10 وحدات
+  // عملة من إجمالي الفاتورة الفعلي — أي بعد خصم أي استبدال نقاط سابق على نفس الفاتورة،
+  // فلا يمكن "تدوير" النقاط بلا نهاية عبر استبدالها ثم كسبها من نفس المبلغ).
   if (sale.customerId) {
-    const points = Math.floor(sale.grandTotal / 10);
+    const points = Math.floor(sale.grandTotal / getLoyaltySettings().earnPerCurrencyUnit);
     if (points > 0) {
       db.prepare(`UPDATE customers SET loyalty_points = loyalty_points + ?, updated_at = datetime('now'), synced = 0 WHERE id = ? AND branch_id=?`).run(
         points, sale.customerId, branch.id
+      );
+    }
+    if (loyaltyRedeemedPoints > 0) {
+      db.prepare(`UPDATE customers SET loyalty_points = MAX(0, loyalty_points - ?), updated_at = datetime('now'), synced = 0 WHERE id = ? AND branch_id=?`).run(
+        loyaltyRedeemedPoints, sale.customerId, branch.id
       );
     }
   }
@@ -2944,6 +3037,15 @@ function getPayrollExpenseForRange(fromLocalDate, toLocalDate) {
   const toUtc = Date.UTC(to.y, to.mo - 1, to.d);
   if (toUtc < fromUtc) return 0;
 
+  // net_salary لشهر الرواتب الجاري (لم يُقفل بعد) محسوب أصلاً يوماً بيوم حتى تاريخ اليوم
+  // (daysElapsedInPayrollPeriod) — أي أنه مبلغ "مستحق فعلياً حتى الآن"، وليس راتباً شهرياً
+  // كاملاً. ضربه هنا مرة أخرى بنسبة (أيام الفترة المطلوبة / أيام الشهر) كان يُطبّق تناسباً
+  // فوق تناسب (double proration)، فيُنتج رقماً أصغر بكثير من المصروف الحقيقي. لذلك: الشهر
+  // الجاري يُضاف كما هو بلا إعادة تناسب، وإعادة التناسب تبقى فقط للأشهر المُقفلة السابقة
+  // (net_salary فيها رقم نهائي كامل للشهر ويصح توزيعه على الأيام المطلوبة منه).
+  const todayLocal = payrollTodayLocal();
+  const currentMonthKey = `${todayLocal.getFullYear()}-${String(todayLocal.getMonth() + 1).padStart(2, '0')}`;
+
   let total = 0;
   let cursor = new Date(Date.UTC(from.y, from.mo - 1, 1));
   const end = Date.UTC(to.y, to.mo - 1, 1);
@@ -2964,7 +3066,7 @@ function getPayrollExpenseForRange(fromLocalDate, toLocalDate) {
           JOIN payroll_employees e ON e.id = m.employee_id
           WHERE m.month_id=? AND e.branch_id=?`).all(monthRow.id, branch.id);
         const monthTotal = rows.filter((r) => Number(r.is_active) !== 0).reduce((s, r) => s + Number(r.net_salary || 0), 0);
-        total += monthTotal * (overlapDays / daysInMonth);
+        total += (monthKey === currentMonthKey) ? monthTotal : monthTotal * (overlapDays / daysInMonth);
       }
     }
     cursor = new Date(Date.UTC(y, mo, 1));
@@ -3584,6 +3686,21 @@ function getOrCreateOpenSale(tableId, userId) {
   return getOrCreateOpenSaleTx(tableId, userId);
 }
 
+// ربط عميل بطلب طاولة مفتوح: مطلوب لتفعيل الدفع الآجل (على الحساب) واستبدال نقاط
+// الولاء بطلبات المطاعم — كانت شاشة الطاولة لا تحتوي على أي وسيلة لاختيار عميل إطلاقاً،
+// فتعذّر الدفع الآجل واستبدال النقاط كلاهما على هذا النوع من الطلبات تحديداً.
+function setTableSaleCustomer(saleId, customerId) {
+  const branch = getCurrentBranch();
+  const sale = db.prepare("SELECT id FROM sales WHERE id=? AND branch_id=? AND status='open'").get(Number(saleId), branch.id);
+  if (!sale) throw new Error('الطلب المفتوح غير موجود.');
+  if (customerId != null) {
+    const customer = db.prepare('SELECT id FROM customers WHERE id=? AND branch_id=?').get(Number(customerId), branch.id);
+    if (!customer) throw new Error('العميل غير موجود.');
+  }
+  db.prepare('UPDATE sales SET customer_id=? WHERE id=? AND branch_id=?').run(customerId == null ? null : Number(customerId), Number(saleId), branch.id);
+  return { success: true };
+}
+
 function getOpenSaleForTable(tableId) {
   const branch = getCurrentBranch();
   const table = db.prepare('SELECT id FROM restaurant_tables WHERE id=? AND branch_id=?').get(Number(tableId), branch.id);
@@ -3857,7 +3974,17 @@ const closeTableSaleTx = db.transaction((saleId, payment, actorUserId, shiftId =
   // إعادة حساب الإجمالي من البنود المخزنة بدل الوثوق بأي قيمة قديمة.
   recalculateOpenSale(saleId);
   const refreshed = db.prepare('SELECT * FROM sales WHERE id=? AND branch_id=? AND status=\'open\'').get(saleId,branch.id);
-  const total = Number(refreshed?.grand_total) || 0;
+  const payableBeforeLoyalty = Number(refreshed?.grand_total) || 0;
+  // استبدال نقاط الولاء بطلبات الطاولات: نفس منطق البيع المباشر تماماً (resolveLoyaltyRedemption
+  // هي مصدر الحقيقة الوحيد ولا تثق بأي رقم قادم من الواجهة). كانت هذه الميزة تعمل فقط بالكاشير
+  // المباشر (createSaleTx) دون طلبات الطاولات — نفس فجوة الترحيل المحاسبي التي أُصلحت سابقاً.
+  const minorUnitForLoyalty = Number(getGlobalProfile()?.currency_minor_unit ?? 2);
+  const payableBeforeLoyaltyMinor = money.toMinor(payableBeforeLoyalty, minorUnitForLoyalty);
+  const loyaltyRedemption = resolveLoyaltyRedemption(sale.customer_id, payment.loyaltyPointsToRedeem, payableBeforeLoyaltyMinor);
+  const loyaltyRedeemedPoints = loyaltyRedemption.points;
+  const loyaltyRedeemedValueMinor = loyaltyRedemption.valueMinor;
+  const loyaltyRedeemedValue = money.fromMinor(loyaltyRedeemedValueMinor, minorUnitForLoyalty);
+  const total = Math.max(0, payableBeforeLoyalty - loyaltyRedeemedValue);
   validatePaymentAmounts(total, payment.paymentMethod || 'cash', payment.cashAmount, payment.cardAmount, payment.changeDue);
   if (!inventoryAlreadyCommitted) {
     for (const item of items) {
@@ -3871,9 +3998,25 @@ const closeTableSaleTx = db.transaction((saleId, payment, actorUserId, shiftId =
     db.prepare('UPDATE sales SET inventory_committed=1 WHERE id=? AND branch_id=?').run(saleId, branch.id);
   }
   db.prepare(
-    `UPDATE sales SET payment_method = ?, cash_amount = ?, card_amount = ?, change_due = ?, shift_id = ?, status = 'completed'
+    `UPDATE sales SET payment_method = ?, cash_amount = ?, card_amount = ?, change_due = ?, shift_id = ?, status = 'completed',
+     grand_total = ?, grand_total_minor = ?, loyalty_points_redeemed = ?, loyalty_redeemed_value = ?, loyalty_redeemed_value_minor = ?
      WHERE id = ? AND branch_id = ? AND status='open'`
-  ).run(payment.paymentMethod || 'cash', payment.cashAmount || 0, payment.cardAmount || 0, payment.changeDue || 0, paymentShiftId, saleId, branch.id);
+  ).run(payment.paymentMethod || 'cash', payment.cashAmount || 0, payment.cardAmount || 0, payment.changeDue || 0, paymentShiftId,
+    total, money.toMinor(total, minorUnitForLoyalty), loyaltyRedeemedPoints, loyaltyRedeemedValue, loyaltyRedeemedValueMinor,
+    saleId, branch.id);
+  if (sale.customer_id) {
+    if (loyaltyRedeemedPoints > 0) {
+      db.prepare("UPDATE customers SET loyalty_points = MAX(0, loyalty_points - ?), updated_at = datetime('now'), synced = 0 WHERE id = ? AND branch_id=?").run(
+        loyaltyRedeemedPoints, sale.customer_id, branch.id
+      );
+    }
+    const earnedPoints = Math.floor(total / getLoyaltySettings().earnPerCurrencyUnit);
+    if (earnedPoints > 0) {
+      db.prepare("UPDATE customers SET loyalty_points = loyalty_points + ?, updated_at = datetime('now'), synced = 0 WHERE id = ? AND branch_id=?").run(
+        earnedPoints, sale.customer_id, branch.id
+      );
+    }
+  }
 
   const method = payment.paymentMethod || 'cash';
   const currency=String(getGlobalProfile().currency_code||'USD').toUpperCase();
@@ -3889,6 +4032,35 @@ const closeTableSaleTx = db.transaction((saleId, payment, actorUserId, shiftId =
     appendStoreCreditLedger({ customerId: sale.customer_id, saleId, entryType: 'sale_spend', amount: -total, createdBy: createdBy, branchId: branch.id });
     pt.run(uuid(),branch.id,saleId,sale.shift_id||null,'store_credit',currency,-total,1,null,null,createdBy);
   }
+
+  // إغلاق طلب الطاولة لم يكن يمرّ على القيد المحاسبي (postSaleAccountingInTransaction) إطلاقاً،
+  // خلافاً للبيع المباشر (createSaleTx). هذا يعني أن مبيعات المطاعم/الطاولات لم تكن تظهر في
+  // دفتر الأستاذ (المحاسبة > نظرة عامة) رغم ظهورها في صفحة التقارير — تم إصلاحه هنا.
+  const minorUnit = Number(getGlobalProfile()?.currency_minor_unit ?? 2);
+  // ملاحظة مهمة: recalculateOpenSale (المستخدمة حصراً لطلبات الطاولات) تُحدّث الأعمدة
+  // الرئيسية (subtotal/tax_total/grand_total) فقط، ولا تلمس أعمدة الوحدة الصغرى
+  // (*_minor) إطلاقاً — تلك تبقى صفراً دائماً لأي طلب طاولة (بخلاف createSaleTx الذي
+  // يملأها صراحةً عند الإنشاء). القراءة السابقة من refreshed.subtotal_minor وأخواتها
+  // كانت تعيد صفراً دوماً هنا، فينكسر توازن القيد المحاسبي لأي طلب طاولة فيه ضريبة أو
+  // خصم أو استبدال نقاط. الإصلاح: نشتق قيم الوحدة الصغرى من الأعمدة الرئيسية الموثوقة
+  // مباشرة عبر money.toMinor بدل الاعتماد على أعمدة لم تُملأ أصلاً لهذا المسار.
+  const accountingSale = {
+    subtotalMinor: money.toMinor(Number(refreshed.subtotal || 0), minorUnit),
+    taxTotalMinor: money.toMinor(Number(refreshed.tax_total || 0), minorUnit),
+    discountTotalMinor: money.toMinor(Number(refreshed.discount_total || 0), minorUnit),
+    bundleDiscountTotalMinor: money.toMinor(Number(refreshed.bundle_discount_total || 0), minorUnit),
+    deliveryFeeMinor: money.toMinor(Number(refreshed.delivery_fee || 0), minorUnit),
+    grandTotalMinor: money.toMinor(total, minorUnit),
+    loyaltyRedeemedValueMinor,
+    paymentMethod: method,
+    cashAmountMinor: money.toMinor(Number(payment.cashAmount || 0), minorUnit),
+    cardAmountMinor: money.toMinor(Number(payment.cardAmount || 0), minorUnit),
+    invoiceNumber: refreshed.invoice_number,
+    userId: createdBy,
+    items: items.map((it) => ({ costAtSaleMinor: Number(it.cost_at_sale_minor || 0), quantity: Number(it.quantity || 0) })),
+  };
+  postSaleAccountingInTransaction(accountingSale, saleId, branch.id);
+
   return { id: saleId };
 });
 
@@ -4742,6 +4914,98 @@ function recordPayrollSalaryAdvanceRecovery({monthId,employeeId,amountMinor,crea
 }
 
 
+// إعدادات برنامج الولاء: معدّل منح النقاط عند البيع، ومعدّل استبدالها كخصم نقدي.
+// نفس نمط getPayrollSettings/savePayrollSettings تماماً — قيمة افتراضية معقولة
+// (10 = نقطة واحدة لكل 10 وحدات عملة إنفاقاً، و10 نقاط = وحدة عملة واحدة استبدالاً؛
+// أي تعادل تام بين المنح والاستبدال افتراضياً) قابلة للتعديل من الإعدادات.
+function getLoyaltySettings(){
+  const unit=Number(getGlobalProfile()?.currency_minor_unit||2);
+  const earnRate=Number(getSetting('loyalty_earn_per_currency_unit','10'));
+  const redeemRate=Number(getSetting('loyalty_points_per_currency_unit','10'));
+  return{
+    earnPerCurrencyUnit:Number.isFinite(earnRate)&&earnRate>0?earnRate:10,
+    redeemPointsPerCurrencyUnit:Number.isFinite(redeemRate)&&redeemRate>0?redeemRate:10,
+    currencyMinorUnit:unit,
+  };
+}
+function saveLoyaltySettings({earnPerCurrencyUnit,redeemPointsPerCurrencyUnit}={}){
+  const e=Number(earnPerCurrencyUnit),r=Number(redeemPointsPerCurrencyUnit);
+  if(!Number.isFinite(e)||e<=0||e>100000) throw new Error('معدّل منح نقاط الولاء غير صالح.');
+  if(!Number.isFinite(r)||r<=0||r>100000) throw new Error('معدّل استبدال نقاط الولاء غير صالح.');
+  setSetting('loyalty_earn_per_currency_unit',String(e));
+  setSetting('loyalty_points_per_currency_unit',String(r));
+  return{success:true,earnPerCurrencyUnit:e,redeemPointsPerCurrencyUnit:r};
+}
+
+// أقصى عدد نقاط يمكن للعميل استبدالها فعلياً بفاتورة قيمتها المستحقة (قبل الاستبدال)
+// payableMinor: محدود بأمرين معاً - (أ) رصيد نقاطه الفعلي بقاعدة البيانات، و(ب) ألا
+// تجعل قيمة الاستبدال الإجمالي المستحق بالسالب. تُستخدم من الواجهة لعرض السقف مسبقاً،
+// ومن resolveLoyaltyRedemption كمصدر الحقيقة الوحيد وقت إنشاء الفاتورة الفعلي.
+function getLoyaltyRedemptionQuote(customerId, payableMinor){
+  const branch=getCurrentBranch();
+  const settings=getLoyaltySettings();
+  const payable=Math.max(0,Number(payableMinor)||0);
+  if(!customerId) return{availablePoints:0,redeemPointsPerCurrencyUnit:settings.redeemPointsPerCurrencyUnit,maxRedeemablePoints:0,maxRedeemableValueMinor:0};
+  const customer=db.prepare('SELECT loyalty_points FROM customers WHERE id=? AND branch_id=?').get(Number(customerId),branch.id);
+  if(!customer) throw new Error('العميل غير موجود.');
+  const availablePoints=Math.max(0,Math.floor(Number(customer.loyalty_points||0)));
+  const payableMajor=money.fromMinor(payable,settings.currencyMinorUnit);
+  const maxPointsByPayable=Math.floor(payableMajor*settings.redeemPointsPerCurrencyUnit);
+  const maxRedeemablePoints=Math.max(0,Math.min(availablePoints,maxPointsByPayable));
+  const maxRedeemableValueMinor=maxRedeemablePoints>0?money.toMinor(maxRedeemablePoints/settings.redeemPointsPerCurrencyUnit,settings.currencyMinorUnit):0;
+  return{availablePoints,redeemPointsPerCurrencyUnit:settings.redeemPointsPerCurrencyUnit,maxRedeemablePoints,maxRedeemableValueMinor};
+}
+
+// نسخة مريحة للواجهة الأمامية (pos.js لا يتعامل مع الوحدة الصغرى إطلاقاً بأي مكان تاني
+// بكل الملف، فكل حساباته بالعملة الرئيسية مباشرة). تأخذ المبلغ المستحق بالعملة الرئيسية
+// وتعيد أيضاً قيمة الاستبدال الأقصى بالعملة الرئيسية جاهزة للعرض مباشرة بدون أي تحويل
+// إضافي بالواجهة. المنطق الفعلي نفسه بالكامل (نفس القيود والأسقف) — هذه غلاف عرض فقط.
+function getLoyaltyRedemptionQuoteMajor(customerId, payableMajor){
+  const unit=Number(getGlobalProfile()?.currency_minor_unit||2);
+  const payableMinor=money.toMinor(Math.max(0,Number(payableMajor)||0),unit);
+  const quote=getLoyaltyRedemptionQuote(customerId,payableMinor);
+  return{...quote,maxRedeemableValue:money.fromMinor(quote.maxRedeemableValueMinor,unit)};
+}
+
+// نقطة الحقيقة الوحيدة لتحويل عدد نقاط مطلوب إلى قيمته النقدية وقت إنشاء الفاتورة
+// فعلياً — لا نثق أبداً برقم جاهز قادم من الواجهة، نعيد التحقق الكامل هنا دائماً.
+function resolveLoyaltyRedemption(customerId, requestedPoints, payableMinor){
+  const requested=Math.max(0,Math.floor(Number(requestedPoints)||0));
+  if(requested<=0) return{points:0,valueMinor:0};
+  if(!customerId) throw new Error('استبدال نقاط الولاء يتطلب اختيار عميل بالفاتورة.');
+  const quote=getLoyaltyRedemptionQuote(customerId,payableMinor);
+  if(requested>quote.availablePoints) throw new Error(`رصيد نقاط العميل غير كافٍ. المتاح حالياً: ${quote.availablePoints} نقطة.`);
+  if(requested>quote.maxRedeemablePoints) throw new Error(`لا يمكن استبدال أكثر من ${quote.maxRedeemablePoints} نقطة بهذه الفاتورة (قيمة الاستبدال لا يمكن أن تتجاوز المبلغ المستحق).`);
+  const unit=Number(getGlobalProfile()?.currency_minor_unit||2);
+  const valueMinor=money.toMinor(requested/quote.redeemPointsPerCurrencyUnit,unit);
+  return{points:requested,valueMinor};
+}
+
+// نسبة الضريبة الافتراضية العامة: تُستخدم كقيمة مبدئية تُملأ تلقائياً عند إنشاء منتج
+// جديد فقط (لا تُغيّر أي منتج موجود بأثر رجعي) — توفيراً لإدخالها يدوياً بكل منتج في
+// الدول اللي عندها نسبة ضريبة موحدة على أغلب المنتجات. الضريبة الفعلية للفاتورة تبقى
+// دائماً كما كانت: مأخوذة من tax_rate/الملف الضريبي الخاص بكل منتج لحاله وقت البيع.
+// إظهار/إخفاء رمز QR على فاتورة العميل — بعض المحلات لا تحتاجه (لا رابط تتبع أو تقييم
+// مرتبط به مثلاً) وتفضّل فاتورة أبسط وأقصر مساحة على الطابعة الحرارية.
+function getReceiptBarcodeEnabled(){
+  return getSetting('receipt_barcode_enabled','1') !== '0';
+}
+function setReceiptBarcodeEnabled(enabled){
+  setSetting('receipt_barcode_enabled', enabled ? '1' : '0');
+  return{success:true,enabled:!!enabled};
+}
+
+function getTaxDefaultRate(){
+  const v=Number(getSetting('default_tax_rate','0'));
+  return Number.isFinite(v)&&v>=0&&v<=100?v:0;
+}
+function saveTaxDefaultRate(rate){
+  const v=Number(rate);
+  if(!Number.isFinite(v)||v<0||v>100) throw new Error('نسبة الضريبة الافتراضية يجب أن تكون بين 0 و100.');
+  setSetting('default_tax_rate',String(v));
+  return{success:true,defaultTaxRate:v};
+}
+
 function getPayrollSettings(){const unit=Number(getGlobalProfile()?.currency_minor_unit||2),m=Number(getSetting('payroll_overtime_multiplier','1.5')),h=Number(getSetting('payroll_work_hours_per_day','8'));return{overtimeMultiplier:Number.isFinite(m)&&m>0?m:1.5,workHoursPerDay:Number.isFinite(h)&&h>0?h:8,currencyMinorUnit:unit};}
 function savePayrollSettings({overtimeMultiplier,workHoursPerDay}={}){const m=Number(overtimeMultiplier),h=Number(workHoursPerDay);if(!Number.isFinite(m)||m<=0||m>10)throw new Error('معامل الإضافي يجب أن يكون بين 0 و10.');if(!Number.isFinite(h)||h<=0||h>24)throw new Error('ساعات العمل اليومية يجب أن تكون بين 0 و24.');setSetting('payroll_overtime_multiplier',String(m));setSetting('payroll_work_hours_per_day',String(h));return{success:true,overtimeMultiplier:m,workHoursPerDay:h};}
 function setPayrollV2RegularHours(monthId,employeeId,hours){ const b=getCurrentBranch(); const m=payrollMonth(monthId); assertPayrollMonthMutable(m); const n=Number(hours); if(!Number.isFinite(n)||n<0||n>744)throw new Error('ساعات العمل غير صالحة.'); const e=db.prepare('SELECT id,pay_type,pay_rate FROM payroll_employees WHERE id=? AND branch_id=?').get(Number(employeeId),b.id); if(!e)throw new Error('العامل غير موجود.'); db.prepare(`INSERT INTO payroll_employee_months(month_id,employee_id,pay_type,pay_rate,base_amount) VALUES(?,?,?,?,0) ON CONFLICT(month_id,employee_id) DO NOTHING`).run(m.id,e.id,e.pay_type,e.pay_rate); db.prepare('UPDATE payroll_employee_months SET regular_hours=?,updated_at=datetime(\'now\'),synced=0 WHERE month_id=? AND employee_id=?').run(Math.round(n*100)/100,m.id,e.id); return{success:true,item:recalcPayrollEmployeeMonth(m.id,e.id)}; }
@@ -5030,9 +5294,13 @@ const createReturnTx = db.transaction((payload) => {
   );
 
   const saleItemsTotalBeforeDiscount = Math.max(0, Number(sale.subtotal || 0) + Number(sale.tax_total || 0));
+  // مجمع الخصم الموزَّع على البنود عند حساب المسترد: يشمل الخصم اليدوي وخصم "العروض"،
+  // وأيضاً قيمة استبدال نقاط الولاء (loyalty_redeemed_value) — لأنها خصم فعلي أنقص ما
+  // دفعه العميل حقاً. لولا هذا، كان العميل يُسترد له المبلغ الكامل قبل خصم النقاط (300
+  // بدل 296 مثلاً)، أي أكثر مما دفع فعلياً — تسرّب مالي حقيقي، وليس مجرد فرق تقريب.
   const saleDiscountPool = Math.max(0, Math.min(
     saleItemsTotalBeforeDiscount,
-    Number(sale.discount_total || 0) + Number(sale.bundle_discount_total || 0)
+    Number(sale.discount_total || 0) + Number(sale.bundle_discount_total || 0) + Number(sale.loyalty_redeemed_value || 0)
   ));
   const globalProfile = getGlobalProfile();
   function refundableUnitAmount(saleItem) {
@@ -5137,6 +5405,22 @@ const createReturnTx = db.transaction((payload) => {
       if (reverseNow > 0) {
         db.prepare("UPDATE customers SET loyalty_points=MAX(0, loyalty_points-?), updated_at=datetime('now'), synced=0 WHERE id=? AND branch_id=?").run(reverseNow, sale.customer_id, branch.id);
         db.prepare('UPDATE sales SET loyalty_points_reversed=loyalty_points_reversed+? WHERE id=?').run(reverseNow, sale.id);
+      }
+    }
+    // استعادة نقاط الولاء التي سبق للعميل استبدالها بهذه الفاتورة، بنفس منطق ونسبة
+    // العكس أعلاه تماماً لكن بالاتجاه المعاكس: العميل دفع جزءاً من قيمة الفاتورة
+    // بنقاطه، وبما إنه يُرجع (كل الفاتورة أو جزء منها) فمن العدل نرجّعله نقاطه بنفس
+    // النسبة. loyalty_points_restored يمنع تكرار الاسترجاع على مرتجعات جزئية متتابعة.
+    const saleRedeemed = Number(sale.loyalty_points_redeemed || 0);
+    const alreadyRestored = Number(sale.loyalty_points_restored || 0);
+    if (saleRedeemed > alreadyRestored && sale.grand_total > 0) {
+      const priorRefunded = db.prepare(`SELECT COALESCE(SUM(total_refunded),0) AS v FROM returns WHERE sale_id=? AND id<>?`).get(sale.id, returnId).v;
+      const ratio = Math.min(1, Math.max(0, Number(totalRefunded + Number(priorRefunded || 0)) / Number(sale.grand_total)));
+      const targetRestored = Math.floor(saleRedeemed * ratio);
+      const restoreNow = Math.max(0, targetRestored - alreadyRestored);
+      if (restoreNow > 0) {
+        db.prepare("UPDATE customers SET loyalty_points=loyalty_points+?, updated_at=datetime('now'), synced=0 WHERE id=? AND branch_id=?").run(restoreNow, sale.customer_id, branch.id);
+        db.prepare('UPDATE sales SET loyalty_points_restored=loyalty_points_restored+? WHERE id=?').run(restoreNow, sale.id);
       }
     }
   }
@@ -6094,6 +6378,8 @@ module.exports = {
   updateBranch,
   adoptSharedBranch,
   listCategories,
+  setCategoryImage,
+  moveCategoryOrder,
   createCategory,
   listProducts,
   listProductVariants,
@@ -6144,6 +6430,7 @@ module.exports = {
   createTable,
   deleteTable,
   getOrCreateOpenSale,
+  setTableSaleCustomer,
   getOpenSaleForTable,
   setOpenSaleItems,
   mergeTables,
@@ -6197,6 +6484,14 @@ module.exports = {
   setPayrollV2RegularHours,
   getPayrollSettings,
   savePayrollSettings,
+  getTaxDefaultRate,
+  saveTaxDefaultRate,
+  getReceiptBarcodeEnabled,
+  setReceiptBarcodeEnabled,
+  getLoyaltySettings,
+  saveLoyaltySettings,
+  getLoyaltyRedemptionQuote,
+  getLoyaltyRedemptionQuoteMajor,
   setPayrollEmployeeMonthStartDate,
   getSaleForReturn,
   createReturn,

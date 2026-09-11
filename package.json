@@ -1,6 +1,6 @@
 {
   "name": "nexora-pos",
-  "version": "0.52.8",
+  "version": "0.52.9",
   "description": "Nexora POS - Hardened global-ready offline-first POS platform",
   "main": "main.js",
   "author": "",
@@ -80,9 +80,7 @@
     "test:engineering:native": "npm run setup && node tools/payroll-v2-integration.js && node tools/payroll-v2-integration-regression.js && node tools/runtime-native-regression.js",
     "test:commercial-gate": "node tools/release-acceptance.js --commercial",
     "test:dependencies": "npm audit --audit-level=high",
-    "release:win:verify": "powershell -NoProfile -ExecutionPolicy Bypass -File tools/windows-release/VERIFY-INSTALLED-BUILD.ps1",
-    "version": "node -e \"require('fs').writeFileSync('VERSION', require('./package.json').version)\" && git add VERSION",
-    "release": "npm run check && npm run test:engineering:native && npm run test:acceptance && npm run release:sale-check && npm version patch && git push origin main --follow-tags && node tools/release-preflight.js && npx electron-builder --win --publish always"
+    "release:win:verify": "powershell -NoProfile -ExecutionPolicy Bypass -File tools/windows-release/VERIFY-INSTALLED-BUILD.ps1"
   },
   "dependencies": {
     "better-sqlite3-multiple-ciphers": "13.0.3",

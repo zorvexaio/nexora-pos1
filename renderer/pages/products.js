@@ -182,6 +182,8 @@ async function openModal(productId = null) {
     if (p.variant_size || p.variant_color || p.is_recipe || p.parent_product_id) toggleAdvanced();
   } else {
     modalTitle.textContent = 'منتج جديد';
+    try { fieldTax.value = (await window.api.tax.defaultRate()).defaultTaxRate || ''; }
+    catch (err) { console.error('تعذّر جلب نسبة الضريبة الافتراضية', err); }
   }
 
   modal.classList.remove('hidden');

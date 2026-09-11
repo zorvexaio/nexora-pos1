@@ -1600,6 +1600,8 @@ ipcMain.handle('bundles:delete', (_event, id) => {
   return db.deleteBundle(id);
 });
 ipcMain.handle('categories:list', () => { requireAccountReady(); return db.listCategories(); });
+ipcMain.handle('categories:setImage', (_event, { categoryId, imagePath }) => { requireAdmin(); return db.setCategoryImage(categoryId, imagePath); });
+ipcMain.handle('categories:move', (_event, { categoryId, direction }) => { requireAdmin(); return db.moveCategoryOrder(categoryId, direction); });
 ipcMain.handle('categories:create', (_event, category) => {
   requireManagerOrAdmin();
   return db.createCategory(category);
@@ -1662,6 +1664,7 @@ ipcMain.handle('tables:delete', (_event, id) => {
 });
 ipcMain.handle('tables:openSale', (_event, tableId) => { requireAccountReady(); return db.getOrCreateOpenSale(tableId, currentUser.id); });
 ipcMain.handle('tables:getOpenSale', (_event, tableId) => { requireAccountReady(); return db.getOpenSaleForTable(tableId); });
+ipcMain.handle('tables:setCustomer', (_event, { saleId, customerId }) => { requireAccountReady(); return db.setTableSaleCustomer(saleId, customerId); });
 ipcMain.handle('tables:setItems', (_event, { saleId, items }) => {
   requireAccountReady();
   const before = db.getSale(saleId, db.getCurrentBranch().id);
@@ -1720,6 +1723,32 @@ ipcMain.handle('tables:release', (_event, tableId) => {
 // فتح نافذة تذكرة مطبخ قابلة للطباعة (بدون أسعار — فقط الأصناف والكميات والملاحظات)
 ipcMain.handle('kitchen:open', (_event, saleId) => { requireAccountReady(); if (!db.getSale(saleId, db.getCurrentBranch().id)) throw new Error('الطلب غير موجود.'); return autoSendKitchen(saleId); });
 ipcMain.handle('kitchen:print', () => { requireAccountReady(); throw new Error('الطباعة أصبحت تلقائية من إعدادات الطابعات.'); });
+
+/* ---------------- برنامج الولاء (استبدال النقاط) ---------------- */
+// إعدادات معدّلات المنح/الاستبدال: إدارية فقط (نفس نمط payroll:settings تماماً) — لأنها
+// تؤثر على كل الفروع/الكاشيرية، وتغييرها الخاطئ يكلّف المتجر مباشرة.
+ipcMain.handle('loyalty:settings', (_event, payload) => {
+  requireAdmin();
+  return payload && payload.save ? db.saveLoyaltySettings(payload) : db.getLoyaltySettings();
+});
+// عرض أقصى نقاط قابلة للاستبدال قبل الدفع: متاحة لأي كاشير (نفس صلاحية إنشاء الفاتورة
+// نفسها) — عرض فقط، لا تُغيّر أي بيانات، والتحقق الحقيقي يعاد بالكامل داخل db.createSale.
+ipcMain.handle('loyalty:redemptionQuote', (_event, { customerId, payable } = {}) => {
+  requireAccountReady();
+  return db.getLoyaltyRedemptionQuoteMajor(customerId, payable);
+});
+
+ipcMain.handle('tax:defaultRate', (_event, payload) => {
+  if (payload && payload.save != null) { requireAdmin(); return db.saveTaxDefaultRate(payload.save); }
+  requireAccountReady();
+  return { defaultTaxRate: db.getTaxDefaultRate() };
+});
+
+ipcMain.handle('receipt:barcodeEnabled', (_event, payload) => {
+  if (payload && payload.save != null) { requireAdmin(); return db.setReceiptBarcodeEnabled(payload.save); }
+  requireAccountReady();
+  return { enabled: db.getReceiptBarcodeEnabled() };
+});
 
 /* ---------------- المبيعات ---------------- */
 function consumeApprovalGrant(grantId) {

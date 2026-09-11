@@ -114,6 +114,45 @@
       </div>
 
       <div class="report-panel settings-panel">
+        <h2 data-i18n="settings.categories.title">فئات الكاشير (صور وترتيب)</h2>
+        <div class="field-hint" data-i18n="settings.categories.hint">تظهر كتبويبات سريعة بشاشة الكاشير للفئات اللي عندها صورة. رتّبها بالأسهم حسب أكثرها استخداماً. فئة بلا صورة لا تظهر كتبويب.</div>
+        <div id="categoryImagesList" class="category-images-grid"></div>
+      </div>
+
+      <div class="report-panel settings-panel">
+        <h2 data-i18n="settings.tax.title">الضريبة الافتراضية</h2>
+        <form id="taxDefaultForm" class="form-grid">
+          <div class="form-field">
+            <label data-i18n="settings.tax.rateLabel">نسبة الضريبة الافتراضية للمنتجات الجديدة %</label>
+            <input id="fieldTaxDefaultRate" type="number" min="0" max="100" step="0.5" required />
+            <div class="field-hint" data-i18n="settings.tax.rateHint">تُملأ تلقائياً عند إضافة منتج جديد فقط، ولا تُغيّر المنتجات الموجودة. يمكن تعديلها لكل منتج على حدة من صفحة المنتجات.</div>
+          </div>
+          <div class="form-field full">
+            <button type="submit" id="saveTaxDefaultBtn" class="btn btn-primary" data-i18n="settings.tax.save">حفظ نسبة الضريبة الافتراضية</button>
+          </div>
+        </form>
+      </div>
+
+      <div class="report-panel settings-panel">
+        <h2 data-i18n="settings.loyalty.title">برنامج نقاط الولاء</h2>
+        <form id="loyaltyForm" class="form-grid">
+          <div class="form-field">
+            <label data-i18n="settings.loyalty.earnLabel">وحدات عملة لكل نقطة عند المنح</label>
+            <input id="fieldLoyaltyEarnRate" type="number" min="1" step="0.5" required />
+            <div class="field-hint" data-i18n="settings.loyalty.earnHint">مثال: 10 يعني العميل يكسب نقطة واحدة لكل 10 وحدات عملة من قيمة الفاتورة.</div>
+          </div>
+          <div class="form-field">
+            <label data-i18n="settings.loyalty.redeemLabel">عدد النقاط اللازمة لاستبدال وحدة عملة واحدة</label>
+            <input id="fieldLoyaltyRedeemRate" type="number" min="1" step="0.5" required />
+            <div class="field-hint" data-i18n="settings.loyalty.redeemHint">مثال: 10 يعني كل 10 نقاط = خصم وحدة عملة واحدة عند الدفع بالكاشير.</div>
+          </div>
+          <div class="form-field full">
+            <button type="submit" id="saveLoyaltyBtn" class="btn btn-primary" data-i18n="settings.loyalty.save">حفظ إعدادات الولاء</button>
+          </div>
+        </form>
+      </div>
+
+      <div class="report-panel settings-panel">
         <h2>تسعير التوصيل الأوتوماتيكي</h2>
         <form id="deliveryPricingForm" class="form-grid">
           <div class="form-field">
@@ -287,6 +326,14 @@
           <button id="installUpdateBtn" type="button" class="btn btn-primary hidden">تثبيت وإعادة التشغيل</button>
         </div>
         <div id="updateStatus" class="field-hint" style="margin-top:8px;"></div>
+      </div>
+
+      <div class="report-panel settings-panel">
+        <h2 data-i18n="settings.receiptBarcode.title">رمز QR على الفاتورة</h2>
+        <label class="switch-row">
+          <input type="checkbox" id="fieldReceiptBarcodeEnabled" />
+          <span data-i18n="settings.receiptBarcode.toggleLabel">إظهار رمز QR على فاتورة العميل</span>
+        </label>
       </div>
 
       <div class="report-panel settings-panel developer-contact-panel premium-contact">

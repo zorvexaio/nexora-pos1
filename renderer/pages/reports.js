@@ -255,11 +255,11 @@ async function exportReport(kind) {
   button.disabled = true;
   try {
     const result = await window.api.reports[`export${kind}`](currentRange());
-    if (result?.canceled) { showToast('تم إلغاء التصدير.', 'info'); return; }
+    if (result?.canceled) { showToast(t('reports.toast.exportCancelled'), 'info'); return; }
     if (result && !result.success) throw new Error(result.message || 'فشل التصدير');
     if (result?.success) showToast(`${ts('تم تصدير التقرير بصيغة')} ${kind}.`);
   } catch (error) {
-    showToast('تعذر تصدير التقرير: ' + error.message, 'error');
+    showToast(t('reports.toast.exportFailed') + error.message, 'error');
   } finally { button.disabled = false; }
 }
 

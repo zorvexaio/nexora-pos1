@@ -318,6 +318,124 @@ document.getElementById('confirmSplitBillBtn').addEventListener('click', async (
   } catch (err) { alert(t('tableOrder.splitFailed') + err.message); }
 });
 
+/* ---------------- اختيار العميل واستبدال نقاط الولاء ---------------- */
+const customerSearchInput = document.getElementById('customerSearchInput');
+const customerResults = document.getElementById('customerResults');
+const selectedCustomerBox = document.getElementById('selectedCustomerBox');
+const selectedCustomerLabel = document.getElementById('selectedCustomerLabel');
+const clearCustomerBtn = document.getElementById('clearCustomerBtn');
+const loyaltyRedeemBox = document.getElementById('loyaltyRedeemBox');
+const loyaltyPointsInput = document.getElementById('loyaltyPointsInput');
+const loyaltyMaxBtn = document.getElementById('loyaltyMaxBtn');
+const loyaltyRedeemHint = document.getElementById('loyaltyRedeemHint');
+let selectedCustomerId = null;
+let customerSearchRequestSeq = 0;
+let loyaltyQuote = null;
+let loyaltyRedeemedPoints = 0;
+
+function loyaltyRedeemedValue() {
+  if (!loyaltyQuote || loyaltyRedeemedPoints <= 0 || !loyaltyQuote.redeemPointsPerCurrencyUnit) return 0;
+  const points = Math.min(loyaltyRedeemedPoints, loyaltyQuote.maxRedeemablePoints);
+  return points / loyaltyQuote.redeemPointsPerCurrencyUnit;
+}
+function effectiveTotal() {
+  return Math.max(0, (currentTotal || 0) - loyaltyRedeemedValue());
+}
+function resetLoyaltyState() {
+  loyaltyQuote = null;
+  loyaltyRedeemedPoints = 0;
+  loyaltyPointsInput.value = 0;
+  loyaltyRedeemBox.classList.add('hidden');
+  loyaltyRedeemHint.textContent = '';
+}
+function updateLoyaltyHint() {
+  if (!loyaltyQuote) { loyaltyRedeemHint.textContent = ''; return; }
+  loyaltyRedeemHint.textContent = `الرصيد المتاح: ${loyaltyQuote.availablePoints} نقطة — أقصى استبدال: ${loyaltyQuote.maxRedeemablePoints} نقطة (خصم ${loyaltyQuote.maxRedeemableValue.toFixed(2)})`;
+}
+async function refreshLoyaltyQuote() {
+  if (!selectedCustomerId) { resetLoyaltyState(); return; }
+  try {
+    loyaltyQuote = await window.api.loyalty.redemptionQuote(selectedCustomerId, currentTotal);
+  } catch (err) {
+    console.error('تعذّر جلب رصيد نقاط الولاء', err);
+    loyaltyQuote = null;
+  }
+  if (!loyaltyQuote || loyaltyQuote.maxRedeemablePoints <= 0) {
+    loyaltyRedeemBox.classList.add('hidden');
+    loyaltyRedeemedPoints = 0;
+    loyaltyPointsInput.value = 0;
+    updateLoyaltyHint();
+    return;
+  }
+  loyaltyRedeemBox.classList.remove('hidden');
+  loyaltyPointsInput.max = loyaltyQuote.maxRedeemablePoints;
+  if (loyaltyRedeemedPoints > loyaltyQuote.maxRedeemablePoints) loyaltyRedeemedPoints = loyaltyQuote.maxRedeemablePoints;
+  loyaltyPointsInput.value = loyaltyRedeemedPoints;
+  updateLoyaltyHint();
+}
+function onLoyaltyRedeemChange() {
+  let val = Math.floor(Number(loyaltyPointsInput.value) || 0);
+  val = loyaltyQuote ? Math.max(0, Math.min(val, loyaltyQuote.maxRedeemablePoints)) : 0;
+  loyaltyRedeemedPoints = val;
+  loyaltyPointsInput.value = val;
+  if (selectedPaymentMethod() === 'cash' && document.activeElement !== cashReceivedInput) {
+    cashReceivedInput.value = effectiveTotal().toFixed(2);
+  }
+  updatePaymentView();
+}
+loyaltyPointsInput.addEventListener('input', onLoyaltyRedeemChange);
+loyaltyMaxBtn.addEventListener('click', () => {
+  if (!loyaltyQuote) return;
+  loyaltyRedeemedPoints = loyaltyQuote.maxRedeemablePoints;
+  loyaltyPointsInput.value = loyaltyRedeemedPoints;
+  onLoyaltyRedeemChange();
+});
+
+customerSearchInput.addEventListener('input', debounce(async () => {
+  const term = customerSearchInput.value.trim();
+  const seq = ++customerSearchRequestSeq;
+  if (!term) { customerResults.classList.add('hidden'); return; }
+  try {
+    const results = await window.api.customers.list({ search: term, limit: 40 });
+    if (seq !== customerSearchRequestSeq || customerSearchInput.value.trim() !== term) return;
+    renderCustomerResults(results);
+  } catch (err) { if (seq === customerSearchRequestSeq) console.error('Customer search failed', err); }
+}, 250));
+
+function renderCustomerResults(results) {
+  customerResults.innerHTML = results.length === 0
+    ? `<div class="customer-result-empty">${t('pos.noCustomerResults')}</div>`
+    : results.map((c) => `<div class="customer-result" data-id="${c.id}">${escapeHtml(c.name || t('common.noName'))} — ${escapeHtml(c.phone || '')} <span class="points-tag">${c.loyalty_points} ${t('common.points')}</span></div>`).join('');
+  customerResults.querySelectorAll('.customer-result').forEach((el) => {
+    el.addEventListener('click', () => {
+      const c = results.find((r) => r.id === parseInt(el.dataset.id, 10));
+      selectCustomer(c);
+    });
+  });
+  customerResults.classList.remove('hidden');
+}
+
+async function selectCustomer(c) {
+  selectedCustomerId = c.id;
+  selectedCustomerLabel.textContent = `${c.name || t('common.noName')} — ${c.loyalty_points} ${t('common.points')}`;
+  selectedCustomerBox.classList.remove('hidden');
+  customerSearchInput.value = '';
+  customerResults.classList.add('hidden');
+  try { await window.api.tables.setCustomer(currentSaleId, selectedCustomerId); }
+  catch (err) { console.error('تعذّر ربط العميل بالطلب', err); }
+  updatePaymentView();
+  refreshLoyaltyQuote().then(updatePaymentView);
+}
+
+clearCustomerBtn.addEventListener('click', async () => {
+  selectedCustomerId = null;
+  selectedCustomerBox.classList.add('hidden');
+  resetLoyaltyState();
+  try { await window.api.tables.setCustomer(currentSaleId, null); }
+  catch (err) { console.error('تعذّر إزالة العميل من الطلب', err); }
+  updatePaymentView();
+});
+
 /* ---------------- الدفع وإغلاق الطاولة ---------------- */
 const paymentModal = document.getElementById('paymentModal');
 const paymentTotalDisplay = document.getElementById('paymentTotalDisplay');
@@ -341,13 +459,13 @@ async function checkout() {
   const tax = cart.reduce((s, i) => s + i.price * i.quantity * (i.taxRate / 100), 0);
   currentTotal = subtotal + tax;
 
-  paymentTotalDisplay.textContent = currentTotal.toFixed(2);
   document.querySelector('input[name="paymentMethod"][value="cash"]').checked = true;
-  cashReceivedInput.value = currentTotal.toFixed(2);
   mixedCashInput.value = '';
   mixedCardInput.value = '';
   paymentError.classList.add('hidden');
+  resetLoyaltyState();
   updatePaymentView();
+  if (selectedCustomerId) refreshLoyaltyQuote().then(updatePaymentView);
   paymentModal.classList.remove('hidden');
   cashReceivedInput.focus();
   cashReceivedInput.select();
@@ -366,12 +484,14 @@ function updatePaymentView() {
   cashFields.classList.toggle('hidden', method !== 'cash');
   mixedFields.classList.toggle('hidden', method !== 'mixed');
   paymentError.classList.add('hidden');
+  paymentTotalDisplay.textContent = effectiveTotal().toFixed(2);
   if (method === 'cash') {
+    if (document.activeElement !== cashReceivedInput) cashReceivedInput.value = effectiveTotal().toFixed(2);
     const received = parseFloat(cashReceivedInput.value) || 0;
-    changeDueDisplay.textContent = Math.max(received - currentTotal, 0).toFixed(2);
+    changeDueDisplay.textContent = Math.max(received - effectiveTotal(), 0).toFixed(2);
   } else if (method === 'mixed') {
     const cashPart = parseFloat(mixedCashInput.value) || 0;
-    const remaining = currentTotal - cashPart;
+    const remaining = effectiveTotal() - cashPart;
     mixedRemainingDisplay.textContent = remaining.toFixed(2);
     if (!mixedCardInput.value || document.activeElement !== mixedCardInput) {
       mixedCardInput.value = Math.max(remaining, 0).toFixed(2);
@@ -384,7 +504,7 @@ cashReceivedInput.addEventListener('input', updatePaymentView);
 mixedCashInput.addEventListener('input', updatePaymentView);
 mixedCardInput.addEventListener('input', () => {
   mixedRemainingDisplay.textContent = (
-    currentTotal - (parseFloat(mixedCashInput.value) || 0) - (parseFloat(mixedCardInput.value) || 0)
+    effectiveTotal() - (parseFloat(mixedCashInput.value) || 0) - (parseFloat(mixedCardInput.value) || 0)
   ).toFixed(2);
 });
 cancelPaymentBtn.addEventListener('click', closePaymentModal);
@@ -392,23 +512,24 @@ confirmPaymentBtn.addEventListener('click', confirmPayment);
 
 async function confirmPayment() {
   const method = selectedPaymentMethod();
+  const total = effectiveTotal();
   let cashAmount = 0;
   let cardAmount = 0;
   let changeDue = 0;
 
   if (method === 'cash') {
     cashAmount = parseFloat(cashReceivedInput.value) || 0;
-    if (cashAmount < currentTotal - 0.001) {
+    if (cashAmount < total - 0.001) {
       showPaymentError(t('pos.insufficientCash'));
       return;
     }
-    changeDue = cashAmount - currentTotal;
+    changeDue = cashAmount - total;
   } else if (method === 'card') {
-    cardAmount = currentTotal;
+    cardAmount = total;
   } else if (method === 'mixed') {
     cashAmount = parseFloat(mixedCashInput.value) || 0;
     cardAmount = parseFloat(mixedCardInput.value) || 0;
-    if (Math.abs(cashAmount + cardAmount - currentTotal) > 0.01) {
+    if (Math.abs(cashAmount + cardAmount - total) > 0.01) {
       showPaymentError(t('pos.mixedMismatch'));
       return;
     }
@@ -417,7 +538,10 @@ async function confirmPayment() {
   confirmPaymentBtn.disabled = true;
   confirmPaymentBtn.textContent = t('tableOrder.closing');
   try {
-    const closeResult = await window.api.tables.close(currentSaleId, { paymentMethod: method, cashAmount, cardAmount, changeDue });
+    const closeResult = await window.api.tables.close(currentSaleId, {
+      paymentMethod: method, cashAmount, cardAmount, changeDue,
+      loyaltyPointsToRedeem: selectedCustomerId ? loyaltyRedeemedPoints : 0,
+    });
     warnPrintOutcome(closeResult?.printOutcome);
     window.location.href = 'tables.html';
   } catch (err) {

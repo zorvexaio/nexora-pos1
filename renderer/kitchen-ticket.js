@@ -34,7 +34,7 @@ async function init() {
     .join('');
 
   const deliveryTimeHtml = sale.order_type === 'delivery'
-    ? `<div class="kitchen-delivery-time">🛵 ${sale.delivery_time ? t('kitchen.deliverAt') + ' ' + formatDate(sale.delivery_time) : t('kitchen.deliverNow')}</div>`
+    ? `<div class="kitchen-delivery-time">${sale.delivery_time ? `⏰ ${t('kitchen.deliverAt')} ${formatDate(sale.delivery_time)}` : `🛵 ${t('kitchen.deliverNow')}`}</div>`
     : '';
   // ملاحظة الطلب العامة (مش ملاحظة صنف بعينه) — لازم تكون واضحة جداً للمطبخ لأنها
   // ممكن تكون تعليمات مهمة ("حساسية مكسرات"، "بدون بصل خالص")، فمعاملتها زي تحذير كبير.
@@ -56,7 +56,16 @@ async function init() {
 }
 
 function formatDate(str) {
-  const d = new Date(str.replace(' ', 'T') + 'Z');
+  // بعض الحقول تُخزَّن بصيغة SQLite القديمة "YYYY-MM-DD HH:MM:SS" بدون منطقة زمنية،
+  // بينما delivery_time (الناتج عن toISOString() بقاعدة البيانات) يُخزَّن كصيغة ISO
+  // كاملة تحتوي أصلاً على "T" و"Z". المنطق القديم كان يضيف "Z" دائماً بشكل أعمى،
+  // فتصير "...ZZ" وهو تاريخ غير صالح (Invalid Date) — بالضبط ما كان يظهر على
+  // تذكرة المطبخ بدل وقت التسليم الفعلي. نفس الإصلاح المطبَّق في receipt.js.
+  const normalized = String(str || '').trim();
+  const hasTimezone = /Z$|[+-]\d{2}:?\d{2}$/.test(normalized);
+  const isoCandidate = normalized.includes('T') ? normalized : normalized.replace(' ', 'T');
+  const d = new Date(hasTimezone ? isoCandidate : isoCandidate + 'Z');
+  if (isNaN(d.getTime())) return normalized || '—';
   const lang = document.documentElement.getAttribute('data-lang') || 'ar';
   const LOCALES = { ar: 'ar-EG', tr: 'tr-TR', en: 'en-US' };
   return d.toLocaleString(LOCALES[lang] || 'ar-EG', { dateStyle: 'medium', timeStyle: 'short' });

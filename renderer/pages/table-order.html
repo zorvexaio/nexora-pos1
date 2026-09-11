@@ -83,6 +83,23 @@
   <div id="paymentModal" class="modal-overlay hidden">
     <div class="modal payment-modal">
       <h2 data-i18n="tableOrder.checkout">الدفع وإغلاق الطاولة</h2>
+      <div class="customer-select">
+        <input id="customerSearchInput" type="text" data-i18n-placeholder="pos.searchCustomerPlaceholder" placeholder="ابحث بالاسم أو الهاتف..." />
+        <div id="customerResults" class="customer-results hidden"></div>
+        <div id="selectedCustomerBox" class="selected-customer hidden">
+          <span id="selectedCustomerLabel"></span>
+          <button type="button" id="clearCustomerBtn">✕</button>
+        </div>
+        <div id="loyaltyRedeemBox" class="loyalty-redeem hidden">
+          <label data-i18n="pos.redeemPoints">استبدال نقاط الولاء</label>
+          <div class="loyalty-redeem-row">
+            <input id="loyaltyPointsInput" type="number" min="0" step="1" value="0" />
+            <button type="button" id="loyaltyMaxBtn" data-i18n="pos.useMaxPoints">الحد الأقصى</button>
+          </div>
+          <div id="loyaltyRedeemHint" class="field-hint"></div>
+        </div>
+      </div>
+
       <div class="payment-total">
         <span data-i18n="pos.amountDue">المطلوب</span>
         <span id="paymentTotalDisplay">0.00</span>

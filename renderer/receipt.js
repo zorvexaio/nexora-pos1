@@ -24,9 +24,15 @@ async function init() {
 
   const [branding, currency] = await Promise.all([window.api.branding.get(), window.api.currency.get()]);
   renderReceipt(sale, branding, currency);
-  const qrDataUrl = await window.api.receipt.qr(saleId);
-  const qrImage = document.getElementById('receiptQr');
-  if (qrDataUrl && qrImage) { qrImage.src = qrDataUrl; qrImage.style.display = 'block'; }
+  // بعض المحلات تفضّل فاتورة أقصر بلا رمز QR — قابل للتفعيل/الإلغاء من الإعدادات.
+  let barcodeEnabled = true;
+  try { barcodeEnabled = (await window.api.receipt.barcodeEnabled()).enabled !== false; }
+  catch (err) { /* افتراضياً مفعّل لو تعذّرت القراءة لأي سبب */ }
+  if (barcodeEnabled) {
+    const qrDataUrl = await window.api.receipt.qr(saleId);
+    const qrImage = document.getElementById('receiptQr');
+    if (qrDataUrl && qrImage) { qrImage.src = qrDataUrl; qrImage.style.display = 'block'; }
+  }
   document.body.dataset.printReady = '1';
 
 }
@@ -93,6 +99,11 @@ function renderReceipt(sale, branding, currency = {}) {
         : ''
     }
     ${sale.order_type === 'delivery' && sale.delivery_fee ? `<div class="receipt-row"><span>${t('receipt.deliveryFee')}</span><span>${sale.delivery_fee.toFixed(2)}</span></div>` : ''}
+    ${
+      sale.loyalty_points_redeemed
+        ? `<div class="receipt-row"><span>${t('receipt.loyaltyRedeemed')} (${sale.loyalty_points_redeemed} ${t('common.points')})</span><span>-${(sale.loyalty_redeemed_value || 0).toFixed(2)}</span></div>`
+        : ''
+    }
     <div class="receipt-row receipt-total"><span>${t('receipt.total')}</span><span>${sale.grand_total.toFixed(2)} ${escapeHtml(currency.base || '')}</span></div>
     ${currency.showSecondaryOnReceipt && currency.secondary && currency.secondary !== currency.base ? `<div class="receipt-row"><span>${t('receipt.secondaryCurrency')}</span><span>${(sale.grand_total * (sale.exchange_rate || currency.rate || 1)).toFixed(2)} ${escapeHtml(currency.secondary)}</span></div>` : ''}
     ${sale.due_amount ? `<div class="receipt-row"><span>${t('receipt.dueAmount')}</span><span>${sale.due_amount.toFixed(2)}</span></div>` : ''}

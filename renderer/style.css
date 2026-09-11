@@ -424,6 +424,33 @@ table.products-table, table.audit-table {
 .customer-results .row:hover { background: var(--surface-strong); }
 .selected-customer { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; background: var(--primary-light); border-radius: var(--radius-sm); font-weight: 700; color: var(--primary); }
 .selected-customer button { background: none; border: none; color: inherit; cursor: pointer; font-size: 15px; }
+.qty-buffer-box { display: flex; align-items: center; gap: 6px; padding: 0 10px; border-inline-start: 1px solid var(--line); font-size: 12px; font-weight: 700; color: var(--text-muted, #64748b); white-space: nowrap; }
+.qty-buffer-box input { width: 52px; height: 32px; text-align: center; border: 1px solid var(--line); border-radius: 6px; font-weight: 800; font-size: 14px; }
+.category-tabs { display: flex; gap: 10px; overflow-x: auto; padding: 4px 2px 10px; margin-bottom: 4px; }
+.category-tab { flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; gap: 4px; width: 76px; padding: 6px; border: 2px solid transparent; border-radius: var(--radius-sm); background: var(--surface); cursor: pointer; font-size: 11.5px; font-weight: 700; color: var(--text); }
+.category-tab img, .category-tab-icon { width: 48px; height: 48px; border-radius: 50%; object-fit: cover; background: var(--bg-subtle, #f1f5f9); display: flex; align-items: center; justify-content: center; font-size: 22px; }
+.category-tab.active { border-color: var(--primary); background: var(--primary-light); color: var(--primary); }
+.switch-row { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 13.5px; cursor: pointer; }
+.switch-row input[type="checkbox"] { width: 18px; height: 18px; }
+.category-order-row { display: flex; gap: 4px; justify-content: center; margin: 4px 0; }
+.category-order-row button { width: 28px; height: 24px; padding: 0; font-size: 11px; }
+.category-images-grid { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 10px; }
+.category-image-card { width: 120px; text-align: center; padding: 8px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface); }
+.category-image-card img.thumb { width: 100%; height: 80px; object-fit: cover; border-radius: 6px; margin-bottom: 6px; background: var(--bg-subtle, #f1f5f9); }
+.category-image-name { font-size: 12px; font-weight: 700; margin-bottom: 6px; }
+.extra-options { margin-bottom: 10px; border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 2px 10px; background: var(--bg-subtle, #f8fafc); }
+.extra-options summary { cursor: pointer; padding: 8px 2px; font-weight: 700; font-size: 13px; color: var(--text-muted, #64748b); list-style: none; }
+.extra-options summary::-webkit-details-marker { display: none; }
+.extra-options summary::before { content: '▸'; display: inline-block; margin-inline-end: 6px; transition: transform .15s; }
+.extra-options[open] summary::before { transform: rotate(90deg); }
+.extra-options[open] summary { color: var(--text); border-bottom: 1px solid var(--line); margin-bottom: 8px; }
+.loyalty-redeem { margin-top: 8px; padding: 8px 12px; background: var(--bg-subtle, #f8fafc); border: 1px solid var(--border-color, #e2e8f0); border-radius: var(--radius-sm); }
+.loyalty-redeem label { display: block; font-size: 13px; font-weight: 700; margin-bottom: 6px; }
+.loyalty-redeem-row { display: flex; gap: 8px; align-items: center; }
+.loyalty-redeem-row input { flex: 1; min-width: 0; }
+.loyalty-redeem-row button { white-space: nowrap; padding: 6px 10px; border-radius: var(--radius-sm); border: 1px solid var(--primary); background: #fff; color: var(--primary); font-weight: 700; cursor: pointer; }
+.loyalty-redeem-row button:hover { background: var(--primary-light); }
+#loyaltyRedeemHint { font-size: 12px; color: var(--text-muted, #64748b); margin-top: 4px; }
 
 .premium-contact, .developer-contact-panel { text-align: center; }
 .developer-contact-row { display: flex; align-items: center; justify-content: center; gap: 8px; font-weight: 700; }
@@ -604,26 +631,27 @@ table.products-table, table.audit-table {
 .receipt-item-row { display: flex; justify-content: space-between; color: #4b5563; font-size: 12.5px; }
 .receipt-item-note { color: #4b5563; font-size: 12px; font-style: italic; }
 /* ملاحظة الطلب العامة على الفاتورة — أبرز من ملاحظة الصنف لأنها تخص الطلب كله. */
-.receipt-order-note { margin: 8px 0; padding: 7px 9px; background: #fff3cd; border: 1.5px solid #e0a800; border-radius: 6px; color: #7a5b00; font-weight: 700; font-size: 12.5px; line-height: 1.5; }
+.receipt-order-note { margin: 8px 0; padding: 7px 9px; background: var(--warning-light); border: 1.5px solid var(--warning-border); border-radius: 6px; color: var(--warning); font-weight: 700; font-size: 12.5px; line-height: 1.5; }
 .receipt-row { display: flex; justify-content: space-between; padding: 3px 0; }
 .receipt-total { font-size: 16px; font-weight: 800; border-top: 1px solid #e5e7eb; margin-top: 6px; padding-top: 8px; }
 .receipt-footer { text-align: center; margin-top: 16px; color: #9ca3af; font-size: 12px; }
-.kitchen-ticket { font-size: 14px; }
+.kitchen-ticket { font-size: 15.5px; }
+.kitchen-item-name { font-weight: 700; }
 /* ملاحظة الصنف (⚠) كانت نص عادي بلا تمييز فبتضيع بسهولة أثناء الشغل في المطبخ —
    بقت أوضح بخلفية وحدّ ولون تحذيري. */
-.kitchen-item-note { margin-top: 3px; padding: 3px 8px; background: #fff3cd; border: 1px solid #e0a800; border-radius: 4px; color: #7a5b00; font-weight: 700; font-size: 13px; }
+.kitchen-item-note { margin-top: 3px; padding: 3px 8px; background: var(--warning-light); border: 1px solid var(--warning-border); border-radius: 4px; color: var(--warning); font-weight: 700; font-size: 13px; }
 /* ملاحظة الطلب العامة (وليست ملاحظة صنف) — أكبر وأوضح من ملاحظة الصنف لأنها تخص
    الطلب كله وغالباً تعليمات حرجة (حساسية، طلب خاص) لازم تُقرأ أول حاجة. */
-.kitchen-order-note { margin: 8px 0; padding: 8px 10px; background: #fff3cd; border: 2px solid #e0a800; border-radius: 6px; color: #7a5b00; font-weight: 800; font-size: 15px; line-height: 1.5; }
-.kitchen-delivery-time { margin: 6px 0; padding: 5px 10px; background: #e7f1ff; border: 1px solid #4a90e2; border-radius: 6px; color: #1a4d8f; font-weight: 700; font-size: 13.5px; }
+.kitchen-order-note { margin: 8px 0; padding: 8px 10px; background: var(--warning-light); border: 2px solid var(--warning-border); border-radius: 6px; color: var(--warning); font-weight: 800; font-size: 15px; line-height: 1.5; }
+.kitchen-delivery-time { margin: 6px 0; padding: 5px 10px; background: var(--info-light); border: 1px solid var(--info-border); border-radius: 6px; color: var(--info); font-weight: 700; font-size: 13.5px; }
 
 /* تصحيح طريقة الدفع (مودال تفاصيل الفاتورة بالتقارير) — ميزة حساسة، لذا بتصميم
    بسيط وواضح بدل تعقيد بصري يشتت الانتباه عن السبب الإلزامي. */
 .invoice-payment-correction { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 12px; }
 .payment-correction-form { margin-top: 10px; padding: 12px; background: #fafafa; border: 1px solid var(--line); border-radius: 10px; }
 .payment-correction-form.hidden { display: none; }
-.payment-correction-form textarea { width: 100%; border: 1px solid #d8dee9; border-radius: 8px; padding: 8px 10px; font: inherit; resize: vertical; }
-.payment-correction-form select, .payment-correction-form input[type="text"] { height: 38px; border: 1px solid #d8dee9; border-radius: 8px; padding: 0 10px; width: 100%; }
+.payment-correction-form textarea { width: 100%; border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; font: inherit; resize: vertical; }
+.payment-correction-form select, .payment-correction-form input[type="text"] { height: 38px; border: 1px solid var(--line); border-radius: 8px; padding: 0 10px; width: 100%; }
 #correctionMixedFields { display: flex; gap: 10px; }
 #correctionMixedFields.hidden { display: none; }
 #correctionMixedFields .form-field { flex: 1; }
@@ -637,8 +665,9 @@ table.products-table, table.audit-table {
      الفواتير الحرارية بالذات بتطبع باهتة أو غير واضحة أبداً — وهاد سبب حقيقي لفرق
      الوضوح مقارنة ببرامج تانية بتفرض أسود صافي دايماً وقت الطباعة. نفرض هون نفس الشي:
      كل نص الفاتورة أسود صافي عند الطباعة (الشاشة تبقى بألوانها الأصلية كما هي). */
-  .receipt, .receipt * { color: #000 !important; }
+  .receipt, .receipt *, .kitchen-ticket, .kitchen-ticket * { color: #000 !important; }
   .receipt-divider, .receipt-total, .receipt-row { border-color: #000 !important; }
+  .kitchen-item-note, .kitchen-order-note, .kitchen-delivery-time { background: #fff !important; border-color: #000 !important; border-width: 1.5px !important; }
 
   /* طباعة عامة لأي صفحة داخل التطبيق (مثلاً زر "طباعة" بصفحة التقارير) —
      سابقاً ما كان في أي قاعدة طباعة عامة، فلو حدا ضغط Ctrl+P بأي صفحة غير

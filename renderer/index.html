@@ -48,8 +48,13 @@
         <div class="search-row">
           <svg class="search-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/><path d="M8 11h6M11 8v6"/></svg>
           <input id="searchInput" type="text" data-i18n-placeholder="pos.searchPlaceholder" placeholder="ابحث بالاسم أو امسح الباركود..." aria-label="البحث عن منتج أو مسح الباركود" autocomplete="off" spellcheck="false" autofocus />
+          <div class="qty-buffer-box" title="اكتب رقم قبل الضغط على المنتج لإضافته بهذه الكمية دفعة واحدة">
+            <span data-i18n="pos.qty">الكمية</span>
+            <input id="qtyBufferInput" type="number" min="1" step="1" value="1" />
+          </div>
           <div id="barcodeError" class="barcode-error hidden"></div>
         </div>
+        <div id="categoryTabs" class="category-tabs hidden"></div>
         <div id="productsGrid" class="products-grid" aria-live="polite" aria-busy="false"></div>
       </section>
 
@@ -58,6 +63,8 @@
         <div class="cart-head"><div><div class="section-kicker">NEXORA</div><h2 data-i18n="pos.cart">السلة</h2></div><span id="cartItemCount" class="cart-count">0</span></div>
         <div id="cartItems" class="cart-items" aria-live="polite"></div>
 
+        <details id="extraOptionsSection" class="extra-options">
+          <summary data-i18n="pos.extraOptions">خيارات إضافية (توصيل، وقت، ملاحظة، خصم)</summary>
         <div class="order-type-row">
           <label class="method-option">
             <input type="radio" name="orderType" value="takeaway" checked />
@@ -120,6 +127,7 @@
             هذا الخصم يتجاوز الحد المسموح — سيُطلب اعتماد مدير عند الدفع.
           </div>
         </div>
+        </details>
 
         <div class="cart-summary">
           <div class="row"><span data-i18n="common.subtotal">الإجمالي الفرعي</span><span id="sumSubtotal">0.00</span></div>
@@ -221,6 +229,14 @@
         <div id="selectedCustomerBox" class="selected-customer hidden">
           <span id="selectedCustomerLabel"></span>
           <button type="button" id="clearCustomerBtn">✕</button>
+        </div>
+        <div id="loyaltyRedeemBox" class="loyalty-redeem hidden">
+          <label data-i18n="pos.redeemPoints">استبدال نقاط الولاء</label>
+          <div class="loyalty-redeem-row">
+            <input id="loyaltyPointsInput" type="number" min="0" step="1" value="0" />
+            <button type="button" id="loyaltyMaxBtn" data-i18n="pos.useMaxPoints">الحد الأقصى</button>
+          </div>
+          <div id="loyaltyRedeemHint" class="field-hint"></div>
         </div>
       </div>
 

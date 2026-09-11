@@ -21,6 +21,12 @@ const fieldFiscalProvider = document.getElementById('fieldFiscalProvider');
 
 const discountForm = document.getElementById('discountForm');
 const fieldMaxDiscountPercent = document.getElementById('fieldMaxDiscountPercent');
+const taxDefaultForm = document.getElementById('taxDefaultForm');
+const fieldReceiptBarcodeEnabled = document.getElementById('fieldReceiptBarcodeEnabled');
+const fieldTaxDefaultRate = document.getElementById('fieldTaxDefaultRate');
+const loyaltyForm = document.getElementById('loyaltyForm');
+const fieldLoyaltyEarnRate = document.getElementById('fieldLoyaltyEarnRate');
+const fieldLoyaltyRedeemRate = document.getElementById('fieldLoyaltyRedeemRate');
 const deliveryPricingForm = document.getElementById('deliveryPricingForm');
 const fieldDeliveryDefaultFee = document.getElementById('fieldDeliveryDefaultFee');
 const fieldDeliveryPricePerKm = document.getElementById('fieldDeliveryPricePerKm');
@@ -88,6 +94,9 @@ async function init() {
   if (!user) return;
 
   loadAutoBackupStatus();
+  renderCategoryImagesPanel();
+  fieldReceiptBarcodeEnabled.checked = (await window.api.receipt.barcodeEnabled()).enabled !== false;
+  fieldReceiptBarcodeEnabled.addEventListener('change', saveReceiptBarcodeEnabled);
   currentBranch = await window.api.branches.current();
   branchNameEl.textContent = currentBranch ? currentBranch.name : '';
   fieldBranchUuid.value = currentBranch ? currentBranch.uuid : '';
@@ -111,6 +120,10 @@ async function init() {
   fieldTaxNumber.value = currency.taxNumber || '';
 
   fieldMaxDiscountPercent.value = await window.api.discount.maxCashierPercent();
+  fieldTaxDefaultRate.value = (await window.api.tax.defaultRate()).defaultTaxRate;
+  const loyaltySettings = await window.api.loyalty.settings();
+  fieldLoyaltyEarnRate.value = loyaltySettings.earnPerCurrencyUnit;
+  fieldLoyaltyRedeemRate.value = loyaltySettings.redeemPointsPerCurrencyUnit;
   fieldWeightedPrefix.value = await window.api.weighing.getPrefix();
   const deliveryPricing = await window.api.delivery.getPricing();
   fieldDeliveryDefaultFee.value = deliveryPricing.defaultFee;
@@ -128,6 +141,8 @@ async function init() {
   currencyForm.addEventListener('submit', saveCurrency);
   globalForm.addEventListener('submit', saveGlobalProfile);
   discountForm.addEventListener('submit', saveDiscountLimit);
+  taxDefaultForm.addEventListener('submit', saveTaxDefaultRate);
+  loyaltyForm.addEventListener('submit', saveLoyaltySettings);
   deliveryPricingForm.addEventListener('submit', saveDeliveryPricing);
   weighingForm.addEventListener('submit', saveWeighingPrefix);
   createBackupBtn.addEventListener('click', createBackup);
@@ -185,7 +200,7 @@ async function saveAutoCheckUpdates() {
     if (!result?.success) throw new Error(result?.message || 'تعذر حفظ الإعداد.');
   } catch (err) {
     fieldAutoCheckUpdates.checked = !enabled;
-    showToast('تعذر حفظ الإعداد: ' + err.message, 'error');
+    showToast(t('settings.toast.saveSettingFailed') + err.message, 'error');
   } finally {
     fieldAutoCheckUpdates.disabled = false;
   }
@@ -282,15 +297,15 @@ async function testNetworkPrinter(which) {
   const ip = (which === 'kitchen' ? fieldKitchenPrinterIp : fieldReceiptPrinterIp).value.trim();
   const port = (which === 'kitchen' ? fieldKitchenPrinterPort : fieldReceiptPrinterPort).value.trim() || '9100';
   const btn = which === 'kitchen' ? testKitchenNetworkPrinterBtn : testReceiptNetworkPrinterBtn;
-  if (!ip) { showToast('من فضلك أدخل عنوان IP الطابعة أولاً.', 'error'); return; }
+  if (!ip) { showToast(t('settings.toast.enterPrinterIpFirst'), 'error'); return; }
   btn.disabled = true;
   const originalText = btn.textContent;
   btn.textContent = 'جارٍ الاختبار...';
   try {
     await window.api.printing.testNetworkPrinter({ ip, port, dotsWidth: 576 });
-    showToast('تم إرسال إيصال الاختبار — تحقق من الطابعة.');
+    showToast(t('settings.toast.testReceiptSent'));
   } catch (err) {
-    showToast('فشل الاختبار: ' + err.message, 'error');
+    showToast(t('settings.toast.testFailed') + err.message, 'error');
   } finally {
     btn.disabled = false;
     btn.textContent = originalText;
@@ -307,8 +322,8 @@ async function savePrintingConfig(event) {
       kitchenPrinterMode: fieldKitchenPrinterMode.value, kitchenPrinterIp: fieldKitchenPrinterIp.value, kitchenPrinterPort: fieldKitchenPrinterPort.value,
       receiptPrinterMode: fieldReceiptPrinterMode.value, receiptPrinterIp: fieldReceiptPrinterIp.value, receiptPrinterPort: fieldReceiptPrinterPort.value,
     });
-    showToast('تم حفظ إعدادات الطباعة التلقائية.');
-  } catch (err) { showToast('تعذر حفظ إعدادات الطباعة: ' + err.message, 'error'); }
+    showToast(t('settings.toast.autoPrintSaved'));
+  } catch (err) { showToast(t('settings.toast.savePrintFailed') + err.message, 'error'); }
   finally { btn.disabled = false; }
 }
 
@@ -337,8 +352,8 @@ async function saveGlobalProfile(event) {
       taxMode: fieldTaxMode.value, taxRegistrationNumber: fieldGlobalTaxNumber.value,
       fiscalizationMode: fieldFiscalizationMode.value, fiscalProvider: fieldFiscalProvider.value,
     });
-    showToast('تم حفظ الإعداد الدولي.');
-  } catch (e) { showToast('تعذر الحفظ: ' + e.message, 'error'); }
+    showToast(t('settings.toast.localeSaved'));
+  } catch (e) { showToast(t('settings.toast.saveFailedShort') + e.message, 'error'); }
   finally { btn.disabled = false; }
 }
 
@@ -348,8 +363,8 @@ async function saveCurrency(event) {
   button.disabled = true;
   try {
     await window.api.currency.set({ base: fieldCurrencyBase.value, secondary: fieldCurrencySecondary.value, showSecondaryOnReceipt: fieldShowSecondaryOnReceipt.checked, rate: parseLocaleNumber(fieldExchangeRate.value), taxNumber: fieldTaxNumber.value });
-    showToast('تم حفظ إعدادات العملة والفاتورة.');
-  } catch (error) { showToast('تعذر الحفظ: ' + error.message, 'error'); }
+    showToast(t('settings.toast.currencyInvoiceSaved'));
+  } catch (error) { showToast(t('settings.toast.saveFailedShort') + error.message, 'error'); }
   finally { button.disabled = false; }
 }
 
@@ -377,9 +392,9 @@ async function saveBranding(e) {
   try {
     await window.api.branding.setStoreName(fieldStoreName.value.trim());
     await window.api.branding.setReceiptFooterMessage(fieldReceiptFooter.value.trim());
-    showToast('تم حفظ اسم المتجر.');
+    showToast(t('settings.toast.storeNameSaved'));
   } catch (err) {
-    showToast('حدث خطأ أثناء الحفظ: ' + err.message, 'error');
+    showToast(t('settings.toast.saveErrorGeneric') + err.message, 'error');
   } finally {
     btn.disabled = false;
     btn.textContent = 'حفظ اسم المتجر';
@@ -395,7 +410,7 @@ async function selectLogo() {
       logoPreview.style.display = 'inline-block';
     }
   } catch (err) {
-    showToast('حدث خطأ أثناء اختيار الشعار: ' + err.message, 'error');
+    showToast(t('settings.toast.logoSelectError') + err.message, 'error');
   } finally {
     selectLogoBtn.disabled = false;
   }
@@ -408,12 +423,100 @@ async function saveDiscountLimit(e) {
   btn.textContent = 'جارٍ الحفظ...';
   try {
     await window.api.discount.setMaxCashierPercent(parseFloat(fieldMaxDiscountPercent.value) || 0);
-    showToast('تم حفظ حد الخصم.');
+    showToast(t('settings.toast.discountLimitSaved'));
   } catch (err) {
-    showToast('حدث خطأ أثناء الحفظ: ' + err.message, 'error');
+    showToast(t('settings.toast.saveErrorGeneric') + err.message, 'error');
   } finally {
     btn.disabled = false;
     btn.textContent = 'حفظ حد الخصم';
+  }
+}
+
+const PLACEHOLDER_IMG =
+  'data:image/svg+xml;utf8,' +
+  encodeURIComponent(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" fill="#f0f0f0"/><text x="32" y="38" font-size="24" text-anchor="middle" fill="#c1c5cb">🛒</text></svg>`
+  );
+
+async function renderCategoryImagesPanel() {
+  const list = document.getElementById('categoryImagesList');
+  const categories = await window.api.categories.list();
+  list.innerHTML = categories.map((c, idx) => `
+    <div class="category-image-card" data-id="${c.id}">
+      <img src="${escapeHtml(c.image_path || PLACEHOLDER_IMG)}" alt="" class="thumb" />
+      <div class="category-image-name">${escapeHtml(c.name)}</div>
+      <div class="category-order-row">
+        <button type="button" class="btn btn-secondary btn-sm" data-move="up" data-id="${c.id}" ${idx === 0 ? 'disabled' : ''}>▲</button>
+        <button type="button" class="btn btn-secondary btn-sm" data-move="down" data-id="${c.id}" ${idx === categories.length - 1 ? 'disabled' : ''}>▼</button>
+      </div>
+      <button type="button" class="btn btn-secondary btn-sm" data-pick-cat="${c.id}">اختر صورة</button>
+    </div>
+  `).join('') || '<div class="field-hint">لا توجد فئات بعد — تُنشأ تلقائياً عند إضافة منتج بفئة جديدة من صفحة المنتجات.</div>';
+
+  list.querySelectorAll('[data-pick-cat]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const categoryId = parseInt(btn.dataset.pickCat, 10);
+      const result = await window.api.dialog.selectImage();
+      if (!result) return;
+      try {
+        await window.api.categories.setImage(categoryId, result.url);
+        renderCategoryImagesPanel();
+      } catch (err) { showToast('تعذّر حفظ صورة الفئة: ' + err.message, 'error'); }
+    });
+  });
+  list.querySelectorAll('[data-move]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const categoryId = parseInt(btn.dataset.id, 10);
+      try {
+        await window.api.categories.move(categoryId, btn.dataset.move);
+        renderCategoryImagesPanel();
+      } catch (err) { showToast('تعذّر تغيير الترتيب: ' + err.message, 'error'); }
+    });
+  });
+}
+
+async function saveReceiptBarcodeEnabled() {
+  try {
+    await window.api.receipt.barcodeEnabled({ save: fieldReceiptBarcodeEnabled.checked });
+    showToast(fieldReceiptBarcodeEnabled.checked ? 'تم تفعيل رمز QR على الفاتورة.' : 'تم إلغاء رمز QR من الفاتورة.');
+  } catch (err) {
+    showToast(t('settings.toast.saveErrorGeneric') + err.message, 'error');
+    fieldReceiptBarcodeEnabled.checked = !fieldReceiptBarcodeEnabled.checked;
+  }
+}
+
+async function saveTaxDefaultRate(e) {
+  e.preventDefault();
+  const btn = document.getElementById('saveTaxDefaultBtn');
+  btn.disabled = true;
+  try {
+    await window.api.tax.defaultRate({ save: parseFloat(fieldTaxDefaultRate.value) || 0 });
+    showToast(t('settings.tax.saved', 'تم حفظ نسبة الضريبة الافتراضية.'));
+  } catch (err) {
+    showToast(t('settings.toast.saveErrorGeneric') + err.message, 'error');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function saveLoyaltySettings(e) {
+  e.preventDefault();
+  const btn = document.getElementById('saveLoyaltyBtn');
+  btn.disabled = true;
+  btn.textContent = 'جارٍ الحفظ...';
+  try {
+    const r = await window.api.loyalty.settings({
+      save: true,
+      earnPerCurrencyUnit: parseFloat(fieldLoyaltyEarnRate.value) || 0,
+      redeemPointsPerCurrencyUnit: parseFloat(fieldLoyaltyRedeemRate.value) || 0,
+    });
+    if (!r?.success) throw new Error(r?.message || 'تعذر حفظ إعدادات الولاء');
+    showToast(t('settings.toast.loyaltySaved'));
+  } catch (err) {
+    showToast(t('settings.toast.saveErrorGeneric') + err.message, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'حفظ إعدادات الولاء';
   }
 }
 
@@ -424,9 +527,9 @@ async function saveDeliveryPricing(e) {
   btn.textContent = 'جارٍ الحفظ...';
   try {
     await window.api.delivery.setPricing(parseFloat(fieldDeliveryDefaultFee.value) || 0, parseFloat(fieldDeliveryPricePerKm.value) || 0);
-    showToast('تم حفظ تسعير التوصيل.');
+    showToast(t('settings.toast.deliveryPricingSaved'));
   } catch (err) {
-    showToast('حدث خطأ أثناء الحفظ: ' + err.message, 'error');
+    showToast(t('settings.toast.saveErrorGeneric') + err.message, 'error');
   } finally {
     btn.disabled = false;
     btn.textContent = 'حفظ تسعير التوصيل';
@@ -440,9 +543,9 @@ async function saveWeighingPrefix(e) {
   btn.textContent = 'جارٍ الحفظ...';
   try {
     await window.api.weighing.setPrefix(fieldWeightedPrefix.value.trim());
-    showToast('تم حفظ إعدادات البيع بالوزن.');
+    showToast(t('settings.toast.weighingSaved'));
   } catch (err) {
-    showToast('حدث خطأ أثناء الحفظ: ' + err.message, 'error');
+    showToast(t('settings.toast.saveErrorGeneric') + err.message, 'error');
   } finally {
     btn.disabled = false;
     btn.textContent = 'حفظ';
@@ -512,9 +615,9 @@ async function save(e) {
       name: fieldBranchName.value.trim(),
       businessType: fieldBusinessType.value,
     });
-    showToast('تم حفظ الإعدادات بنجاح.');
+    showToast(t('settings.toast.settingsSaved'));
   } catch (err) {
-    showToast('حدث خطأ أثناء الحفظ: ' + err.message, 'error');
+    showToast(t('settings.toast.saveErrorGeneric') + err.message, 'error');
   } finally {
     btn.disabled = false;
     btn.textContent = 'حفظ الإعدادات';
@@ -618,7 +721,7 @@ async function connectToDevice(device) {
     showToast(`تم الاتصال بنجاح بمحل "${result.branchName}"`);
     await loadLanStatus();
   } catch (err) {
-    showToast('فشل الاتصال: ' + err.message, 'error');
+    showToast(t('settings.toast.connectionFailed') + err.message, 'error');
   }
 }
 

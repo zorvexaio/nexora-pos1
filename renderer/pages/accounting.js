@@ -199,7 +199,7 @@ async function loadPeriods() {
 
 async function onLockPeriod() {
   const key = document.getElementById('newPeriodKey').value;
-  if (!key) { showToast('اختر الشهر أولاً.', 'error'); return; }
+  if (!key) { showToast(t('accounting.toast.selectMonthFirst'), 'error'); return; }
   await onLockPeriodKey(key);
 }
 
@@ -207,23 +207,23 @@ async function onLockPeriodKey(key) {
   if (!confirm(`تأكيد إقفال الفترة ${key}؟ لن يمكن إضافة أي قيد محاسبي جديد بتاريخ ضمنها (مبيعات/مشتريات/مرتجعات/رواتب) إلا بعد إعادة فتحها.`)) return;
   try {
     await window.api.accounting.lockPeriod(key);
-    showToast('تم إقفال الفترة.', 'success');
+    showToast(t('accounting.toast.periodClosed'), 'success');
     await loadPeriods();
   } catch (error) {
-    showToast('تعذّر إقفال الفترة: ' + (error.message || error), 'error');
+    showToast(t('accounting.toast.closePeriodFailed') + (error.message || error), 'error');
   }
 }
 
 async function onReopenPeriod(key) {
   const reason = await promptDialog(`سبب إعادة فتح الفترة ${key} (10 محارف على الأقل — يُسجَّل بسجل التدقيق):`, '');
   if (reason === null) return;
-  if (reason.trim().length < 10) { showToast('السبب يجب ألا يقل عن 10 محارف.', 'error'); return; }
+  if (reason.trim().length < 10) { showToast(t('accounting.toast.reasonTooShort'), 'error'); return; }
   try {
     await window.api.accounting.reopenPeriod({ periodKey: key, reason });
-    showToast('تم إعادة فتح الفترة.', 'success');
+    showToast(t('accounting.toast.periodReopened'), 'success');
     await loadPeriods();
   } catch (error) {
-    showToast('تعذّر إعادة فتح الفترة: ' + (error.message || error), 'error');
+    showToast(t('accounting.toast.reopenPeriodFailed') + (error.message || error), 'error');
   }
 }
 
@@ -244,7 +244,7 @@ function addManualLine() {
 }
 
 function removeManualLine(rowId) {
-  if (manualLines.length <= 2) { showToast('القيد يحتاج سطرين على الأقل.', 'error'); return; }
+  if (manualLines.length <= 2) { showToast(t('accounting.toast.entryNeedsTwoLines'), 'error'); return; }
   manualLines = manualLines.filter((l) => l.rowId !== rowId);
   renderManualLines();
   recalcManualTotals();
@@ -307,10 +307,10 @@ async function onCreateAccount() {
   const code = document.getElementById('newAccountCode').value.trim();
   const name = document.getElementById('newAccountName').value.trim();
   const type = document.getElementById('newAccountType').value;
-  if (!code || !name) { showToast('أدخل كود واسم الحساب.', 'error'); return; }
+  if (!code || !name) { showToast(t('accounting.toast.enterAccountCodeName'), 'error'); return; }
   try {
     await window.api.accounting.createAccount({ code, name, type });
-    showToast('تم إنشاء الحساب.', 'success');
+    showToast(t('accounting.toast.accountCreated'), 'success');
     document.getElementById('newAccountCode').value = '';
     document.getElementById('newAccountName').value = '';
     accountsCache = await window.api.accounting.listAccounts();
@@ -321,7 +321,7 @@ async function onCreateAccount() {
     renderManualLines();
     document.getElementById('manualNewAccountRow').classList.add('hidden');
   } catch (error) {
-    showToast('تعذّر إنشاء الحساب: ' + (error.message || error), 'error');
+    showToast(t('accounting.toast.createAccountFailed') + (error.message || error), 'error');
   }
 }
 
@@ -329,19 +329,19 @@ async function onPostManualEntry() {
   if (!recalcManualTotals()) return;
   const entryDate = document.getElementById('manualEntryDate').value;
   const memo = document.getElementById('manualEntryMemo').value.trim();
-  if (!entryDate) { showToast('اختر التاريخ.', 'error'); return; }
-  if (!memo) { showToast('أدخل بيان القيد.', 'error'); return; }
+  if (!entryDate) { showToast(t('accounting.toast.selectDate'), 'error'); return; }
+  if (!memo) { showToast(t('accounting.toast.enterEntryMemo'), 'error'); return; }
   const lines = manualLines.map((l) => ({
     accountId: Number(l.accountId) || null,
     memo: l.memo || null,
     debit: Number(l.debit) || 0,
     credit: Number(l.credit) || 0,
   }));
-  if (lines.some((l) => !l.accountId)) { showToast('اختر حسابًا لكل سطر.', 'error'); return; }
-  if (lines.some((l) => l.debit === 0 && l.credit === 0)) { showToast('كل سطر يحتاج مبلغ مدين أو دائن.', 'error'); return; }
+  if (lines.some((l) => !l.accountId)) { showToast(t('accounting.toast.selectAccountEachLine'), 'error'); return; }
+  if (lines.some((l) => l.debit === 0 && l.credit === 0)) { showToast(t('accounting.toast.lineNeedsAmount'), 'error'); return; }
   try {
     await window.api.accounting.postEntry({ entryDate, memo, lines });
-    showToast('تم ترحيل القيد بنجاح.', 'success');
+    showToast(t('accounting.toast.entryPosted'), 'success');
     manualLines = [];
     addManualLine();
     addManualLine();
@@ -350,7 +350,7 @@ async function onPostManualEntry() {
     await loadTrialBalance();
     document.getElementById('journalBody').innerHTML = '';
   } catch (error) {
-    showToast('تعذّر ترحيل القيد: ' + (error.message || error), 'error');
+    showToast(t('accounting.toast.postEntryFailed') + (error.message || error), 'error');
   }
 }
 
