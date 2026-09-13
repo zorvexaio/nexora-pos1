@@ -33,9 +33,11 @@ async function init() {
     )
     .join('');
 
-  const deliveryTimeHtml = sale.order_type === 'delivery'
-    ? `<div class="kitchen-delivery-time">${sale.delivery_time ? `⏰ ${t('kitchen.deliverAt')} ${formatDate(sale.delivery_time)}` : `🛵 ${t('kitchen.deliverNow')}`}</div>`
-    : '';
+  // وقت مجدوَل يظهر بغض النظر عن نوع الطلب (توصيل أو استلام) — كان مقصوراً على
+  // التوصيل فقط رغم أن الكاشير يقدر يحدد وقتاً لأي نوع طلب من شاشة البيع.
+  const deliveryTimeHtml = sale.delivery_time
+    ? `<div class="kitchen-delivery-time">⏰ ${t('kitchen.deliverAt')} ${formatDate(sale.delivery_time)}</div>`
+    : (sale.order_type === 'delivery' ? `<div class="kitchen-delivery-time">🛵 ${t('kitchen.deliverNow')}</div>` : '');
   // ملاحظة الطلب العامة (مش ملاحظة صنف بعينه) — لازم تكون واضحة جداً للمطبخ لأنها
   // ممكن تكون تعليمات مهمة ("حساسية مكسرات"، "بدون بصل خالص")، فمعاملتها زي تحذير كبير.
   const orderNoteHtml = sale.notes ? `<div class="kitchen-order-note">⚠ ${escapeHtml(sale.notes)}</div>` : '';
@@ -67,8 +69,10 @@ function formatDate(str) {
   const d = new Date(hasTimezone ? isoCandidate : isoCandidate + 'Z');
   if (isNaN(d.getTime())) return normalized || '—';
   const lang = document.documentElement.getAttribute('data-lang') || 'ar';
-  const LOCALES = { ar: 'ar-EG', tr: 'tr-TR', en: 'en-US' };
-  return d.toLocaleString(LOCALES[lang] || 'ar-EG', { dateStyle: 'medium', timeStyle: 'short' });
+  // نفرض أرقام لاتينية (0-9) حتى مع اللغة العربية — الأرقام الهندية العربية (٠-٩)
+  // بتطلع مشوّشة على أغلب طابعات الإيصال الحرارية.
+  const LOCALES = { ar: 'ar-EG-u-nu-latn', tr: 'tr-TR', en: 'en-US' };
+  return d.toLocaleString(LOCALES[lang] || 'ar-EG-u-nu-latn', { dateStyle: 'medium', timeStyle: 'short' });
 }
 
 function escapeHtml(str) {

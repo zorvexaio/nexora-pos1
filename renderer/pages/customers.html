@@ -62,7 +62,7 @@
   </div>
 
   <div id="ledgerModal" class="modal-overlay hidden"><div class="modal"><h2 id="ledgerTitle">كشف حساب العميل</h2><div id="ledgerBalances"></div><div id="ledgerRows" class="breakdown-list"></div><div class="modal-actions"><button id="receivePaymentBtn" class="btn btn-primary">تسجيل تسديد</button><button id="closeLedgerBtn" class="btn btn-secondary">إغلاق</button></div></div></div>
-  <div id="paymentModal" class="modal-overlay hidden"><div class="modal"><h2>تسديد دين</h2><form id="debtPaymentForm"><div class="form-field"><label>المبلغ</label><input id="debtPaymentAmount" type="number" min="0.01" step="0.01" required /></div><div class="form-field"><label>طريقة التسديد</label><select id="debtPaymentMethod"><option value="cash">نقدي</option><option value="card">بطاقة / تحويل</option></select></div><div class="form-field"><label>ملاحظات</label><input id="debtPaymentNotes" type="text" /></div><div class="modal-actions"><button type="button" id="cancelDebtPaymentBtn" class="btn btn-secondary">إلغاء</button><button class="btn btn-primary">حفظ التسديد</button></div></form></div></div>
+  <div id="paymentModal" class="modal-overlay hidden"><div class="modal"><h2>تسديد دين</h2><form id="debtPaymentForm"><div class="form-field"><label>المبلغ</label><input id="debtPaymentAmount" type="text" inputmode="numeric" min="0.01" step="0.01" required /></div><div class="form-field"><label>طريقة التسديد</label><select id="debtPaymentMethod"><option value="cash">نقدي</option><option value="card">بطاقة / تحويل</option></select></div><div class="form-field"><label>ملاحظات</label><input id="debtPaymentNotes" type="text" /></div><div class="modal-actions"><button type="button" id="cancelDebtPaymentBtn" class="btn btn-secondary">إلغاء</button><button class="btn btn-primary">حفظ التسديد</button></div></form></div></div>
 
   <!-- نافذة إضافة/تعديل عميل -->
   <div id="customerModal" class="modal-overlay hidden">
@@ -81,7 +81,7 @@
           </div>
           <div class="form-field full">
             <label>نقاط الولاء</label>
-            <input id="fieldPoints" type="number" min="0" value="0" />
+            <input id="fieldPoints" type="text" inputmode="numeric" min="0" value="0" />
           </div>
         </div>
         <div class="modal-actions">

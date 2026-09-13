@@ -1,12 +1,12 @@
 {
-  "generatedAt": "2026-09-11T18:57:49.268Z",
-  "version": "0.52.9",
+  "generatedAt": "2026-09-04T18:01:29.445Z",
+  "version": "0.52.1",
   "mode": "source",
   "checks": [
     {
       "id": "source-version",
       "status": "PASS",
-      "detail": "package version=0.52.9",
+      "detail": "package version=0.52.1",
       "blocking": true
     },
     {
@@ -35,8 +35,8 @@
     },
     {
       "id": "native-runtime",
-      "status": "PASS",
-      "detail": "native SQLite open/write/read probe passed",
+      "status": "BLOCKED",
+      "detail": "native module is not installed; run npm run setup",
       "blocking": false
     },
     {

@@ -119,3 +119,27 @@ async function submitPin() {
     }
   } catch (_) {}
 })();
+
+// شاشة splash تعرض اسم/شعار المتجر (إن وُجدا) قبل هذه الشاشة مباشرة — بدون هذا، كانت
+// شاشة الدخول ترجع فجأة للاسم العام "نظام نقاط البيع" بلا شعار، فتنقطع الهوية البصرية
+// للمتجر بين splash والدخول ثم تعود بالداخل (common.js يطبّقها على شريط التطبيق).
+// نفس منطق splash.js/common.js بالضبط، بلا أي اعتماد على common.js نفسه.
+(async function applyLoginBranding() {
+  try {
+    if (!window.api || !window.api.branding) return;
+    const branding = await window.api.branding.get();
+    if (branding && branding.storeName) {
+      document.getElementById('loginBrandTitle').textContent = branding.storeName;
+    }
+    if (branding && branding.logoPath) {
+      const mark = document.getElementById('loginBrandMark');
+      const img = document.createElement('img');
+      img.className = 'brand-logo';
+      img.alt = '';
+      img.src = window.api.pathToFileURL(branding.logoPath);
+      mark.replaceWith(img);
+    }
+  } catch (_) {
+    // لا مشكلة إن فشل — تبقى العلامة الافتراضية
+  }
+})();

@@ -519,6 +519,10 @@ async function startLanMain() {
         expiresAt: pairingCodeExpiresAt,
       };
     },
+    // يسمح لصفحة الكرسون (طلب من جوال/تابلت داخل الشبكة المحلية) بإرسال تذكرة مطبخ
+    // تلقائية بنفس الآلية المستخدَمة فعلاً لكل طلب طاولة عادي من شاشة الكاشير — بدون
+    // هذا الربط، كان طلب الكرسون سيُحفَظ صامتاً بلا أي تذكرة تصل للمطبخ إطلاقاً.
+    sendKitchenTicket: (saleId) => autoSendKitchen(saleId),
   });
   db.setSetting('lan_main_port', String(lanServerHandle.port));
 
@@ -1707,7 +1711,13 @@ ipcMain.handle('tables:split', (_event, { saleId, selected, payment }) => {
 ipcMain.handle('tables:close', (_event, { saleId, payment }) => {
   requireAccountReady();
   const shift = db.getOpenShift();
-  const result = db.closeTableSale(saleId, payment, currentUser.id, shift?.id || null);
+  // نفس نمط sale:create بالضبط: منحة اعتماد صادرة فعلياً من مدير، أو المدير/المدير
+  // العام يعتمد لنفسه مباشرة — لا نثق أبداً بأي approverId قادم من الواجهة مباشرة.
+  const creditGrant = payment.creditApprovalGrantId ? consumeApprovalGrant(payment.creditApprovalGrantId) : null;
+  const trustedPayment = { ...payment,
+    creditApprovedBy: creditGrant?.approverId || (['admin', 'manager'].includes(currentUser.role) && payment.paymentMethod === 'credit' ? currentUser.id : null),
+  };
+  const result = db.closeTableSale(saleId, trustedPayment, currentUser.id, shift?.id || null);
   db.logAudit({ userId: currentUser.id, action: 'table_order_closed', entityType: 'sale', entityId: saleId, details: { paymentMethod: payment.paymentMethod } });
   // إغلاق/دفع الطاولة = فاتورة دفع فقط. لا نعيد إرسال طلب للمطبخ.
   return autoPrintReceipt(saleId).then((receipt) => ({ ...result, printOutcome: { receipt } }));
@@ -1719,6 +1729,8 @@ ipcMain.handle('tables:release', (_event, tableId) => {
   if (result.released) db.logAudit({ userId: currentUser.id, action: 'table_released', entityType: 'restaurant_table', entityId: tableId, details: {} });
   return result;
 });
+
+ipcMain.handle('tables:acknowledgeBill', (_event, saleId) => { requireAccountReady(); return db.acknowledgeBillRequest(saleId); });
 
 // فتح نافذة تذكرة مطبخ قابلة للطباعة (بدون أسعار — فقط الأصناف والكميات والملاحظات)
 ipcMain.handle('kitchen:open', (_event, saleId) => { requireAccountReady(); if (!db.getSale(saleId, db.getCurrentBranch().id)) throw new Error('الطلب غير موجود.'); return autoSendKitchen(saleId); });

@@ -137,7 +137,7 @@ async function saveCustomer(e) {
     const payload = {
       name: fieldName.value.trim() || null,
       phone: fieldPhone.value.trim() || null,
-      loyaltyPoints: parseInt(fieldPoints.value, 10) || 0,
+      loyaltyPoints: Math.floor(parseLocaleNumber(fieldPoints.value)) || 0,
     };
     if (currentEditId) {
       payload.id = currentEditId;

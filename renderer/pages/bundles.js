@@ -139,7 +139,7 @@ function updateDiscountValueLabel() {
 
 function addItemToBundle() {
   const productId = parseInt(itemProductSelect.value, 10);
-  const quantity = parseFloat(itemQuantityInput.value) || 0;
+  const quantity = parseLocaleNumber(itemQuantityInput.value) || 0;
   if (!productId || quantity <= 0) return;
 
   const product = products.find((p) => p.id === productId);
@@ -195,7 +195,7 @@ async function saveBundle(e) {
     id: currentEditId || undefined,
     name: fieldName.value.trim(),
     discountType: fieldDiscountType.value,
-    discountValue: parseFloat(fieldDiscountValue.value) || 0,
+    discountValue: parseLocaleNumber(fieldDiscountValue.value) || 0,
     isActive: fieldIsActive.checked,
     items: currentItems.map((i) => ({ productId: i.productId, quantity: i.quantity })),
   };

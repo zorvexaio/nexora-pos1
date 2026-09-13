@@ -50,7 +50,7 @@
           <input id="searchInput" type="text" data-i18n-placeholder="pos.searchPlaceholder" placeholder="ابحث بالاسم أو امسح الباركود..." aria-label="البحث عن منتج أو مسح الباركود" autocomplete="off" spellcheck="false" autofocus />
           <div class="qty-buffer-box" title="اكتب رقم قبل الضغط على المنتج لإضافته بهذه الكمية دفعة واحدة">
             <span data-i18n="pos.qty">الكمية</span>
-            <input id="qtyBufferInput" type="number" min="1" step="1" value="1" />
+            <input id="qtyBufferInput" type="text" inputmode="numeric" maxlength="4" value="1" />
           </div>
           <div id="barcodeError" class="barcode-error hidden"></div>
         </div>
@@ -78,12 +78,12 @@
         <div id="deliveryFields" class="hidden" style="margin-bottom:10px;">
           <div class="form-field">
             <label data-i18n="pos.deliveryDistance">المسافة (كم)</label>
-            <input id="deliveryDistanceInput" type="number" step="0.1" min="0" placeholder="مثال: 13" />
+            <input id="deliveryDistanceInput" type="text" inputmode="numeric" step="0.1" min="0" placeholder="مثال: 13" />
             <div class="field-hint" id="deliveryDistanceHint" style="font-size:11px; color:#8b94a2; margin-top:3px;"></div>
           </div>
           <div class="form-field">
             <label data-i18n="pos.deliveryFee">رسوم التوصيل</label>
-            <input id="deliveryFeeInput" type="number" step="0.01" min="0" value="0" />
+            <input id="deliveryFeeInput" type="text" inputmode="numeric" step="0.01" min="0" value="0" />
           </div>
           <div class="form-field">
             <label data-i18n="pos.deliveryPerson">مندوب التوصيل (اختياري)</label>
@@ -121,7 +121,7 @@
               <option value="percent" data-i18n="pos.percent">نسبة %</option>
               <option value="fixed" data-i18n="pos.fixedAmount">مبلغ ثابت</option>
             </select>
-            <input id="discountValueInput" type="number" step="0.01" min="0" value="0" disabled />
+            <input id="discountValueInput" type="text" inputmode="numeric" step="0.01" min="0" value="0" disabled />
           </div>
           <div id="discountApprovalNote" class="hidden" style="color:#b91c1c; font-size:12px; margin-top:4px;" data-i18n="pos.discountApprovalNote">
             هذا الخصم يتجاوز الحد المسموح — سيُطلب اعتماد مدير عند الدفع.
@@ -233,7 +233,7 @@
         <div id="loyaltyRedeemBox" class="loyalty-redeem hidden">
           <label data-i18n="pos.redeemPoints">استبدال نقاط الولاء</label>
           <div class="loyalty-redeem-row">
-            <input id="loyaltyPointsInput" type="number" min="0" step="1" value="0" />
+            <input id="loyaltyPointsInput" type="text" inputmode="numeric" min="0" step="1" value="0" />
             <button type="button" id="loyaltyMaxBtn" data-i18n="pos.useMaxPoints">الحد الأقصى</button>
           </div>
           <div id="loyaltyRedeemHint" class="field-hint"></div>

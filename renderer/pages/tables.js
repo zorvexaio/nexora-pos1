@@ -37,6 +37,10 @@ async function init() {
   mergeTablesBtn.addEventListener('click', openMergeModal);
   document.getElementById('cancelMergeTablesBtn').addEventListener('click', () => mergeTablesModal.classList.add('hidden'));
   document.getElementById('confirmMergeTablesBtn').addEventListener('click', mergeSelectedTables);
+
+  // تحديث دوري خفيف — أهم استخدام له هو ظهور "طلب الحساب" القادم من جهاز الكرسون
+  // خلال ثوانٍ بلا حاجة الكاشير لتحديث الصفحة يدوياً كل مرة.
+  setInterval(() => { if (!document.hidden) loadTables(); }, 8000);
 }
 
 async function loadTables() {
@@ -89,8 +93,9 @@ function renderTables(tables) {
 
   for (const t of tables) {
     const card = document.createElement('div');
-    card.className = `table-card ${t.occupied ? 'occupied' : 'free'}`;
+    card.className = `table-card ${t.occupied ? 'occupied' : 'free'} ${t.billRequested ? 'bill-requested' : ''}`;
     card.innerHTML = `
+      ${t.billRequested ? `<div class="bill-request-badge">🔔 ${ts('طلب الحساب')} <button data-action="ackBill" class="ack-bill-btn">${ts('تم')}</button></div>` : ''}
       <div class="table-name">${escapeHtml(t.name)}</div>
       <div class="table-seats">${t.seats} ${ts('مقاعد')}</div>
       <div class="table-status">${t.occupied ? `${ts('مشغولة')} — ${t.openTotal.toFixed(2)}` : ts('متاحة')}</div>
@@ -106,9 +111,17 @@ function renderTables(tables) {
       }
     `;
     card.addEventListener('click', (e) => {
-      if (e.target.dataset.action === 'delete' || e.target.dataset.action === 'release') return; // الأزرار تتعامل بمفردها
+      if (e.target.dataset.action === 'delete' || e.target.dataset.action === 'release' || e.target.dataset.action === 'ackBill') return; // الأزرار تتعامل بمفردها
       window.location.href = `table-order.html?tableId=${t.id}`;
     });
+    const ackBtn = card.querySelector('[data-action="ackBill"]');
+    if (ackBtn) {
+      ackBtn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        if (t.openSaleId) await window.api.tables.acknowledgeBill(t.openSaleId);
+        loadTables();
+      });
+    }
     const deleteBtn = card.querySelector('[data-action="delete"]');
     if (deleteBtn) {
       deleteBtn.addEventListener('click', async (e) => {
@@ -142,7 +155,7 @@ async function saveTable(e) {
   e.preventDefault();
   await window.api.tables.create({
     name: fieldTableName.value.trim(),
-    seats: parseInt(fieldTableSeats.value, 10) || 4,
+    seats: Math.floor(parseLocaleNumber(fieldTableSeats.value)) || 4,
   });
   addTableModal.classList.add('hidden');
   addTableForm.reset();

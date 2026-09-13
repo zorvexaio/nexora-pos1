@@ -526,6 +526,10 @@ table.products-table, table.audit-table {
 .table-status { font-size: 13px; font-weight: 700; }
 .table-card.free .table-status { color: var(--success); }
 .table-card.occupied .table-status { color: var(--danger); }
+.table-card.bill-requested { border-color: var(--warning); box-shadow: 0 0 0 3px var(--warning-light); animation: bill-pulse 1.4s ease-in-out infinite; }
+@keyframes bill-pulse { 0%, 100% { box-shadow: 0 0 0 3px var(--warning-light); } 50% { box-shadow: 0 0 0 6px var(--warning-light); } }
+.bill-request-badge { position:absolute; top:-10px; inset-inline:8px; background:var(--warning); color:#fff; font-size:11px; font-weight:800; padding:5px 8px; border-radius:8px; display:flex; align-items:center; justify-content:space-between; gap:6px; box-shadow: var(--shadow-sm); }
+.ack-bill-btn { background:rgba(255,255,255,.25); border:none; color:#fff; padding:3px 8px; border-radius:6px; font-size:10px; font-weight:800; }
 .table-delete {
   position: absolute; top: 10px; inset-inline-end: 10px; width: 26px; height: 26px; border-radius: 50%;
   border: none; background: rgba(0, 0, 0, .06); color: var(--text-faint); cursor: pointer; font-size: 13px;
@@ -552,6 +556,9 @@ table.products-table, table.audit-table {
   width: 380px; background: var(--surface); border-radius: var(--radius-xl); padding: 32px;
   box-shadow: var(--shadow-lg); border: 1px solid var(--line); border-top: 3px solid var(--brand-gold);
 }
+.login-logo-row { display: flex; justify-content: center; margin-bottom: 14px; }
+.login-logo-row .brand-mark { width: 52px; height: 52px; border-radius: 14px; font-size: 22px; }
+.login-logo-row .brand-logo { width: 56px; height: 56px; border-radius: 16px; }
 .login-brand { text-align: center; font-size: 19px; font-weight: 800; margin-bottom: 18px; color: var(--text); }
 .login-mode-tabs { display: flex; gap: 6px; margin-bottom: 16px; background: var(--surface-strong); padding: 4px; border-radius: 10px; }
 .login-mode-tab { flex: 1; padding: 8px; border: none; background: transparent; border-radius: 7px; font-weight: 700; font-size: 13px; color: var(--text-soft); cursor: pointer; }
@@ -634,6 +641,8 @@ table.products-table, table.audit-table {
 .receipt-order-note { margin: 8px 0; padding: 7px 9px; background: var(--warning-light); border: 1.5px solid var(--warning-border); border-radius: 6px; color: var(--warning); font-weight: 700; font-size: 12.5px; line-height: 1.5; }
 .receipt-row { display: flex; justify-content: space-between; padding: 3px 0; }
 .receipt-total { font-size: 16px; font-weight: 800; border-top: 1px solid #e5e7eb; margin-top: 6px; padding-top: 8px; }
+/* رمز QR أسفل الفاتورة — كان بدون أي تنسيق فيلتصق بالحافة بلا توسيط ولا مسافات. */
+.receipt-qr { display: block; width: 110px; height: 110px; margin: 14px auto 4px; }
 .receipt-footer { text-align: center; margin-top: 16px; color: #9ca3af; font-size: 12px; }
 .kitchen-ticket { font-size: 15.5px; }
 .kitchen-item-name { font-weight: 700; }
@@ -799,6 +808,11 @@ table.products-table, table.audit-table {
 .pl-final .pl-value{color:var(--success);font-size:23px}
 .pl-margin{margin-top:6px;font-size:11.5px;color:var(--text-soft);font-weight:700}
 .pl-margin span{color:var(--success);font-weight:900}
+/* خسارة: نفس بطاقة "صافي الربح" لكن بالأحمر بدل الأخضر — يتفعّل بالجافاسكريبت
+   (data-tone="danger") عند ما يكون صافي الربح سالب، بدل ما تضل خضراء دايماً */
+.pl-final[data-tone="danger"]{background:linear-gradient(160deg,var(--danger-light),var(--surface))}
+.pl-final[data-tone="danger"] .pl-value{color:var(--danger)}
+.pl-final[data-tone="danger"] .pl-margin span{color:var(--danger)}
 .pl-op{align-self:center;font-size:20px;font-weight:900;color:var(--text-faint);padding:0 2px}
 @media (max-width:900px){.pl-op{display:none}.pl-flow{flex-direction:column}}
 
@@ -811,6 +825,8 @@ table.sticky-head thead th{position:sticky;top:0;background:var(--surface-soft);
 .rank-bar{height:6px;border-radius:4px;background:var(--surface-strong);overflow:hidden}
 .rank-bar > span{display:block;height:100%;border-radius:4px;background:linear-gradient(90deg,var(--primary),var(--brand-gold))}
 .rank-bar.profit > span{background:linear-gradient(90deg,var(--success),#57c497)}
+.rank-bar.profit.is-loss > span{background:linear-gradient(90deg,var(--danger),#ff8a80)}
+.rank-value-loss{color:var(--danger)}
 
 .bar-chart{display:flex;align-items:flex-end;gap:8px;height:180px;padding-top:14px}
 .bar-col{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;gap:6px}

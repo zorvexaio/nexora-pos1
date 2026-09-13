@@ -479,18 +479,26 @@ function renderProfitLoss(pl, prevPl) {
   plPayrollExpense.textContent = formatMoney(pl.payrollExpense);
   plNetProfit.textContent = formatMoney(pl.netProfit);
   plMargin.textContent = `${pl.marginPercent.toFixed(1)}%`;
+  // البطاقة كانت مثبّتة دايماً على tone="success" (أخضر) بالـ HTML، حتى لو صافي
+  // الربح سالب (خسارة). هون منبدّل الـ tone حسب الإشارة الفعلية لصافي الربح.
+  const plFinalCard = plNetProfit.closest('.pl-final');
+  if (plFinalCard) plFinalCard.dataset.tone = pl.netProfit < 0 ? 'danger' : 'success';
   renderTrend(trendNetProfit, pl.netProfit, prevPl?.netProfit);
 
   topProfitBody.innerHTML = '';
   topProfitEmpty.style.display = pl.byProduct.length === 0 ? 'block' : 'none';
-  const maxProfit = Math.max(...pl.byProduct.map((p) => Number(p.profit) || 0), 1);
+  // maxProfit لازم يكون مبني على القيمة المطلقة لأكبر ربح/خسارة — وإلا منتج خسران
+  // بيطلع بشريط أخضر صغير (4%) بدل ما ينعرض كخسارة واضحة بالأحمر.
+  const maxProfit = Math.max(...pl.byProduct.map((p) => Math.abs(Number(p.profit) || 0)), 1);
   for (const p of pl.byProduct) {
-    const pct = Math.max((Number(p.profit) / maxProfit) * 100, 4);
+    const profit = Number(p.profit) || 0;
+    const isLoss = profit < 0;
+    const pct = Math.max((Math.abs(profit) / maxProfit) * 100, 4);
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td>${escapeHtml(p.name)}</td>
       <td>${p.qty}</td>
-      <td><div class="rank-cell"><strong>${formatMoney(p.profit)}</strong><div class="rank-bar profit"><span style="width:${pct}%"></span></div></div></td>
+      <td><div class="rank-cell"><strong class="${isLoss ? 'rank-value-loss' : ''}">${formatMoney(p.profit)}</strong><div class="rank-bar profit${isLoss ? ' is-loss' : ''}"><span style="width:${pct}%"></span></div></div></td>
     `;
     topProfitBody.appendChild(tr);
   }

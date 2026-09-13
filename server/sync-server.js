@@ -10,6 +10,11 @@ const https = require('https');
 const crypto = require('crypto');
 const Database = require('better-sqlite3-multiple-ciphers');
 const path = require('path');
+// وحدة قاعدة بيانات التطبيق الحقيقية (منتجات/فئات/طاولات/طلبات) — مختلفة تماماً عن
+// اتصال SQLite المحلي أعلاه (المخصَّص فقط لسجل مزامنة central-sync.db). بما أن هذا
+// الملف يعمل داخل نفس عملية Electron الرئيسية (main.js)، فطلب هذه الوحدة هنا يُرجع
+// نفس singleton المُهيَّأ فعلاً (نفس اتصال قاعدة البيانات المشفّرة)، لا اتصالاً جديداً.
+const appDb = require('../database/db');
 
 function send(res, status, body) {
   res.writeHead(status, {
@@ -22,6 +27,20 @@ function send(res, status, body) {
     'strict-transport-security': 'max-age=31536000; includeSubDomains',
   });
   res.end(JSON.stringify(body));
+}
+
+function sendHtml(res, status, html) {
+  res.writeHead(status, {
+    'content-type': 'text/html; charset=utf-8',
+    'cache-control': 'no-store',
+    'x-content-type-options': 'nosniff',
+    'referrer-policy': 'no-referrer',
+    'x-frame-options': 'DENY',
+    // بخلاف send() (JSON، default-src 'none') هذه صفحة فعلية تحتاج تشغّل سكربتها ونمط
+    // التنسيق الداخلي بها فقط — لا مصادر خارجية إطلاقاً (لا شبكة إنترنت متاحة أصلاً بمتجر).
+    'content-security-policy': "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' data:; connect-src 'self'",
+  });
+  res.end(html);
 }
 
 function read(req, maxBytes) {
@@ -57,12 +76,272 @@ function hashKey(secret) {
 }
 
 const ENTITIES = ['categories', 'products', 'restaurant_tables', 'customers', 'inventory', 'sales', 'payments', 'cash_movements', 'shifts', 'inventory_movements', 'payroll_employees', 'payroll_months', 'payroll_employee_months', 'payroll_transactions', 'payroll_advances', 'payroll_advance_installments', 'payroll_advance_payments', 'payroll_advance_payment_allocations', 'payroll_payments', 'payroll_final_settlements', 'suppliers', 'supplier_ledger', 'purchase_orders', 'returns', 'bundles', 'customer_ledger', 'store_credit_ledger', 'tax_profiles', 'inventory_transfers', 'inventory_transfer_receipts'];
+
+// صفحة الكرسون (الجوال/التابلت) — ملف واحد ذاتي الاكتفاء (بلا مكتبات خارجية، بلا إنترنت،
+// يتوافق مع بيئة المتجر offline-first). يُخدَّم مباشرة عبر GET /waiter.
+const WAITER_PAGE_HTML = `<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>Nexora POS — الكرسون</title>
+<style>
+  :root { --primary:#4338ca; --primary-light:#eef0fd; --line:#e2e2ea; --danger:#c0293c; --success:#17845b; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: -apple-system, "Segoe UI", Tahoma, Arial, sans-serif; background:#f7f7fb; color:#1a1a2e; }
+  header { background:var(--primary); color:#fff; padding:14px 16px; display:flex; align-items:center; justify-content:space-between; position:sticky; top:0; z-index:5; }
+  header h1 { font-size:16px; margin:0; }
+  header button { background:rgba(255,255,255,.15); border:none; color:#fff; padding:8px 12px; border-radius:8px; font-size:13px; }
+  .screen { display:none; padding:16px; padding-bottom:100px; }
+  .screen.active { display:block; }
+  .pair-box { max-width:320px; margin:60px auto; text-align:center; }
+  .pair-box input { width:100%; font-size:28px; text-align:center; letter-spacing:8px; padding:14px; border:2px solid var(--line); border-radius:12px; margin:16px 0; }
+  .btn { display:block; width:100%; padding:14px; border:none; border-radius:12px; background:var(--primary); color:#fff; font-size:16px; font-weight:700; cursor:pointer; }
+  .btn:disabled { opacity:.5; }
+  .error-msg { color:var(--danger); font-size:13px; margin-top:8px; min-height:18px; }
+  .tables-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(110px,1fr)); gap:12px; margin-top:12px; }
+  .table-card { background:#fff; border:2px solid var(--line); border-radius:12px; padding:16px 8px; text-align:center; font-weight:700; cursor:pointer; position:relative; }
+  .table-card.occupied { border-color:var(--danger); background:#fdecee; }
+  .table-card small { display:block; font-weight:400; color:#666; margin-top:4px; font-size:11px; }
+  .table-card .bill-btn { position:absolute; top:-8px; inset-inline-end:-8px; background:#f59e0b; color:#fff; border:none; border-radius:50%; width:30px; height:30px; font-size:14px; }
+  .cat-tabs { display:flex; gap:8px; overflow-x:auto; padding:4px 0 12px; }
+  .cat-tab { flex:0 0 auto; padding:8px 14px; border-radius:20px; border:1px solid var(--line); background:#fff; font-size:13px; font-weight:700; white-space:nowrap; }
+  .cat-tab.active { background:var(--primary); color:#fff; border-color:var(--primary); }
+  .product-list { display:flex; flex-direction:column; gap:8px; }
+  .product-row { background:#fff; border:1px solid var(--line); border-radius:10px; padding:10px 12px; display:flex; align-items:center; justify-content:space-between; }
+  .product-row .name { font-weight:700; font-size:14px; }
+  .product-row .price { color:#666; font-size:12px; }
+  .qty-controls { display:flex; align-items:center; gap:8px; }
+  .qty-controls button { width:32px; height:32px; border-radius:8px; border:1px solid var(--line); background:#fff; font-size:18px; font-weight:700; }
+  .qty-controls span { min-width:20px; text-align:center; font-weight:800; }
+  .cart-bar { position:fixed; bottom:0; inset-inline:0; background:#fff; border-top:1px solid var(--line); padding:12px 16px; display:flex; align-items:center; justify-content:space-between; gap:12px; }
+  .cart-bar .count { font-weight:800; }
+  .toast { position:fixed; top:70px; inset-inline:16px; background:#1a1a2e; color:#fff; padding:12px 16px; border-radius:10px; text-align:center; z-index:20; display:none; }
+  .toast.show { display:block; }
+  .empty-hint { text-align:center; color:#888; margin-top:40px; font-size:14px; }
+</style>
+</head>
+<body>
+
+<div id="screen-pair" class="screen active">
+  <div class="pair-box">
+    <h2>ربط جهاز الكرسون</h2>
+    <p style="color:#666; font-size:13px;">اكتب الكود المعروض على شاشة الكاشير الرئيسي (الإعدادات &gt; مشاركة الشبكة المحلية)</p>
+    <input id="pairCode" inputmode="numeric" maxlength="4" placeholder="0000" autofocus />
+    <button class="btn" id="pairBtn">ربط الجهاز</button>
+    <div class="error-msg" id="pairError"></div>
+  </div>
+</div>
+
+<div id="screen-tables" class="screen">
+  <header><h1 id="branchLabel">الطاولات</h1><button id="refreshTablesBtn">تحديث</button></header>
+  <div style="padding:16px;">
+    <div class="tables-grid" id="tablesGrid"></div>
+  </div>
+</div>
+
+<div id="screen-menu" class="screen">
+  <header><button id="backToTablesBtn">◀ رجوع</button><h1 id="menuTableLabel"></h1></header>
+  <div style="padding:16px;">
+    <div class="cat-tabs" id="catTabs"></div>
+    <div class="product-list" id="productList"></div>
+  </div>
+  <div class="cart-bar">
+    <span class="count" id="cartCount">0 صنف</span>
+    <button class="btn" id="sendOrderBtn" style="width:auto; padding:12px 24px;">إرسال الطلب للمطبخ</button>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(function () {
+  var state = { branchUuid: null, secret: null, products: [], categories: [], activeCategory: null, currentTableId: null, cart: {} };
+
+  function saveSession() { localStorage.setItem('waiter_session', JSON.stringify({ branchUuid: state.branchUuid, secret: state.secret })); }
+  function loadSession() {
+    try {
+      var raw = localStorage.getItem('waiter_session');
+      if (!raw) return false;
+      var s = JSON.parse(raw);
+      if (!s.branchUuid || !s.secret) return false;
+      state.branchUuid = s.branchUuid; state.secret = s.secret;
+      return true;
+    } catch (e) { return false; }
+  }
+  function showScreen(id) {
+    document.querySelectorAll('.screen').forEach(function (el) { el.classList.remove('active'); });
+    document.getElementById(id).classList.add('active');
+  }
+  function showToast(msg) {
+    var t = document.getElementById('toast');
+    t.textContent = msg; t.classList.add('show');
+    setTimeout(function () { t.classList.remove('show'); }, 2200);
+  }
+  function authHeaders(extra) {
+    var h = Object.assign({ 'Authorization': 'Bearer ' + state.secret, 'X-Branch-Uuid': state.branchUuid }, extra || {});
+    return h;
+  }
+
+  function doPair() {
+    var code = document.getElementById('pairCode').value.trim();
+    var err = document.getElementById('pairError');
+    err.textContent = '';
+    if (!/^\\d{4}$/.test(code)) { err.textContent = 'اكتب 4 أرقام.'; return; }
+    fetch('/pair', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code: code }) })
+      .then(function (r) { return r.json().then(function (b) { return { ok: r.ok, body: b }; }); })
+      .then(function (res) {
+        if (!res.ok) { err.textContent = res.body.message || 'تعذّر الاقتران.'; return; }
+        state.branchUuid = res.body.branchUuid; state.secret = res.body.syncSecret;
+        saveSession();
+        document.getElementById('branchLabel').textContent = res.body.branchName || 'الطاولات';
+        loadTables();
+      })
+      .catch(function () { err.textContent = 'تعذّر الاتصال بالخادم. تأكد من الاتصال بنفس شبكة المحل.'; });
+  }
+
+  function loadTables() {
+    showScreen('screen-tables');
+    fetch('/api/v1/waiter/tables', { headers: authHeaders() })
+      .then(function (r) { return r.json().then(function (b) { return { ok: r.ok, body: b }; }); })
+      .then(function (res) {
+        if (!res.ok) { localStorage.removeItem('waiter_session'); showScreen('screen-pair'); showToast('انتهت صلاحية الاقتران، اربط الجهاز من جديد.'); return; }
+        renderTables(res.body.tables || []);
+      })
+      .catch(function () { showToast('تعذّر تحميل الطاولات.'); });
+  }
+
+  function renderTables(tables) {
+    var grid = document.getElementById('tablesGrid');
+    if (!tables.length) { grid.innerHTML = ''; document.querySelector('#screen-tables .empty-hint') || grid.insertAdjacentHTML('afterend', '<div class="empty-hint">لا توجد طاولات مُعرَّفة بعد.</div>'); return; }
+    grid.innerHTML = tables.map(function (t) {
+      var occ = t.occupied ? 'occupied' : '';
+      var billBtn = t.occupied ? '<button class="bill-btn" data-bill="' + t.id + '" title="طلب الحساب">🔔</button>' : '';
+      return '<div class="table-card ' + occ + '" data-id="' + t.id + '" data-name="' + escapeHtml(t.name) + '">' + billBtn + escapeHtml(t.name) + (occ ? '<small>مشغولة</small>' : '<small>فاضية</small>') + '</div>';
+    }).join('');
+    Array.prototype.forEach.call(grid.querySelectorAll('.table-card'), function (el) {
+      el.addEventListener('click', function (e) {
+        if (e.target.dataset.bill) return; // زرار الحساب يتعامل بمفرده
+        openTable(parseInt(el.dataset.id, 10), el.dataset.name);
+      });
+    });
+    Array.prototype.forEach.call(grid.querySelectorAll('[data-bill]'), function (btn) {
+      btn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        var tableId = parseInt(btn.dataset.bill, 10);
+        fetch('/api/v1/waiter/request-bill', {
+          method: 'POST', headers: authHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({ branchUuid: state.branchUuid, tableId: tableId })
+        }).then(function (r) { return r.json().then(function (b) { return { ok: r.ok, body: b }; }); })
+          .then(function (res) { showToast(res.ok ? 'تم إرسال طلب الحساب ✓' : (res.body.message || 'تعذّر الإرسال.')); })
+          .catch(function () { showToast('تعذّر الاتصال بالخادم.'); });
+      });
+    });
+  }
+
+  function escapeHtml(s) { var d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML; }
+
+  function openTable(tableId, tableName) {
+    state.currentTableId = tableId; state.cart = {};
+    document.getElementById('menuTableLabel').textContent = tableName;
+    showScreen('screen-menu');
+    if (state.products.length) { renderCategories(); renderProducts(); updateCartBar(); return; }
+    fetch('/api/v1/waiter/menu', { headers: authHeaders() })
+      .then(function (r) { return r.json(); })
+      .then(function (body) {
+        state.products = body.products || []; state.categories = body.categories || [];
+        renderCategories(); renderProducts(); updateCartBar();
+      })
+      .catch(function () { showToast('تعذّر تحميل المنتجات.'); });
+  }
+
+  function renderCategories() {
+    var wrap = document.getElementById('catTabs');
+    var tabs = [{ id: null, name: 'الكل' }].concat(state.categories);
+    wrap.innerHTML = tabs.map(function (c) {
+      var active = (state.activeCategory === c.id) ? 'active' : '';
+      return '<div class="cat-tab ' + active + '" data-id="' + (c.id == null ? '' : c.id) + '">' + escapeHtml(c.name) + '</div>';
+    }).join('');
+    Array.prototype.forEach.call(wrap.querySelectorAll('.cat-tab'), function (el) {
+      el.addEventListener('click', function () {
+        state.activeCategory = el.dataset.id ? parseInt(el.dataset.id, 10) : null;
+        renderCategories(); renderProducts();
+      });
+    });
+  }
+
+  function renderProducts() {
+    var list = document.getElementById('productList');
+    var items = state.products.filter(function (p) { return !state.activeCategory || p.category_id === state.activeCategory; });
+    if (!items.length) { list.innerHTML = '<div class="empty-hint">لا توجد منتجات بهذه الفئة.</div>'; return; }
+    list.innerHTML = items.map(function (p) {
+      var qty = state.cart[p.id] ? state.cart[p.id].quantity : 0;
+      return '<div class="product-row" data-id="' + p.id + '">' +
+        '<div><div class="name">' + escapeHtml(p.name) + '</div><div class="price">' + Number(p.price).toFixed(2) + '</div></div>' +
+        '<div class="qty-controls">' +
+          '<button data-act="minus">−</button><span>' + qty + '</span><button data-act="plus">+</button>' +
+        '</div></div>';
+    }).join('');
+    Array.prototype.forEach.call(list.querySelectorAll('.product-row'), function (row) {
+      var id = parseInt(row.dataset.id, 10);
+      row.querySelector('[data-act="plus"]').addEventListener('click', function () { changeQty(id, 1); });
+      row.querySelector('[data-act="minus"]').addEventListener('click', function () { changeQty(id, -1); });
+    });
+  }
+
+  function changeQty(productId, delta) {
+    var product = state.products.find(function (p) { return p.id === productId; });
+    if (!product) return;
+    var entry = state.cart[productId] || { productId: productId, quantity: 0 };
+    entry.quantity = Math.max(0, entry.quantity + delta);
+    if (entry.quantity === 0) delete state.cart[productId]; else state.cart[productId] = entry;
+    renderProducts(); updateCartBar();
+  }
+
+  function updateCartBar() {
+    var count = Object.keys(state.cart).reduce(function (s, k) { return s + state.cart[k].quantity; }, 0);
+    document.getElementById('cartCount').textContent = count + ' صنف';
+    document.getElementById('sendOrderBtn').disabled = count === 0;
+  }
+
+  function sendOrder() {
+    var items = Object.keys(state.cart).map(function (k) { return { productId: state.cart[k].productId, quantity: state.cart[k].quantity }; });
+    if (!items.length) return;
+    var btn = document.getElementById('sendOrderBtn');
+    btn.disabled = true; btn.textContent = 'جارٍ الإرسال...';
+    fetch('/api/v1/waiter/order', {
+      method: 'POST',
+      headers: authHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ branchUuid: state.branchUuid, tableId: state.currentTableId, items: items })
+    })
+      .then(function (r) { return r.json().then(function (b) { return { ok: r.ok, body: b }; }); })
+      .then(function (res) {
+        btn.disabled = false; btn.textContent = 'إرسال الطلب للمطبخ';
+        if (!res.ok) { showToast(res.body.message || 'تعذّر إرسال الطلب.'); return; }
+        showToast('تم إرسال الطلب للمطبخ ✓');
+        loadTables();
+      })
+      .catch(function () { btn.disabled = false; btn.textContent = 'إرسال الطلب للمطبخ'; showToast('تعذّر الاتصال بالخادم.'); });
+  }
+
+  document.getElementById('pairBtn').addEventListener('click', doPair);
+  document.getElementById('pairCode').addEventListener('keydown', function (e) { if (e.key === 'Enter') doPair(); });
+  document.getElementById('refreshTablesBtn').addEventListener('click', loadTables);
+  document.getElementById('backToTablesBtn').addEventListener('click', loadTables);
+  document.getElementById('sendOrderBtn').addEventListener('click', sendOrder);
+
+  if (loadSession()) loadTables();
+})();
+</script>
+</body>
+</html>`;
+
 const GLOBAL_ENTITIES = new Set(['categories', 'products']);
 const CROSS_BRANCH_ENTITIES = new Set(['inventory_transfers', 'inventory_transfer_receipts']);
 
 // ينشئ خادم مزامنة كامل (HTTP) على قاعدة بيانات SQLite مستقلة عن قاعدة بيانات التطبيق نفسها
 // (سجل مركزي للتغييرات، مختلف عن pos.db). يُرجع { server, registerBranchKey, close }.
-function createSyncServer({ dbPath, port = 0, rateLimit = 60, onLog = () => {}, getPairingInfo = null, consumePairingCode = null, tls = null, host = null, allowPlaintextNonLoopback = false } = {}) {
+function createSyncServer({ dbPath, port = 0, rateLimit = 60, onLog = () => {}, getPairingInfo = null, consumePairingCode = null, tls = null, host = null, allowPlaintextNonLoopback = false, sendKitchenTicket = null } = {}) {
   // tls = { key, cert } (نصوص PEM) — يُمرَّر فقط من وضع "الجهاز الرئيسي" المُضمَّن بـ main.js
   // (شهادة ذاتية التوقيع، راجع server/lan-tls.js). الخادم المستقل (تشغيل مباشر خلف بروكسي
   // TLS مثل Nginx/Caddy — راجع docs/CENTRAL_SYNC_PROTOCOL.md) يبقى HTTP عادياً محلياً كما كان،
@@ -181,6 +460,99 @@ function createSyncServer({ dbPath, port = 0, rateLimit = 60, onLog = () => {}, 
         syncSecret: info.secret,
       });
     }
+
+    // ---------------- واجهة الكرسون (طلب من الجوال/التابلت داخل الشبكة المحلية) ----------------
+    // الكرسون لا يملك حساب SQLite محلي خاص به إطلاقاً (بخلاف "جهاز طرفية" كامل) — هو فقط
+    // متصفح يطلب/يرسل JSON مباشرة لهذا الخادم نفسه، مصادَقاً بنفس سر الاقتران المستخدَم
+    // للأجهزة الطرفية العادية (نفس /pair). لا يملك صلاحية الدفع أو إغلاق الطلب — الإضافة
+    // للطاولة فقط، والدفع يبقى حصراً من الكاشير الرئيسي.
+    function authenticateWaiter(branchUuidHeader) {
+      const authHeader = req.headers.authorization || '';
+      const secret = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
+      if (!branchUuidHeader || !secret) return null;
+      const row = getKeyStmt.get(branchUuidHeader);
+      if (!row || row.revoked || !verifyKey(secret, row.key_hash)) return null;
+      return row.branch_uuid;
+    }
+
+    if (req.method === 'GET' && req.url === '/api/v1/waiter/menu') {
+      const branchUuid = authenticateWaiter(req.headers['x-branch-uuid']);
+      if (!branchUuid) return send(res, 401, { message: 'Unauthorized' });
+      try {
+        const categories = appDb.listCategories();
+        const products = appDb.listProducts({ limit: 500 });
+        return send(res, 200, { categories, products });
+      } catch (error) { return send(res, 400, { message: error.message }); }
+    }
+
+    if (req.method === 'GET' && req.url === '/api/v1/waiter/tables') {
+      const branchUuid = authenticateWaiter(req.headers['x-branch-uuid']);
+      if (!branchUuid) return send(res, 401, { message: 'Unauthorized' });
+      try {
+        return send(res, 200, { tables: appDb.listTables() });
+      } catch (error) { return send(res, 400, { message: error.message }); }
+    }
+
+    if (req.method === 'POST' && req.url === '/api/v1/waiter/order') {
+      if (!isJson) return send(res, 415, { message: 'Content-Type يجب أن يكون application/json.' });
+      if (rateLimited(ip)) return send(res, 429, { message: 'طلبات كثيرة جداً، حاول لاحقاً.' });
+      let body;
+      try { body = await read(req, 200_000); } catch { return send(res, 400, { message: 'JSON غير صالح' }); }
+      const branchUuid = authenticateWaiter(body.branchUuid);
+      if (!branchUuid) return send(res, 401, { message: 'Unauthorized' });
+      const tableId = Number(body.tableId);
+      const items = Array.isArray(body.items) ? body.items : [];
+      if (!Number.isInteger(tableId) || tableId <= 0) return send(res, 400, { message: 'طاولة غير صالحة.' });
+      if (!items.length) return send(res, 400, { message: 'الطلب فارغ.' });
+      if (items.length > 100) return send(res, 400, { message: 'عدد أصناف كبير جداً.' });
+      for (const it of items) {
+        if (!Number.isInteger(Number(it.productId)) || !(Number(it.quantity) > 0) || Number(it.quantity) > 999) {
+          return send(res, 400, { message: 'صنف أو كمية غير صالحة.' });
+        }
+      }
+      try {
+        // "إضافة" فقط لا "استبدال": نجمع الكمية المطلوبة الآن فوق أي كمية سابقة موجودة
+        // بالفعل بنفس الطلب المفتوح (من كاشير آخر أو كرسون آخر)، بدل حذف ما سبق كتابته —
+        // لأن الكرسون لا يرى بالضرورة تفاصيل ما أضافه غيره على نفس الطاولة قبله.
+        const openSale = appDb.getOrCreateOpenSale(tableId, null);
+        const existing = appDb.getOpenSaleForTable(tableId);
+        const merged = new Map();
+        for (const it of (existing && existing.items) || []) {
+          const key = `${it.product_id}::${it.notes || ''}`;
+          merged.set(key, { productId: it.product_id, quantity: Number(it.quantity), notes: it.notes || '' });
+        }
+        for (const it of items) {
+          const key = `${it.productId}::${it.notes || ''}`;
+          const prior = merged.get(key);
+          merged.set(key, { productId: Number(it.productId), quantity: (prior ? prior.quantity : 0) + Number(it.quantity), notes: it.notes || '' });
+        }
+        const result = appDb.setOpenSaleItems(openSale.id, Array.from(merged.values()));
+        appDb.logAudit({ userId: null, action: 'table_order_updated_by_waiter', entityType: 'sale', entityId: openSale.id, details: { itemCount: items.length } });
+        let kitchen = null;
+        if (typeof sendKitchenTicket === 'function') {
+          try { kitchen = await sendKitchenTicket(openSale.id); } catch (_) { kitchen = { success: false }; }
+        }
+        return send(res, 200, { ...result, saleId: openSale.id, printOutcome: { kitchen } });
+      } catch (error) { return send(res, 400, { message: error.message }); }
+    }
+
+    if (req.method === 'POST' && req.url === '/api/v1/waiter/request-bill') {
+      if (!isJson) return send(res, 415, { message: 'Content-Type يجب أن يكون application/json.' });
+      if (rateLimited(ip)) return send(res, 429, { message: 'طلبات كثيرة جداً، حاول لاحقاً.' });
+      let body;
+      try { body = await read(req, 20_000); } catch { return send(res, 400, { message: 'JSON غير صالح' }); }
+      const branchUuid = authenticateWaiter(body.branchUuid);
+      if (!branchUuid) return send(res, 401, { message: 'Unauthorized' });
+      const tableId = Number(body.tableId);
+      if (!Number.isInteger(tableId) || tableId <= 0) return send(res, 400, { message: 'طاولة غير صالحة.' });
+      try {
+        const openSale = appDb.getOpenSaleForTable(tableId);
+        if (!openSale) return send(res, 400, { message: 'لا يوجد طلب مفتوح على هذه الطاولة.' });
+        return send(res, 200, appDb.requestBillForTable(openSale.id));
+      } catch (error) { return send(res, 400, { message: error.message }); }
+    }
+
+    if (req.method === 'GET' && req.url === '/waiter') return sendHtml(res, 200, WAITER_PAGE_HTML);
 
     if (req.method !== 'POST' || req.url !== '/api/v1/pos/sync') return send(res, 404, { message: 'Not found' });
     if (!isJson) return send(res, 415, { message: 'Content-Type يجب أن يكون application/json.' });

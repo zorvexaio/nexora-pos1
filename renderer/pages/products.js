@@ -255,9 +255,9 @@ async function saveProduct(e) {
     const payload = {
       name: fieldName.value.trim(),
       categoryId: categoryId || null,
-      price: parseFloat(fieldPrice.value) || 0,
-      cost: parseFloat(fieldCost.value) || 0,
-      taxRate: parseFloat(fieldTax.value) || 0,
+      price: parseLocaleNumber(fieldPrice.value) || 0,
+      cost: parseLocaleNumber(fieldCost.value) || 0,
+      taxRate: parseLocaleNumber(fieldTax.value) || 0,
       unit: fieldUnit.value,
       barcode: fieldBarcode.value.trim() || null,
       sku: fieldSku.value.trim() || null,
@@ -273,12 +273,12 @@ async function saveProduct(e) {
 
     if (currentEditId) {
       payload.id = currentEditId;
-      payload.stock = fieldTrackInventory.checked ? parseFloat(fieldStock.value) || 0 : undefined;
-      payload.minQuantity = fieldTrackInventory.checked ? parseFloat(fieldMinQty.value) || 0 : undefined;
+      payload.stock = fieldTrackInventory.checked ? parseLocaleNumber(fieldStock.value) || 0 : undefined;
+      payload.minQuantity = fieldTrackInventory.checked ? parseLocaleNumber(fieldMinQty.value) || 0 : undefined;
       await window.api.products.update(payload);
     } else {
-      payload.initialStock = parseFloat(fieldStock.value) || 0;
-      payload.minQuantity = parseFloat(fieldMinQty.value) || 0;
+      payload.initialStock = parseLocaleNumber(fieldStock.value) || 0;
+      payload.minQuantity = parseLocaleNumber(fieldMinQty.value) || 0;
       await window.api.products.create(payload);
     }
 

@@ -64,9 +64,6 @@ contextBridge.exposeInMainWorld('api', {
     settings: (payload) => ipcRenderer.invoke('loyalty:settings', payload),
     redemptionQuote: (customerId, payable) => ipcRenderer.invoke('loyalty:redemptionQuote', { customerId, payable }),
   },
-  tax: {
-    defaultRate: (payload) => ipcRenderer.invoke('tax:defaultRate', payload),
-  },
   suppliers: {
     list: () => ipcRenderer.invoke('suppliers:list'),
     create: (supplier) => ipcRenderer.invoke('suppliers:create', supplier),
@@ -91,6 +88,7 @@ contextBridge.exposeInMainWorld('api', {
     split: (saleId, selected, payment) => ipcRenderer.invoke('tables:split', { saleId, selected, payment }),
     close: (saleId, payment) => ipcRenderer.invoke('tables:close', { saleId, payment }),
     release: (tableId) => ipcRenderer.invoke('tables:release', tableId),
+    acknowledgeBill: (saleId) => ipcRenderer.invoke('tables:acknowledgeBill', saleId),
   },
   kitchen: {
     open: (saleId) => ipcRenderer.invoke('kitchen:open', saleId),
@@ -162,6 +160,7 @@ contextBridge.exposeInMainWorld('api', {
   tax: {
     list: () => ipcRenderer.invoke('tax:list'),
     save: (profile) => ipcRenderer.invoke('tax:save', profile),
+    defaultRate: (payload) => ipcRenderer.invoke('tax:defaultRate', payload),
   },
   payments: {
     list: (range) => ipcRenderer.invoke('payments:list', range),

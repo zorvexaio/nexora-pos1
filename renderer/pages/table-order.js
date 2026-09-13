@@ -286,7 +286,7 @@ async function openSplitBill() {
   const openSale = await window.api.tables.getOpenSale(tableId);
   cart = openSale.items.map(i => ({ productId: i.product_id, name: i.product_name, price: i.unit_price, taxRate: i.tax_rate, quantity: i.quantity, saleItemId: i.id }));
   renderCart();
-  splitItems.innerHTML = cart.map(i => `<div class="cart-item"><span>${escapeHtml(i.name)} <small>(${t('tableOrder.availableQty')}${i.quantity})</small></span><input class="split-qty" data-item-id="${i.saleItemId}" data-price="${i.price}" data-tax="${i.taxRate || 0}" type="number" min="0" max="${i.quantity}" value="0" step="1" style="width:75px" /></div>`).join('');
+  splitItems.innerHTML = cart.map(i => `<div class="cart-item"><span>${escapeHtml(i.name)} <small>(${t('tableOrder.availableQty')}${i.quantity})</small></span><input class="split-qty" data-item-id="${i.saleItemId}" data-price="${i.price}" data-tax="${i.taxRate || 0}" type="text" inputmode="numeric" data-max="${i.quantity}" value="0" style="width:75px" /></div>`).join('');
   splitItems.querySelectorAll('.split-qty').forEach(el => el.addEventListener('input', updateSplitTotal));
   document.querySelector('input[name="splitPayment"][value="cash"]').checked = true;
   splitCashReceived.value = '';
@@ -295,17 +295,17 @@ async function openSplitBill() {
 }
 function updateSplitTotal() {
   let total = 0;
-  splitItems.querySelectorAll('.split-qty').forEach(el => { const q = Math.min(Number(el.max), Math.max(0, Number(el.value) || 0)); el.value = q; total += q * Number(el.dataset.price) * (1 + Number(el.dataset.tax) / 100); });
+  splitItems.querySelectorAll('.split-qty').forEach(el => { const q = Math.min(Number(el.dataset.max), Math.max(0, parseLocaleNumber(el.value) || 0)); el.value = q; total += q * Number(el.dataset.price) * (1 + Number(el.dataset.tax) / 100); });
   splitTotal.textContent = total.toFixed(2);
   if (!splitCashReceived.value) splitCashReceived.value = total.toFixed(2);
 }
 document.getElementById('cancelSplitBillBtn').addEventListener('click', () => splitBillModal.classList.add('hidden'));
 document.querySelectorAll('input[name="splitPayment"]').forEach(el => el.addEventListener('change', () => document.getElementById('splitCashFields').classList.toggle('hidden', el.value !== 'cash')));
 document.getElementById('confirmSplitBillBtn').addEventListener('click', async () => {
-  const selected = [...splitItems.querySelectorAll('.split-qty')].map(el => ({ saleItemId: Number(el.dataset.itemId), quantity: Number(el.value) || 0 })).filter(x => x.quantity > 0);
+  const selected = [...splitItems.querySelectorAll('.split-qty')].map(el => ({ saleItemId: Number(el.dataset.itemId), quantity: parseLocaleNumber(el.value) || 0 })).filter(x => x.quantity > 0);
   const total = Number(splitTotal.textContent); if (!selected.length || !(total > 0)) return alert(t('tableOrder.selectQtyToPay'));
   const paymentMethod = document.querySelector('input[name="splitPayment"]:checked').value;
-  const received = Number(splitCashReceived.value) || 0;
+  const received = parseLocaleNumber(splitCashReceived.value) || 0;
   if (paymentMethod === 'cash' && received < total - 0.001) return alert(t('tableOrder.splitCashInsufficient'));
   try {
     const result = await window.api.tables.split(currentSaleId, selected, { paymentMethod, cashAmount: paymentMethod === 'cash' ? received : 0, cardAmount: paymentMethod === 'card' ? total : 0, changeDue: paymentMethod === 'cash' ? received - total : 0 });
@@ -374,7 +374,7 @@ async function refreshLoyaltyQuote() {
   updateLoyaltyHint();
 }
 function onLoyaltyRedeemChange() {
-  let val = Math.floor(Number(loyaltyPointsInput.value) || 0);
+  let val = Math.floor(parseLocaleNumber(loyaltyPointsInput.value) || 0);
   val = loyaltyQuote ? Math.max(0, Math.min(val, loyaltyQuote.maxRedeemablePoints)) : 0;
   loyaltyRedeemedPoints = val;
   loyaltyPointsInput.value = val;
@@ -464,6 +464,8 @@ async function checkout() {
   mixedCardInput.value = '';
   paymentError.classList.add('hidden');
   resetLoyaltyState();
+  creditApproval = null;
+  document.querySelector('input[name="paymentMethod"][value="cash"]').checked = true;
   updatePaymentView();
   if (selectedCustomerId) refreshLoyaltyQuote().then(updatePaymentView);
   paymentModal.classList.remove('hidden');
@@ -479,6 +481,57 @@ function selectedPaymentMethod() {
   return document.querySelector('input[name="paymentMethod"]:checked').value;
 }
 
+// الدفع الآجل بالطاولات: نفس نمط الاعتماد المستخدَم بالكاشير المباشر تمامًا — يتطلب
+// عميلاً مرتبطاً بالطلب مسبقاً (نفس صندوق اختيار العميل المستخدَم لنقاط الولاء)
+// وموافقة مدير/مدير عام واحدة لكل عملية اعتماد.
+let creditApproval = null;
+const tableApprovalModal = document.getElementById('tableApprovalModal');
+const tableApprovalUsername = document.getElementById('tableApprovalUsername');
+const tableApprovalPassword = document.getElementById('tableApprovalPassword');
+const tableApprovalError = document.getElementById('tableApprovalError');
+const confirmTableApprovalBtn = document.getElementById('confirmTableApprovalBtn');
+const creditNoCustomerHint = document.getElementById('creditNoCustomerHint');
+
+function openTableApprovalModal() {
+  tableApprovalUsername.value = ''; tableApprovalPassword.value = '';
+  tableApprovalError.classList.add('hidden');
+  tableApprovalModal.classList.remove('hidden');
+  tableApprovalUsername.focus();
+}
+document.getElementById('cancelTableApprovalBtn').addEventListener('click', () => {
+  tableApprovalModal.classList.add('hidden');
+  // رجوع لطريقة دفع افتراضية إن أُلغيت الموافقة دون منح اعتماد فعلي.
+  if (!creditApproval) document.querySelector('input[name="paymentMethod"][value="cash"]').checked = true;
+  updatePaymentView();
+});
+confirmTableApprovalBtn.addEventListener('click', async () => {
+  const username = tableApprovalUsername.value.trim();
+  const password = tableApprovalPassword.value;
+  if (!username || !password) { tableApprovalError.textContent = t('pos.enterCredentials'); tableApprovalError.classList.remove('hidden'); return; }
+  confirmTableApprovalBtn.disabled = true; confirmTableApprovalBtn.textContent = t('pos.verifying');
+  try {
+    const result = await window.api.discount.approve(username, password);
+    if (!result.approved) { tableApprovalError.textContent = result.message || t('pos.invalidCredentials'); tableApprovalError.classList.remove('hidden'); return; }
+    creditApproval = { approverId: result.approverId, approverName: result.approverName, grantId: result.grantId };
+    tableApprovalModal.classList.add('hidden');
+    updatePaymentView();
+  } catch (err) {
+    tableApprovalError.textContent = t('pos.verifyError') + err.message; tableApprovalError.classList.remove('hidden');
+  } finally {
+    confirmTableApprovalBtn.disabled = false; confirmTableApprovalBtn.textContent = t('pos.confirmApproval');
+  }
+});
+document.querySelectorAll('input[name="paymentMethod"]').forEach((el) => {
+  el.addEventListener('change', () => {
+    if (el.value === 'credit' && el.checked) {
+      if (!selectedCustomerId) { creditNoCustomerHint.classList.remove('hidden'); document.querySelector('input[name="paymentMethod"][value="cash"]').checked = true; updatePaymentView(); return; }
+      creditNoCustomerHint.classList.add('hidden');
+      if (!creditApproval) { openTableApprovalModal(); return; }
+    }
+    updatePaymentView();
+  });
+});
+
 function updatePaymentView() {
   const method = selectedPaymentMethod();
   cashFields.classList.toggle('hidden', method !== 'cash');
@@ -487,10 +540,10 @@ function updatePaymentView() {
   paymentTotalDisplay.textContent = effectiveTotal().toFixed(2);
   if (method === 'cash') {
     if (document.activeElement !== cashReceivedInput) cashReceivedInput.value = effectiveTotal().toFixed(2);
-    const received = parseFloat(cashReceivedInput.value) || 0;
+    const received = parseLocaleNumber(cashReceivedInput.value) || 0;
     changeDueDisplay.textContent = Math.max(received - effectiveTotal(), 0).toFixed(2);
   } else if (method === 'mixed') {
-    const cashPart = parseFloat(mixedCashInput.value) || 0;
+    const cashPart = parseLocaleNumber(mixedCashInput.value) || 0;
     const remaining = effectiveTotal() - cashPart;
     mixedRemainingDisplay.textContent = remaining.toFixed(2);
     if (!mixedCardInput.value || document.activeElement !== mixedCardInput) {
@@ -504,7 +557,7 @@ cashReceivedInput.addEventListener('input', updatePaymentView);
 mixedCashInput.addEventListener('input', updatePaymentView);
 mixedCardInput.addEventListener('input', () => {
   mixedRemainingDisplay.textContent = (
-    effectiveTotal() - (parseFloat(mixedCashInput.value) || 0) - (parseFloat(mixedCardInput.value) || 0)
+    effectiveTotal() - (parseLocaleNumber(mixedCashInput.value) || 0) - (parseLocaleNumber(mixedCardInput.value) || 0)
   ).toFixed(2);
 });
 cancelPaymentBtn.addEventListener('click', closePaymentModal);
@@ -518,7 +571,7 @@ async function confirmPayment() {
   let changeDue = 0;
 
   if (method === 'cash') {
-    cashAmount = parseFloat(cashReceivedInput.value) || 0;
+    cashAmount = parseLocaleNumber(cashReceivedInput.value) || 0;
     if (cashAmount < total - 0.001) {
       showPaymentError(t('pos.insufficientCash'));
       return;
@@ -527,12 +580,15 @@ async function confirmPayment() {
   } else if (method === 'card') {
     cardAmount = total;
   } else if (method === 'mixed') {
-    cashAmount = parseFloat(mixedCashInput.value) || 0;
-    cardAmount = parseFloat(mixedCardInput.value) || 0;
+    cashAmount = parseLocaleNumber(mixedCashInput.value) || 0;
+    cardAmount = parseLocaleNumber(mixedCardInput.value) || 0;
     if (Math.abs(cashAmount + cardAmount - total) > 0.01) {
       showPaymentError(t('pos.mixedMismatch'));
       return;
     }
+  } else if (method === 'credit') {
+    if (!selectedCustomerId) { showPaymentError(t('pos.selectCustomerFirst')); return; }
+    if (!creditApproval) { openTableApprovalModal(); return; }
   }
 
   confirmPaymentBtn.disabled = true;
@@ -541,6 +597,7 @@ async function confirmPayment() {
     const closeResult = await window.api.tables.close(currentSaleId, {
       paymentMethod: method, cashAmount, cardAmount, changeDue,
       loyaltyPointsToRedeem: selectedCustomerId ? loyaltyRedeemedPoints : 0,
+      creditApprovalGrantId: method === 'credit' && creditApproval ? creditApproval.grantId : null,
     });
     warnPrintOutcome(closeResult?.printOutcome);
     window.location.href = 'tables.html';

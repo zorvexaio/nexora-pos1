@@ -189,7 +189,7 @@ async function saveAdjustment(e) {
   try {
     const productId = parseInt(adjustProductId.value, 10);
     const item = currentItems.find((i) => i.id === productId);
-    const value = parseFloat(adjustValue.value) || 0;
+    const value = parseLocaleNumber(adjustValue.value) || 0;
 
     let changeQty = 0;
     if (adjustDirection.value === 'add') changeQty = value;
@@ -255,7 +255,7 @@ async function openTransferModal() {
 }
 function closeTransferModal(){ transferModal.classList.add('hidden'); }
 function addTransferDraftItem(){
-  const productId=Number(transferProduct.value); const qty=Number(transferQuantity.value);
+  const productId=Number(transferProduct.value); const qty=parseLocaleNumber(transferQuantity.value);
   if(!productId || !Number.isFinite(qty) || qty<=0){ alert('اختر منتجًا وأدخل كمية صحيحة.'); return; }
   const opt=transferProduct.selectedOptions[0]; const stock=Number(opt?.dataset.stock || 0);
   const existing=transferDraft.find(x=>x.productId===productId);

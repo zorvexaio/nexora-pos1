@@ -82,7 +82,7 @@ function renderReceipt(sale, branding, currency = {}) {
       <div class="receipt-meta">${formatDate(sale.created_at)}</div>
       ${sale.customer_name ? `<div class="receipt-customer-name">👤 ${escapeHtml(sale.customer_name)}</div>` : ''}
       ${sale.order_type === 'delivery' ? `<div class="receipt-meta">${t('receipt.deliveryOrder')}${sale.delivery_person ? ` — ${t('receipt.deliveryPerson')}: ${escapeHtml(sale.delivery_person)}` : ''}</div>` : ''}
-      ${sale.order_type === 'delivery' ? `<div class="receipt-meta">${sale.delivery_time ? `${t('receipt.deliveryTime')}: ${formatDate(sale.delivery_time)}` : t('receipt.deliverNow')}</div>` : ''}
+      ${sale.delivery_time ? `<div class="receipt-meta">⏰ ${t('receipt.deliveryTime')}: ${formatDate(sale.delivery_time)}</div>` : (sale.order_type === 'delivery' ? `<div class="receipt-meta">🛵 ${t('receipt.deliverNow')}</div>` : '')}
     </div>
 
     <div class="receipt-divider"></div>
@@ -136,8 +136,10 @@ function formatDate(str) {
   const d = new Date(hasTimezone ? isoCandidate : isoCandidate + 'Z');
   if (isNaN(d.getTime())) return normalized || '—';
   const lang = document.documentElement.getAttribute('data-lang') || 'ar';
-  const LOCALES = { ar: 'ar-EG', tr: 'tr-TR', en: 'en-US' };
-  return d.toLocaleString(LOCALES[lang] || 'ar-EG', { dateStyle: 'medium', timeStyle: 'short' });
+  // نفرض أرقام لاتينية (0-9) حتى مع اللغة العربية — الأرقام الهندية العربية (٠-٩)
+  // بتطلع مشوّشة على أغلب طابعات الإيصال الحرارية.
+  const LOCALES = { ar: 'ar-EG-u-nu-latn', tr: 'tr-TR', en: 'en-US' };
+  return d.toLocaleString(LOCALES[lang] || 'ar-EG-u-nu-latn', { dateStyle: 'medium', timeStyle: 'short' });
 }
 
 function escapeHtml(str) {

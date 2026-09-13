@@ -54,7 +54,7 @@
           <div class="form-field"><label>اللغة/المنطقة</label><input id="fieldLocale" maxlength="16" placeholder="ar" required /></div>
           <div class="form-field"><label>المنطقة الزمنية IANA</label><input id="fieldTimezone" placeholder="Europe/Istanbul" required /></div>
           <div class="form-field"><label>العملة ISO-4217</label><input id="fieldGlobalCurrency" maxlength="3" placeholder="TRY" required /></div>
-          <div class="form-field"><label>الخانات العشرية للعملة</label><input id="fieldMinorUnit" type="number" min="0" max="3" step="1" required /></div>
+          <div class="form-field"><label>الخانات العشرية للعملة</label><input id="fieldMinorUnit" type="text" inputmode="numeric" min="0" max="3" step="1" required /></div>
           <div class="form-field"><label>وضع الضريبة</label><select id="fieldTaxMode"><option value="exclusive">الضريبة مضافة على السعر</option><option value="inclusive">الضريبة مشمولة بالسعر</option></select></div>
           <div class="form-field"><label>رقم التسجيل الضريبي</label><input id="fieldGlobalTaxNumber" /></div>
           <div class="form-field"><label>الفوترة الإلكترونية</label><select id="fieldFiscalizationMode"><option value="none">غير مفعّلة</option><option value="adapter">عبر موصل الدولة</option></select></div>
@@ -70,7 +70,7 @@
           <div class="form-field"><label>العملة الثانوية</label><input id="fieldCurrencySecondary" type="text" maxlength="8" placeholder="TRY" /></div>
           <div class="form-field checkbox full"><input id="fieldShowSecondaryOnReceipt" type="checkbox" /><label for="fieldShowSecondaryOnReceipt">إظهار سعر العملة الثانوية على الفاتورة المطبوعة</label></div>
           <div class="field-hint full">إن لم يُفعَّل، تُطبع الفاتورة بالعملة الأساسية فقط حتى لو كانت العملة الثانوية مضبوطة (تبقى محفوظة لاستخدامها في مكان آخر إن احتجت).</div>
-          <div class="form-field"><label>سعر الصرف (1 أساسية =)</label><input id="fieldExchangeRate" type="number" min="0.000001" step="0.000001" required /></div>
+          <div class="form-field"><label>سعر الصرف (1 أساسية =)</label><input id="fieldExchangeRate" type="text" inputmode="numeric" min="0.000001" step="0.000001" required /></div>
           <div class="form-field"><label>الرقم الضريبي للمنشأة</label><input id="fieldTaxNumber" type="text" /></div>
           <div class="form-field full"><button type="submit" id="saveCurrencyBtn" class="btn btn-primary">حفظ العملة والفوترة</button></div>
         </form>
@@ -104,7 +104,7 @@
         <form id="discountForm" class="form-grid">
           <div class="form-field full">
             <label>أقصى نسبة خصم (%) يقدر الكاشير يطبّقها بدون موافقة مدير</label>
-            <input id="fieldMaxDiscountPercent" type="number" min="0" max="100" step="0.5" required />
+            <input id="fieldMaxDiscountPercent" type="text" inputmode="numeric" min="0" max="100" step="0.5" required />
             <div class="field-hint">أي خصم يتجاوز هذه النسبة يتطلب اسم مستخدم وكلمة مرور مدير أو admin عند الدفع.</div>
           </div>
           <div class="form-field full">
@@ -124,7 +124,7 @@
         <form id="taxDefaultForm" class="form-grid">
           <div class="form-field">
             <label data-i18n="settings.tax.rateLabel">نسبة الضريبة الافتراضية للمنتجات الجديدة %</label>
-            <input id="fieldTaxDefaultRate" type="number" min="0" max="100" step="0.5" required />
+            <input id="fieldTaxDefaultRate" type="text" inputmode="numeric" min="0" max="100" step="0.5" required />
             <div class="field-hint" data-i18n="settings.tax.rateHint">تُملأ تلقائياً عند إضافة منتج جديد فقط، ولا تُغيّر المنتجات الموجودة. يمكن تعديلها لكل منتج على حدة من صفحة المنتجات.</div>
           </div>
           <div class="form-field full">
@@ -138,12 +138,12 @@
         <form id="loyaltyForm" class="form-grid">
           <div class="form-field">
             <label data-i18n="settings.loyalty.earnLabel">وحدات عملة لكل نقطة عند المنح</label>
-            <input id="fieldLoyaltyEarnRate" type="number" min="1" step="0.5" required />
+            <input id="fieldLoyaltyEarnRate" type="text" inputmode="numeric" min="1" step="0.5" required />
             <div class="field-hint" data-i18n="settings.loyalty.earnHint">مثال: 10 يعني العميل يكسب نقطة واحدة لكل 10 وحدات عملة من قيمة الفاتورة.</div>
           </div>
           <div class="form-field">
             <label data-i18n="settings.loyalty.redeemLabel">عدد النقاط اللازمة لاستبدال وحدة عملة واحدة</label>
-            <input id="fieldLoyaltyRedeemRate" type="number" min="1" step="0.5" required />
+            <input id="fieldLoyaltyRedeemRate" type="text" inputmode="numeric" min="1" step="0.5" required />
             <div class="field-hint" data-i18n="settings.loyalty.redeemHint">مثال: 10 يعني كل 10 نقاط = خصم وحدة عملة واحدة عند الدفع بالكاشير.</div>
           </div>
           <div class="form-field full">
@@ -157,12 +157,12 @@
         <form id="deliveryPricingForm" class="form-grid">
           <div class="form-field">
             <label>السعر الثابت الافتراضي</label>
-            <input id="fieldDeliveryDefaultFee" type="number" min="0" step="0.01" required />
+            <input id="fieldDeliveryDefaultFee" type="text" inputmode="numeric" min="0" step="0.01" required />
             <div class="field-hint">هذا الرقم يظهر تلقائياً في شاشة الكاشير فور اختيار "توصيل"، قبل إدخال أي مسافة.</div>
           </div>
           <div class="form-field">
             <label>سعر الكيلومتر الواحد</label>
-            <input id="fieldDeliveryPricePerKm" type="number" min="0" step="0.01" required />
+            <input id="fieldDeliveryPricePerKm" type="text" inputmode="numeric" min="0" step="0.01" required />
             <div class="field-hint">لو الكاشير أدخل عدد كيلومترات في شاشة البيع، رسوم التوصيل تتحسب أوتوماتيكياً = المسافة × هذا السعر (بدل السعر الثابت).</div>
           </div>
           <div class="form-field full">
@@ -264,6 +264,10 @@
             <div style="font-size:13px;color:#6b7280;margin-bottom:6px">افتح التطبيق بالجهاز الثاني، اختر "هذا الجهاز طرفية"، واختر هذا الجهاز من القائمة، وأدخل الرمز:</div>
             <div id="pairingCodeDisplay" style="font-size:32px;font-weight:800;letter-spacing:8px;color:#2563eb"></div>
             <div id="pairingCodeExpiry" class="field-hint"></div>
+            <div class="field-hint" style="margin-top:10px; border-top:1px solid #dbeafe; padding-top:10px;" data-i18n="settings.waiter.hint">
+              أو لجهاز الكرسون (جوال/تابلت): افتح المتصفح على العنوان التالي واكتب نفس الرمز:
+            </div>
+            <div id="waiterUrlDisplay" style="font-size:15px; font-weight:800; direction:ltr; color:#2563eb; margin-top:4px;"></div>
           </div>
         </div>
 

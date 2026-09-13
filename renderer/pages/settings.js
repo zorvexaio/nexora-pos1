@@ -348,7 +348,7 @@ async function saveGlobalProfile(event) {
   try {
     await window.api.global.set({
       countryCode: fieldCountryCode.value, locale: fieldLocale.value, timezone: fieldTimezone.value,
-      currencyCode: fieldGlobalCurrency.value, currencyMinorUnit: Number(fieldMinorUnit.value),
+      currencyCode: fieldGlobalCurrency.value, currencyMinorUnit: parseLocaleNumber(fieldMinorUnit.value),
       taxMode: fieldTaxMode.value, taxRegistrationNumber: fieldGlobalTaxNumber.value,
       fiscalizationMode: fieldFiscalizationMode.value, fiscalProvider: fieldFiscalProvider.value,
     });
@@ -422,7 +422,7 @@ async function saveDiscountLimit(e) {
   btn.disabled = true;
   btn.textContent = 'جارٍ الحفظ...';
   try {
-    await window.api.discount.setMaxCashierPercent(parseFloat(fieldMaxDiscountPercent.value) || 0);
+    await window.api.discount.setMaxCashierPercent(parseLocaleNumber(fieldMaxDiscountPercent.value) || 0);
     showToast(t('settings.toast.discountLimitSaved'));
   } catch (err) {
     showToast(t('settings.toast.saveErrorGeneric') + err.message, 'error');
@@ -490,7 +490,7 @@ async function saveTaxDefaultRate(e) {
   const btn = document.getElementById('saveTaxDefaultBtn');
   btn.disabled = true;
   try {
-    await window.api.tax.defaultRate({ save: parseFloat(fieldTaxDefaultRate.value) || 0 });
+    await window.api.tax.defaultRate({ save: parseLocaleNumber(fieldTaxDefaultRate.value) || 0 });
     showToast(t('settings.tax.saved', 'تم حفظ نسبة الضريبة الافتراضية.'));
   } catch (err) {
     showToast(t('settings.toast.saveErrorGeneric') + err.message, 'error');
@@ -507,8 +507,8 @@ async function saveLoyaltySettings(e) {
   try {
     const r = await window.api.loyalty.settings({
       save: true,
-      earnPerCurrencyUnit: parseFloat(fieldLoyaltyEarnRate.value) || 0,
-      redeemPointsPerCurrencyUnit: parseFloat(fieldLoyaltyRedeemRate.value) || 0,
+      earnPerCurrencyUnit: parseLocaleNumber(fieldLoyaltyEarnRate.value) || 0,
+      redeemPointsPerCurrencyUnit: parseLocaleNumber(fieldLoyaltyRedeemRate.value) || 0,
     });
     if (!r?.success) throw new Error(r?.message || 'تعذر حفظ إعدادات الولاء');
     showToast(t('settings.toast.loyaltySaved'));
@@ -526,7 +526,7 @@ async function saveDeliveryPricing(e) {
   btn.disabled = true;
   btn.textContent = 'جارٍ الحفظ...';
   try {
-    await window.api.delivery.setPricing(parseFloat(fieldDeliveryDefaultFee.value) || 0, parseFloat(fieldDeliveryPricePerKm.value) || 0);
+    await window.api.delivery.setPricing(parseLocaleNumber(fieldDeliveryDefaultFee.value) || 0, parseLocaleNumber(fieldDeliveryPricePerKm.value) || 0);
     showToast(t('settings.toast.deliveryPricingSaved'));
   } catch (err) {
     showToast(t('settings.toast.saveErrorGeneric') + err.message, 'error');
@@ -644,6 +644,8 @@ async function loadLanStatus() {
     if (status.pairingCode && status.pairingExpiresAt > Date.now()) {
       pairingCodeBox.classList.remove('hidden');
       pairingCodeDisplay.textContent = status.pairingCode;
+      const waiterHost = (status.localAddresses && status.localAddresses[0]) || 'localhost';
+      document.getElementById('waiterUrlDisplay').textContent = status.serverPort ? `https://${waiterHost}:${status.serverPort}/waiter` : '';
       const secondsLeft = Math.max(0, Math.round((status.pairingExpiresAt - Date.now()) / 1000));
       pairingCodeExpiry.textContent = `${ts('صالح لمدة')} ${Math.ceil(secondsLeft / 60)} ${ts('دقيقة تقريباً')}`;
     } else {

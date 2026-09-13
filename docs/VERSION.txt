@@ -1,1 +1,1 @@
-Nexora POS v0.52.12
+Nexora POS v0.52.15

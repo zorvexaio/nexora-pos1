@@ -308,15 +308,18 @@ const qtyBufferInput = document.getElementById('qtyBufferInput');
 async function initCategoryTabs() {
   try {
     const categories = await window.api.categories.list();
-    const withImages = categories.filter((c) => c.image_path);
-    if (!withImages.length) { categoryTabs.classList.add('hidden'); return; }
+    // كل فئة مضافة من الإعدادات بتظهر كتبويب دايماً — صورة لو مرفوعة، وإلا أول حرف من
+    // اسم الفئة كأيقونة نصية، بدل ما تختفي التبويبات بالكامل لمجرد عدم وجود صور.
+    if (!categories.length) { categoryTabs.classList.add('hidden'); return; }
     categoryTabs.classList.remove('hidden');
     const allTab = `<button type="button" class="category-tab active" data-cat="">
       <span class="category-tab-icon">🍽️</span><span>${t('pos.allCategories', 'الكل')}</span>
     </button>`;
-    const tabs = withImages.map((c) => `
+    const tabs = categories.map((c) => `
       <button type="button" class="category-tab" data-cat="${c.id}">
-        <img src="${escapeHtml(c.image_path)}" alt="" />
+        ${c.image_path
+          ? `<img src="${escapeHtml(c.image_path)}" alt="" />`
+          : `<span class="category-tab-icon">${escapeHtml((c.name || '').trim().charAt(0) || '🏷️')}</span>`}
         <span>${escapeHtml(c.name)}</span>
       </button>
     `).join('');
@@ -604,7 +607,7 @@ function addToCart(product) {
   // دعم "كمية سريعة": الكاشير يكتب رقماً بخانة الكمية أولاً (مثلاً 10 لعشر عبوات بسكويت)
   // ثم يضغط على المنتج مرة واحدة فيُضاف بهذه الكمية دفعة واحدة بدل الضغط 10 مرات.
   // القيمة ترجع تلقائياً لـ 1 بعد كل إضافة حتى لا تُطبَّق سهواً على المنتج التالي.
-  const qty = Math.max(1, Math.floor(Number(qtyBufferInput?.value) || 1));
+  const qty = Math.max(1, Math.floor(parseLocaleNumber(qtyBufferInput?.value) || 1));
   if (qtyBufferInput && qtyBufferInput.value !== '1') qtyBufferInput.value = 1;
   // ندمج فقط مع سطر موجود بلا ملاحظة (نفس الصنف بلا تخصيص) — سطر عليه ملاحظة (مثلاً
   // "شاورما بدون ثوم") يبقى منفصلاً حتى لا تختلط ملاحظته مع طلب عادي لنفس الصنف.
@@ -991,7 +994,7 @@ async function refreshLoyaltyQuote() {
 }
 
 function onLoyaltyRedeemChange() {
-  let val = Math.floor(Number(loyaltyPointsInput.value) || 0);
+  let val = Math.floor(parseLocaleNumber(loyaltyPointsInput.value) || 0);
   if (loyaltyQuote) val = Math.max(0, Math.min(val, loyaltyQuote.maxRedeemablePoints));
   else val = 0;
   loyaltyRedeemedPoints = val;
