@@ -14,7 +14,18 @@ const path = require('path');
 // اتصال SQLite المحلي أعلاه (المخصَّص فقط لسجل مزامنة central-sync.db). بما أن هذا
 // الملف يعمل داخل نفس عملية Electron الرئيسية (main.js)، فطلب هذه الوحدة هنا يُرجع
 // نفس singleton المُهيَّأ فعلاً (نفس اتصال قاعدة البيانات المشفّرة)، لا اتصالاً جديداً.
-const appDb = require('../database/db');
+// مهم: لا نستدعي require('../database/db') هنا مباشرة (top-level). هذا الملف يُحمَّل
+// عبر require('./server/sync-server') في أعلى main.js — أي فوراً عند بدء تشغيل العملية
+// الرئيسية، قبل app.whenReady() بكثير. وبما أن database/db.js يفتح مفتاح التشفير عبر
+// safeStorage فوراً عند التحميل، فاستدعاء require المبكر هذا يكسر "مخزن مفاتيح نظام
+// التشغيل" على ويندوز (safeStorage غير جاهز قبل ready). لذلك نأجّل الـ require لحين أول
+// استخدام فعلي — وهو دائماً بعد ready لأن createSyncServer() نفسها لا تُستدعى إلا من
+// main.js داخل app.whenReady().
+let _appDb = null;
+function appDb() {
+  if (!_appDb) _appDb = require('../database/db');
+  return _appDb;
+}
 
 function send(res, status, body) {
   res.writeHead(status, {
@@ -479,8 +490,8 @@ function createSyncServer({ dbPath, port = 0, rateLimit = 60, onLog = () => {}, 
       const branchUuid = authenticateWaiter(req.headers['x-branch-uuid']);
       if (!branchUuid) return send(res, 401, { message: 'Unauthorized' });
       try {
-        const categories = appDb.listCategories();
-        const products = appDb.listProducts({ limit: 500 });
+        const categories = appDb().listCategories();
+        const products = appDb().listProducts({ limit: 500 });
         return send(res, 200, { categories, products });
       } catch (error) { return send(res, 400, { message: error.message }); }
     }
@@ -489,7 +500,7 @@ function createSyncServer({ dbPath, port = 0, rateLimit = 60, onLog = () => {}, 
       const branchUuid = authenticateWaiter(req.headers['x-branch-uuid']);
       if (!branchUuid) return send(res, 401, { message: 'Unauthorized' });
       try {
-        return send(res, 200, { tables: appDb.listTables() });
+        return send(res, 200, { tables: appDb().listTables() });
       } catch (error) { return send(res, 400, { message: error.message }); }
     }
 
@@ -514,8 +525,8 @@ function createSyncServer({ dbPath, port = 0, rateLimit = 60, onLog = () => {}, 
         // "إضافة" فقط لا "استبدال": نجمع الكمية المطلوبة الآن فوق أي كمية سابقة موجودة
         // بالفعل بنفس الطلب المفتوح (من كاشير آخر أو كرسون آخر)، بدل حذف ما سبق كتابته —
         // لأن الكرسون لا يرى بالضرورة تفاصيل ما أضافه غيره على نفس الطاولة قبله.
-        const openSale = appDb.getOrCreateOpenSale(tableId, null);
-        const existing = appDb.getOpenSaleForTable(tableId);
+        const openSale = appDb().getOrCreateOpenSale(tableId, null);
+        const existing = appDb().getOpenSaleForTable(tableId);
         const merged = new Map();
         for (const it of (existing && existing.items) || []) {
           const key = `${it.product_id}::${it.notes || ''}`;
@@ -526,8 +537,8 @@ function createSyncServer({ dbPath, port = 0, rateLimit = 60, onLog = () => {}, 
           const prior = merged.get(key);
           merged.set(key, { productId: Number(it.productId), quantity: (prior ? prior.quantity : 0) + Number(it.quantity), notes: it.notes || '' });
         }
-        const result = appDb.setOpenSaleItems(openSale.id, Array.from(merged.values()));
-        appDb.logAudit({ userId: null, action: 'table_order_updated_by_waiter', entityType: 'sale', entityId: openSale.id, details: { itemCount: items.length } });
+        const result = appDb().setOpenSaleItems(openSale.id, Array.from(merged.values()));
+        appDb().logAudit({ userId: null, action: 'table_order_updated_by_waiter', entityType: 'sale', entityId: openSale.id, details: { itemCount: items.length } });
         let kitchen = null;
         if (typeof sendKitchenTicket === 'function') {
           try { kitchen = await sendKitchenTicket(openSale.id); } catch (_) { kitchen = { success: false }; }
@@ -546,9 +557,9 @@ function createSyncServer({ dbPath, port = 0, rateLimit = 60, onLog = () => {}, 
       const tableId = Number(body.tableId);
       if (!Number.isInteger(tableId) || tableId <= 0) return send(res, 400, { message: 'طاولة غير صالحة.' });
       try {
-        const openSale = appDb.getOpenSaleForTable(tableId);
+        const openSale = appDb().getOpenSaleForTable(tableId);
         if (!openSale) return send(res, 400, { message: 'لا يوجد طلب مفتوح على هذه الطاولة.' });
-        return send(res, 200, appDb.requestBillForTable(openSale.id));
+        return send(res, 200, appDb().requestBillForTable(openSale.id));
       } catch (error) { return send(res, 400, { message: error.message }); }
     }
 

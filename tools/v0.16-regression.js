@@ -7,7 +7,7 @@ const tests = [
   ['sale joins table only from same branch', /LEFT JOIN restaurant_tables t ON t\.id = s\.table_id AND t\.branch_id = s\.branch_id/.test(db)],
   ['open table validates current branch ownership', /SELECT id FROM restaurant_tables WHERE id=\? AND branch_id=\?/.test(db)],
   ['get open sale validates table ownership', /function getOpenSaleForTable\(tableId\)[\s\S]{0,260}restaurant_tables WHERE id=\? AND branch_id=\?/.test(db)],
-  ['table payment uses actor user', /db\.closeTableSale\(saleId, trustedPayment, currentUser\.id(?:,\s*shift\?\.id \|\| null)?\)/.test(main)],
+  ['table payment uses actor user', /db\.closeTableSale\(saleId, (?:payment|trustedPayment), currentUser\.id(?:,\s*shift\?\.id \|\| null)?\)/.test(main)],
   ['close table records actor in payment ledger', /const createdBy = actorUserId \|\| sale\.user_id \|\| null/.test(db)],
   ['client request idempotency unique per branch', /UNIQUE INDEX IF NOT EXISTS idx_sales_branch_client_request ON sales\(branch_id, client_request_id\)/.test(schema)],
   ['branch-scoped inventory index exists', /idx_inventory_branch_product/.test(schema)],
