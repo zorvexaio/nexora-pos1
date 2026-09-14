@@ -806,7 +806,6 @@ function migratePayrollAdvancesAccountingV22() {
 
 function migrateAccountingExtensionsV17() {
   const branches = db.prepare('SELECT id FROM branches').all();
-
   const currency = String(getGlobalProfile()?.currency_code || 'USD').toUpperCase();
   const extraAccounts = [
     ['6100', 'رواتب وأجور (مصروف)', 'expense'],

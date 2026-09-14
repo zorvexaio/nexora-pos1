@@ -449,7 +449,8 @@ async function renderCategoryImagesPanel() {
         <button type="button" class="btn btn-secondary btn-sm" data-move="up" data-id="${c.id}" ${idx === 0 ? 'disabled' : ''}>▲</button>
         <button type="button" class="btn btn-secondary btn-sm" data-move="down" data-id="${c.id}" ${idx === categories.length - 1 ? 'disabled' : ''}>▼</button>
       </div>
-      <button type="button" class="btn btn-secondary btn-sm" data-pick-cat="${c.id}">اختر صورة</button>
+      <button type="button" class="btn btn-secondary btn-sm" data-pick-cat="${c.id}">${c.image_path ? 'تغيير الصورة' : 'اختر صورة'}</button>
+      ${c.image_path ? `<button type="button" class="btn btn-danger btn-sm" data-remove-cat="${c.id}">مسح الصورة</button>` : ''}
     </div>
   `).join('') || '<div class="field-hint">لا توجد فئات بعد — تُنشأ تلقائياً عند إضافة منتج بفئة جديدة من صفحة المنتجات.</div>';
 
@@ -462,6 +463,19 @@ async function renderCategoryImagesPanel() {
         await window.api.categories.setImage(categoryId, result.url);
         renderCategoryImagesPanel();
       } catch (err) { showToast('تعذّر حفظ صورة الفئة: ' + err.message, 'error'); }
+    });
+  });
+  list.querySelectorAll('[data-remove-cat]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const categoryId = parseInt(btn.dataset.removeCat, 10);
+      const card = btn.closest('.category-image-card');
+      const categoryName = card?.querySelector('.category-image-name')?.textContent || '';
+      if (!window.confirm(`هل تريد مسح صورة قسم «${categoryName}»؟ سيبقى القسم ظاهراً في الكاشير بدون صورة.`)) return;
+      try {
+        await window.api.categories.setImage(categoryId, null);
+        showToast('تم مسح صورة الفئة. سيظهر القسم في الكاشير بدون صورة.');
+        renderCategoryImagesPanel();
+      } catch (err) { showToast('تعذّر مسح صورة الفئة: ' + err.message, 'error'); }
     });
   });
   list.querySelectorAll('[data-move]').forEach((btn) => {

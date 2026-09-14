@@ -1,4 +1,4 @@
-# Nexora POS v0.52.1 — Build & Release Verification
+# Nexora POS v0.52.17 — Build & Release Verification
 
 ## حالة الإصدار
 **Engineering Source Release / Release Candidate — غير مثبت تجارياً بعد.**
@@ -6,7 +6,7 @@
 هذه الوثيقة تفصل بوضوح بين فحص المصدر وبين اختبار التشغيل الحقيقي. لا يكفي نجاح `node --check` أو regression source scripts لإثبات عمل Electron/SQLite native أو Windows installer.
 
 ### البيئة المرجعية
-- Version: `0.52.1`
+- Version: `0.52.17`
 - Node.js build requirement: `>=22.12.0`
 - Electron: `44.2.0`
 - Encrypted SQLite: `better-sqlite3-multiple-ciphers 13.0.3`
@@ -79,4 +79,3 @@ npm run release:win
 - Payment history exposed through main/preload: PASS.
 - Full engineering regression: PASS.
 - Runtime limitation remains: native Electron/SQLite, Windows installer, signing, printer and updater require the real Windows release machine.
-

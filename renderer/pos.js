@@ -302,6 +302,44 @@ function selectedOrderType() {
 let selectedCategoryId = null;
 const categoryTabs = document.getElementById('categoryTabs');
 const qtyBufferInput = document.getElementById('qtyBufferInput');
+const qtyBufferStatus = document.getElementById('qtyBufferStatus');
+const { MAX_QUANTITY, parseQuickQuantity, canAccumulateQuantity } = window.quantityBuffer;
+
+function quantityBufferText(key, values = {}) {
+  return t(key).replace(/\{(\w+)\}/g, (_match, name) => String(values[name] ?? ''));
+}
+
+function quantityBufferMessage(result) {
+  if (result?.reason === 'maximum') return quantityBufferText('pos.qtyMaximum', { max: MAX_QUANTITY.toLocaleString() });
+  return quantityBufferText('pos.qtyInvalid');
+}
+
+function updateQuantityBufferStatus(result = parseQuickQuantity(qtyBufferInput?.value)) {
+  if (!qtyBufferStatus) return result;
+  if (result.ok) {
+    qtyBufferStatus.textContent = quantityBufferText('pos.qtyWillAdd', { quantity: result.quantity });
+    qtyBufferStatus.classList.remove('is-error');
+  } else {
+    qtyBufferStatus.textContent = quantityBufferMessage(result);
+    qtyBufferStatus.classList.add('is-error');
+  }
+  return result;
+}
+
+function resetQuantityBuffer() {
+  if (!qtyBufferInput) return;
+  qtyBufferInput.value = '1';
+  updateQuantityBufferStatus({ ok: true, quantity: 1 });
+}
+
+qtyBufferInput?.addEventListener('focus', () => qtyBufferInput.select());
+qtyBufferInput?.addEventListener('input', () => updateQuantityBufferStatus());
+qtyBufferInput?.addEventListener('blur', () => {
+  const result = parseQuickQuantity(qtyBufferInput.value);
+  if (!result.ok) resetQuantityBuffer();
+  else if (qtyBufferInput.value !== String(result.quantity)) qtyBufferInput.value = String(result.quantity);
+});
+updateQuantityBufferStatus({ ok: true, quantity: 1 });
 
 // تبويبات الفئات (بالصور) تظهر فقط لو فيه فئات معرّف لها صورة — متجر بلا صور فئات
 // (زي أغلب السوبرماركت) يفضل بحث نصي بسيط بدون أي تبويبات تشغل مساحة الشاشة.
@@ -607,11 +645,25 @@ function addToCart(product) {
   // دعم "كمية سريعة": الكاشير يكتب رقماً بخانة الكمية أولاً (مثلاً 10 لعشر عبوات بسكويت)
   // ثم يضغط على المنتج مرة واحدة فيُضاف بهذه الكمية دفعة واحدة بدل الضغط 10 مرات.
   // القيمة ترجع تلقائياً لـ 1 بعد كل إضافة حتى لا تُطبَّق سهواً على المنتج التالي.
-  const qty = Math.max(1, Math.floor(parseLocaleNumber(qtyBufferInput?.value) || 1));
-  if (qtyBufferInput && qtyBufferInput.value !== '1') qtyBufferInput.value = 1;
+  const requestedQuantity = updateQuantityBufferStatus();
+  if (!requestedQuantity.ok) {
+    qtyBufferInput?.focus();
+    qtyBufferInput?.select();
+    return false;
+  }
+  const qty = requestedQuantity.quantity;
   // ندمج فقط مع سطر موجود بلا ملاحظة (نفس الصنف بلا تخصيص) — سطر عليه ملاحظة (مثلاً
   // "شاورما بدون ثوم") يبقى منفصلاً حتى لا تختلط ملاحظته مع طلب عادي لنفس الصنف.
   const existing = cart.find((i) => i.productId === product.id && !i.notes);
+  if (!canAccumulateQuantity(existing?.quantity, qty)) {
+    if (qtyBufferStatus) {
+      qtyBufferStatus.textContent = quantityBufferText('pos.qtyAccumulationMaximum', { max: MAX_QUANTITY.toLocaleString() });
+      qtyBufferStatus.classList.add('is-error');
+    }
+    qtyBufferInput?.focus();
+    qtyBufferInput?.select();
+    return false;
+  }
   if (existing) {
     existing.quantity += qty;
   } else {
@@ -625,13 +677,19 @@ function addToCart(product) {
       notes: '',
     });
   }
+  resetQuantityBuffer();
   renderCart();
+  return true;
 }
 
 // إضافة منتج بيع بالوزن (خضار/فواكه) بكمية = الوزن المقروء من باركود الميزان مباشرة —
 // دون أي إدخال يدوي؛ يُجمع مع نفس الصنف إن كان موجوداً بالسلة أصلاً (كيس ثانٍ من نفس الصنف).
 function addWeightedToCart(product, weightKg) {
   const existing = cart.find((i) => i.productId === product.id && !i.notes);
+  if (!canAccumulateQuantity(existing?.quantity, weightKg)) {
+    showToast(quantityBufferText('pos.qtyAccumulationMaximum', { max: MAX_QUANTITY.toLocaleString() }), 'error');
+    return false;
+  }
   if (existing) {
     existing.quantity += weightKg;
   } else {
@@ -647,11 +705,16 @@ function addWeightedToCart(product, weightKg) {
     });
   }
   renderCart();
+  return true;
 }
 
 function changeQty(lineId, delta) {
   const item = cart.find((i) => i.lineId === lineId);
   if (!item) return;
+  if (delta > 0 && !canAccumulateQuantity(item.quantity, delta)) {
+    showToast(quantityBufferText('pos.qtyAccumulationMaximum', { max: MAX_QUANTITY.toLocaleString() }), 'error');
+    return;
+  }
   item.quantity += delta;
   if (item.quantity <= 0) {
     cart = cart.filter((i) => i.lineId !== lineId);

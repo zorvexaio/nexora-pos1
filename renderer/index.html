@@ -49,8 +49,9 @@
           <svg class="search-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/><path d="M8 11h6M11 8v6"/></svg>
           <input id="searchInput" type="text" data-i18n-placeholder="pos.searchPlaceholder" placeholder="ابحث بالاسم أو امسح الباركود..." aria-label="البحث عن منتج أو مسح الباركود" autocomplete="off" spellcheck="false" autofocus />
           <div class="qty-buffer-box" title="اكتب رقم قبل الضغط على المنتج لإضافته بهذه الكمية دفعة واحدة">
-            <span data-i18n="pos.qty">الكمية</span>
-            <input id="qtyBufferInput" type="text" inputmode="numeric" maxlength="4" value="1" />
+            <label for="qtyBufferInput" data-i18n="pos.qty">الكمية</label>
+            <input id="qtyBufferInput" type="text" inputmode="numeric" value="1" aria-describedby="qtyBufferStatus" autocomplete="off" />
+            <span id="qtyBufferStatus" class="qty-buffer-status" aria-live="polite"></span>
           </div>
           <div id="barcodeError" class="barcode-error hidden"></div>
         </div>
@@ -318,6 +319,7 @@
 
   <script src="i18n.js"></script>
   <script src="common.js"></script>
+  <script src="quantity-buffer.js"></script>
   <script src="pos.js"></script>
 <div id="globalBusyOverlay" class="global-busy-overlay hidden" aria-hidden="true"><span class="nexora-spinner"></span><span>جارٍ تنفيذ العملية...</span></div>
 </body>

@@ -1,12 +1,12 @@
 {
-  "generatedAt": "2026-09-14T09:24:15.865Z",
-  "version": "0.52.16",
+  "generatedAt": "2026-09-14T17:41:47.270Z",
+  "version": "0.52.17",
   "mode": "source",
   "checks": [
     {
       "id": "source-version",
-      "status": "FAIL",
-      "detail": "package version=0.52.16",
+      "status": "PASS",
+      "detail": "package version=0.52.17",
       "blocking": true
     },
     {
@@ -23,8 +23,8 @@
     },
     {
       "id": "engineering-source-suite",
-      "status": "FAIL",
-      "detail": "MONEY REGRESSION: PASS\nPASS: remote sync validates monotonic cursor\nPASS: remote sync validates expected branch\nPASS: branch-owned remote rows require branch_uuid\nPASS: sync client validates server envelope before applying it\nPASS: database rejects branch-owned sync rows without branch_uuid\nPASS: migration journal stores checksum\nPASS: published migrations are checksum-verified\nPASS: backup is staged, validated and checksummed before target replacement\nSYNC HARDENING REGRESSION: 8/8 PASS\nV0.48.x ENGINEERING REGRESSION: PASS\nPAYROLL LIFECYCLE REGRESSION: PASS\nPASS: salary payment is explicit and capped at remaining net salary\nPASS: cash salary requires an open register shift\nPASS: paid payroll months reject further payroll mutations\nPASS: payment history is persisted and exposed through preload/main IPC\nPAYROLL ADVANCES REGRESSION: PASS\nPASS: advances support 1-36 installment schedules\nPASS: first deduction month is explicit and cannot precede issuance\nPASS: installment schedule is calculated in minor currency units\nPASS: future monthly deductions are included automatically in payroll recalculation\nPASS: optional immediate cash-out remains tied to an open register shift\nPAYROLL ADVANCE REPAYMENTS REGRESSION: PASS\nPASS: schema history includes auditable advance repayment records and installment allocations\nPASS: direct repayment can be partially allocated across installments\nPASS: early settlement closes the advance at zero balance\nPASS: salary deductions are recorded as salary-source recovery only after final salary payment\nPASS: repayment IPC is admin-only and exposed through preload\nPAYROLL TERMINATION REGRESSION: PASS\nPASS: schema v15 is registered and journaled\nPASS: final settlement table is auditable and minor-unit safe\nPASS: settlement supports outstanding advance offset\nPASS: employee is deactivated only after atomic settlement\nPASS: final settlement IPC/preload/UI surface is present\nV0.48.0 ENGINEERING REGRESSION: PASS\nRelease metadata regression: PASS\nUpdate safety regression: PASS\nPASS: root LICENSE is a file\nPASS: licensing directory exists\nPASS: licensing/license.js exists\nPASS: Windows branding is Nexora POS\nPASS: no Windows case-insensitive path collisions exist\nPASS: legacy conflicting license path is absent\nWINDOWS STRUCTURE REGRESSION: PASS\nClient event hardening regression: PASS\nPASS: LAN restart reuses persisted sync secret\nPASS: sync server accepts an existing secret when restoring branch key\nPASS: existing secret is hashed instead of replaced by a random secret\nPASS: pairing code documentation matches the actual 8-digit code\nLAN KEY PERSISTENCE REGRESSION: PASS\nPASS: login is bound to current branch\nPASS: discount approver is bound to current branch\nPASS: credit approver is bound to current branch\nPASS: payroll v2 has no payment-cycle mutation path\nPASS: sync pull is filtered by authenticated branch\nPASS: client rejects foreign branch-owned sync rows\nPASS: client filters branch-owned remote rows\nPASS: sync client only sends branch-local state envelope\nPASS: monthly payroll UI exists\nPASS: current stable Electron line\nPASS: current stable encrypted sqlite line\nPASS: current stable updater line\nPASS: current stable builder line\nPASS: no hard-coded hourly payroll UI path\nPASS: no mandatory shift wording in main sale path\nDEEP REGRESSION: PASS (15 checks)\nPASS: store credit has separate balance field\nPASS: sale supports store credit\nPASS: store credit requires customer\nPASS: return issues store credit instead of debt\nPASS: store credit payment ledger exists\nPASS: store credit UI exists\nPASS: customer ledger has UUID and sync\nPASS: global sync entities are explicit\nPASS: cross-branch UUID collision is rejected for owned data\nPASS: global pull is deliberate\nGLOBAL FINANCIAL REGRESSION: PASS (10 checks)\nPASS: no hard-coded default admin password\nPASS: bootstrap password is random\nPASS: bootstrap password is stored as pending setup secret\nPASS: successful login clears bootstrap secret\nPASS: password login has rate limiting\nPASS: bootstrap IPC is exposed through preload\nPASS: first-run login explains temporary credential\nPASS: first-run hint no longer reveals default password\nAUTH BOOTSTRAP REGRESSION: PASS (8 checks)\nSALE READINESS: Nexora POS v0.52.16\nCore fingerprint: c9440ea7cfb6da474c0effc6380292aa372725f87cb83c8d23fab6dc978e6ab7\nWARNINGS (1)\nWARN: Windows code signing is not configured in this environment — SmartScreen reputation requires a real signing certificate for a commercial release\n\nBLOCKERS (1)\nFAIL: VERSION matches package.json",
+      "status": "PASS",
+      "detail": "source regression suite passed",
       "blocking": true
     },
     {

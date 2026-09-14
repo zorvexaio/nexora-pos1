@@ -223,7 +223,7 @@ const TRANSLATIONS = {
     'settings.tax.save': 'حفظ نسبة الضريبة الافتراضية',
     'settings.tax.saved': 'تم حفظ نسبة الضريبة الافتراضية.',
     'settings.categories.title': 'فئات الكاشير (صور وترتيب)',
-    'settings.categories.hint': 'تظهر كتبويبات سريعة بشاشة الكاشير للفئات اللي عندها صورة. رتّبها بالأسهم حسب أكثرها استخداماً. فئة بلا صورة لا تظهر كتبويب.',
+    'settings.categories.hint': 'كل الفئات تظهر كتبويبات سريعة بشاشة الكاشير: الصورة اختيارية، وبدونها يظهر أول حرف من اسم الفئة. يمكنك إضافة الصورة أو مسحها لاحقاً، ثم رتّب الأقسام بالأسهم.',
     'settings.receiptBarcode.title': 'رمز QR على الفاتورة',
     'settings.waiter.hint': 'أو لجهاز الكرسون (جوال/تابلت): افتح المتصفح على العنوان التالي واكتب نفس الرمز:',
     'settings.receiptBarcode.toggleLabel': 'إظهار رمز QR على فاتورة العميل',
@@ -531,7 +531,7 @@ const TRANSLATIONS = {
     'settings.tax.save': 'Varsayılan vergi oranını kaydet',
     'settings.tax.saved': 'Varsayılan vergi oranı kaydedildi.',
     'settings.categories.title': 'Kasa kategorileri (görsel ve sıra)',
-    'settings.categories.hint': 'Görseli olan kategoriler için kasa ekranında hızlı sekmeler olarak gösterilir. Kullanım sıklığına göre oklarla sıralayın. Görseli olmayan kategori sekme olarak görünmez.',
+    'settings.categories.hint': 'Tüm kategoriler kasada hızlı sekme olarak görünür. Görsel isteğe bağlıdır; yoksa kategori adının ilk harfi gösterilir. Görseli daha sonra ekleyebilir veya kaldırabilirsiniz; ardından oklarla sıralayın.',
     'settings.receiptBarcode.title': 'Fişte QR kodu',
     'settings.waiter.hint': 'Ya da garson cihazı (telefon/tablet) için: tarayıcıda aşağıdaki adresi açın ve aynı kodu girin:',
     'settings.receiptBarcode.toggleLabel': 'Müşteri fişinde QR kodu göster',
@@ -835,7 +835,7 @@ const TRANSLATIONS = {
     'settings.tax.save': 'Save default tax rate',
     'settings.tax.saved': 'Default tax rate saved.',
     'settings.categories.title': 'POS categories (images and order)',
-    'settings.categories.hint': 'Shown as quick tabs on the checkout screen for categories that have an image. Use the arrows to order them by usage. A category without an image is not shown as a tab.',
+    'settings.categories.hint': 'Every category appears as a quick tab on the checkout screen. An image is optional; without one, the first letter of the category name is shown. You can add or remove an image later, then order the categories with the arrows.',
     'settings.receiptBarcode.title': 'QR code on receipt',
     'settings.waiter.hint': 'Or for a waiter device (phone/tablet): open a browser to the address below and enter the same code:',
     "settings.receiptBarcode.toggleLabel": "Show QR code on the customer's receipt",
@@ -1087,6 +1087,25 @@ function t(key, fallback) {
   const dict = TRANSLATIONS[lang] || TRANSLATIONS.ar;
   return dict[key] || (RAW_TRANSLATIONS[lang] && RAW_TRANSLATIONS[lang][key]) || fallback || TRANSLATIONS.ar[key] || (RAW_TRANSLATIONS.ar && RAW_TRANSLATIONS.ar[key]) || key;
 }
+
+Object.assign(TRANSLATIONS.ar, {
+  'pos.qtyWillAdd': 'سيُضاف × {quantity}',
+  'pos.qtyInvalid': 'أدخل كمية صحيحة من 1 إلى 9,999',
+  'pos.qtyMaximum': 'الحد الأقصى للكمية هو {max}',
+  'pos.qtyAccumulationMaximum': 'لا يمكن أن تتجاوز كمية الصنف {max}',
+});
+Object.assign(TRANSLATIONS.tr, {
+  'pos.qtyWillAdd': 'Eklenecek × {quantity}',
+  'pos.qtyInvalid': '1 ile 9.999 arasında geçerli bir miktar girin',
+  'pos.qtyMaximum': 'Maksimum miktar {max}',
+  'pos.qtyAccumulationMaximum': 'Ürün miktarı {max} değerini aşamaz',
+});
+Object.assign(TRANSLATIONS.en, {
+  'pos.qtyWillAdd': 'Will add × {quantity}',
+  'pos.qtyInvalid': 'Enter a whole quantity from 1 to 9,999',
+  'pos.qtyMaximum': 'Maximum quantity is {max}',
+  'pos.qtyAccumulationMaximum': 'An item quantity cannot exceed {max}',
+});
 
 function applyTranslations(lang) {
   const dict = TRANSLATIONS[lang] || TRANSLATIONS.ar;
