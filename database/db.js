@@ -14,7 +14,7 @@ const userDataPath = app.getPath('userData');
 const dbPath = path.join(userDataPath, 'pos.db');
 const keyPath = path.join(userDataPath, 'pos.db.key');
 const databaseExistedBeforeOpen = fs.existsSync(dbPath) && fs.statSync(dbPath).size > 0;
-const CURRENT_SCHEMA_VERSION = 22;
+const CURRENT_SCHEMA_VERSION = 23;
 
 function getEncryptionKey() {
   if (!safeStorage.isEncryptionAvailable()) {
@@ -208,6 +208,7 @@ function init() {
       [20, 'payroll-future-accrual-correction-v20', migratePayrollFutureAccrualCorrectionV20],
       [21, 'accounting-balance-cache-v21', migrateAccountingBalanceCacheV21],
       [22, 'payroll-advances-accounting-v22', migratePayrollAdvancesAccountingV22],
+      [23, 'inventory-account-correction-v23', migrateInventoryAccountCorrectionV23],
     ];
     for (const [version, name, migration] of versionedMigrations) applyVersionedMigration(version, name, migration);
     assertMigrationJournalIntegrity(versionedMigrations);
@@ -760,6 +761,55 @@ function migratePayrollFutureAccrualCorrectionV20() {
   }
 }
 
+function migrateInventoryAccountCorrectionV23() {
+  const unit = Number(getGlobalProfile()?.currency_minor_unit ?? 2);
+  db.prepare(`
+    UPDATE inventory SET unit_cost = (SELECT p.cost FROM products p WHERE p.id = inventory.product_id)
+    WHERE unit_cost = 0
+      AND EXISTS (SELECT 1 FROM products p WHERE p.id = inventory.product_id AND p.cost > 0)
+  `).run();
+
+  const branches = db.prepare('SELECT id FROM branches').all();
+  for (const branch of branches) {
+    const inventoryAccount = db.prepare("SELECT id FROM accounting_accounts WHERE branch_id=? AND code='1300' AND is_active=1").get(branch.id);
+    const equityAccount = db.prepare("SELECT id FROM accounting_accounts WHERE branch_id=? AND code='3000' AND is_active=1").get(branch.id);
+    if (!inventoryAccount || !equityAccount) continue;
+
+    const balRow = db.prepare(
+      `SELECT COALESCE(SUM(l.debit_minor),0) AS d, COALESCE(SUM(l.credit_minor),0) AS c
+       FROM accounting_journal_lines l JOIN accounting_journal_entries e ON e.id=l.entry_id
+       WHERE l.account_id=? AND e.status='posted'`
+    ).get(inventoryAccount.id);
+    const currentBalanceMinor = Number(balRow.d || 0) - Number(balRow.c || 0);
+
+    const realRow = db.prepare(
+      `SELECT COALESCE(SUM(i.quantity * p.cost),0) AS v
+       FROM inventory i JOIN products p ON p.id=i.product_id
+       WHERE i.branch_id=? AND p.track_inventory=1 AND p.is_active=1`
+    ).get(branch.id);
+    const realValueMinor = Math.round(Number(realRow.v || 0) * (10 ** unit));
+
+    const diffMinor = realValueMinor - currentBalanceMinor;
+    if (diffMinor === 0) continue;
+
+    insertPostedJournalEntry({
+      branchId: branch.id,
+      memo: `تصحيح رصيد حساب المخزون ليطابق القيمة الفعلية (ترحيلة v23)`,
+      referenceType: 'inventory_account_correction_v23',
+      referenceId: branch.id,
+      lines: diffMinor > 0
+        ? [
+            { accountId: inventoryAccount.id, debitMinor: diffMinor, creditMinor: 0 },
+            { accountId: equityAccount.id, debitMinor: 0, creditMinor: diffMinor },
+          ]
+        : [
+            { accountId: equityAccount.id, debitMinor: Math.abs(diffMinor), creditMinor: 0 },
+            { accountId: inventoryAccount.id, debitMinor: 0, creditMinor: Math.abs(diffMinor) },
+          ],
+    });
+  }
+}
+
 // v21: تسريع تقارير المحاسبة (ميزان المراجعة/قائمة الدخل/الميزانية) بدون تغيير
 // أي نتيجة — تضيف عمود current_balance_minor على accounting_accounts يخزّن صافي
 // حركة الحساب التراكمية (مدين-دائن) من كل القيود المرحّلة، ويتحدّث تلقائياً بمُطلِقات
@@ -806,6 +856,7 @@ function migratePayrollAdvancesAccountingV22() {
 
 function migrateAccountingExtensionsV17() {
   const branches = db.prepare('SELECT id FROM branches').all();
+
   const currency = String(getGlobalProfile()?.currency_code || 'USD').toUpperCase();
   const extraAccounts = [
     ['6100', 'رواتب وأجور (مصروف)', 'expense'],
@@ -1356,6 +1407,9 @@ function runMigrations() {
   // صورة الفئة: لعرض تبويبات بصرية بشاشة الكاشير (مثال: صورة شاورما، صورة مشروبات...)
   tryAddColumn('categories', `image_path TEXT`);
   tryAddColumn('categories', `sort_order INTEGER NOT NULL DEFAULT 0`);
+  // إخفاء/إظهار تبويب الفئة من شاشة الكاشير دون حذف الفئة أو منتجاتها — تبقى
+  // منتجاتها ظاهرة تحت "الكل"، فقط تبويبها السريع يختفي من الشريط.
+  tryAddColumn('categories', `pos_hidden INTEGER NOT NULL DEFAULT 0`);
   // "طلب الحساب" من جهاز الكرسون: علامة زمنية فقط (متى طُلب) — لا تمنع أي تعديل
   // على الطلب، ومجرد تنبيه بصري لشاشة الطاولات عند الكاشير الرئيسي.
   tryAddColumn('sales', `bill_requested_at DATETIME`);
@@ -1689,6 +1743,15 @@ function setCategoryImage(categoryId, imagePath) {
   return { success: true };
 }
 
+// إخفاء/إظهار تبويب فئة معيّنة من شاشة الكاشير — الفئة ومنتجاتها تبقيان موجودتين
+// تماماً كما هما (تظهر منتجاتها تحت "الكل")، فقط التبويب السريع يختفي من الشريط.
+function setCategoryPosHidden(categoryId, hidden) {
+  const category = db.prepare('SELECT id FROM categories WHERE id=?').get(Number(categoryId));
+  if (!category) throw new Error('الفئة غير موجودة.');
+  db.prepare('UPDATE categories SET pos_hidden=? WHERE id=?').run(hidden ? 1 : 0, Number(categoryId));
+  return { success: true, hidden: !!hidden };
+}
+
 function getOrCreateCategoryByName(name) {
   if (!name) return null;
   const trimmed = String(name).trim();
@@ -1724,7 +1787,7 @@ const bulkImportProductsTx = db.transaction((rows) => {
      WHERE branch_id = ? AND product_id = ?`
   );
   const createBranchInventory = db.prepare(
-    `INSERT INTO inventory (branch_id, product_id, quantity, min_quantity) VALUES (?, ?, ?, ?)`
+    `INSERT INTO inventory (branch_id, product_id, quantity, min_quantity, unit_cost) VALUES (?, ?, ?, ?, ?)`
   );
   const logMovement = db.prepare(
     `INSERT INTO inventory_movements (uuid, branch_id, product_id, change_qty, reason, ref_id, synced) VALUES (?, ?, ?, ?, 'import', NULL, 0)`
@@ -1756,7 +1819,7 @@ const bulkImportProductsTx = db.transaction((rows) => {
         updateExisting.run({ id: existing.id, name, price, cost, category_id: categoryId, unit });
         const stockResult = addStock.run(quantity, minQuantity, branch.id, existing.id);
         if (stockResult.changes === 0) {
-          createBranchInventory.run(branch.id, existing.id, quantity, minQuantity || 0);
+          createBranchInventory.run(branch.id, existing.id, quantity, minQuantity || 0, cost);
         }
         if (quantity !== 0) logMovement.run(uuid(), branch.id, existing.id, quantity);
         results.updated += 1;
@@ -2021,8 +2084,23 @@ function createProduct(p) {
       plu_code: identifiers.pluCode,
     });
     const branch = getCurrentBranch();
-    db.prepare(`INSERT INTO inventory (branch_id, product_id, quantity, min_quantity) VALUES (?, ?, ?, ?)`)
-      .run(branch.id, result.lastInsertRowid, initialStock, minQuantity);
+    db.prepare(`INSERT INTO inventory (branch_id, product_id, quantity, min_quantity, unit_cost) VALUES (?, ?, ?, ?, ?)`)
+      .run(branch.id, result.lastInsertRowid, initialStock, minQuantity, cost);
+    if (initialStock > 0 && cost > 0 && (p.trackInventory !== false)) {
+      const openingValueMinor = money.toMinor(initialStock * cost, Number(getGlobalProfile()?.currency_minor_unit ?? 2));
+      if (openingValueMinor > 0) {
+        insertPostedJournalEntry({
+          branchId: branch.id,
+          memo: `مخزون افتتاحي: ${name}`,
+          referenceType: 'inventory_opening_balance',
+          referenceId: result.lastInsertRowid,
+          lines: [
+            { accountId: getAccountingAccountId(branch.id, '1300'), debitMinor: openingValueMinor, creditMinor: 0 },
+            { accountId: getAccountingAccountId(branch.id, '3000'), debitMinor: 0, creditMinor: openingValueMinor },
+          ],
+        });
+      }
+    }
     return result;
   })();
   return { id: info.lastInsertRowid };
@@ -2074,8 +2152,8 @@ const updateProductTx = db.transaction((p) => {
       params.id = branchInventory.id;
       db.prepare(`UPDATE inventory SET ${sets.join(', ')}, updated_at=datetime('now'), synced=0 WHERE id=@id`).run(params);
     } else {
-      db.prepare(`INSERT INTO inventory (branch_id, product_id, quantity, min_quantity) VALUES (?, ?, ?, ?)`)
-        .run(branch.id, productId, stock ?? 0, minQuantity ?? 0);
+      db.prepare(`INSERT INTO inventory (branch_id, product_id, quantity, min_quantity, unit_cost) VALUES (?, ?, ?, ?, ?)`)
+        .run(branch.id, productId, stock ?? 0, minQuantity ?? 0, cost);
     }
     if (stock !== undefined && Math.abs(stock - beforeQuantity) > 0.000001) {
       const unitCost = Number(db.prepare('SELECT COALESCE(unit_cost, cost, 0) AS unit_cost FROM inventory JOIN products ON products.id = inventory.product_id WHERE inventory.branch_id=? AND inventory.product_id=?').get(branch.id, productId)?.unit_cost || 0);
@@ -2878,7 +2956,7 @@ function listInventory(filters = {}) {
 // تسوية/تعديل يدوي للمخزون (جرد، تالف، شراء بضاعة جديدة...) — عملية واحدة داخل transaction
 const adjustInventoryTx = db.transaction((payload) => {
   const branch = getCurrentBranch();
-  const product = db.prepare('SELECT id, is_active, track_inventory FROM products WHERE id=?').get(Number(payload.productId));
+  const product = db.prepare('SELECT id, is_active, track_inventory, cost FROM products WHERE id=?').get(Number(payload.productId));
   if (!product || !product.is_active) throw new Error('المنتج غير موجود أو غير نشط.');
   const changeQty=Number(payload.changeQty);
   if (!Number.isFinite(changeQty) || changeQty===0) throw new Error('كمية التسوية غير صالحة.');
@@ -2893,14 +2971,36 @@ const adjustInventoryTx = db.transaction((payload) => {
     ).run(changeQty, branch.id, payload.productId);
   } else {
     db.prepare(
-      `INSERT INTO inventory (branch_id, product_id, quantity, min_quantity) VALUES (?, ?, ?, 0)`
-    ).run(branch.id, payload.productId, changeQty);
+      `INSERT INTO inventory (branch_id, product_id, quantity, min_quantity, unit_cost) VALUES (?, ?, ?, 0, ?)`
+    ).run(branch.id, payload.productId, changeQty, product.cost || 0);
   }
 
-  db.prepare(
+  const movementId = db.prepare(
     `INSERT INTO inventory_movements (uuid, branch_id, product_id, change_qty, reason, ref_id, notes, synced)
      VALUES (?, ?, ?, ?, ?, NULL, ?, 0)`
-  ).run(uuid(), branch.id, payload.productId, payload.changeQty, payload.reason || 'adjustment', payload.notes || null);
+  ).run(uuid(), branch.id, payload.productId, payload.changeQty, payload.reason || 'adjustment', payload.notes || null).lastInsertRowid;
+
+  const costMinor = money.toMinor(Number(product.cost || 0), Number(getGlobalProfile()?.currency_minor_unit ?? 2));
+  const valueMinor = Math.round(Math.abs(changeQty) * costMinor);
+  if (product.track_inventory && valueMinor > 0) {
+    const adjustmentAccountId = ensureInventoryAdjustmentAccount(branch.id);
+    const inventoryAccountId = getAccountingAccountId(branch.id, '1300');
+    insertPostedJournalEntry({
+      branchId: branch.id,
+      memo: `تسوية مخزون: ${payload.reason || 'adjustment'}`,
+      referenceType: 'inventory_adjustment',
+      referenceId: movementId,
+      lines: changeQty > 0
+        ? [
+            { accountId: inventoryAccountId, debitMinor: valueMinor, creditMinor: 0 },
+            { accountId: adjustmentAccountId, debitMinor: 0, creditMinor: valueMinor },
+          ]
+        : [
+            { accountId: adjustmentAccountId, debitMinor: valueMinor, creditMinor: 0 },
+            { accountId: inventoryAccountId, debitMinor: 0, creditMinor: valueMinor },
+          ],
+    });
+  }
 
   return { success: true };
 });
@@ -5106,6 +5206,27 @@ function setReceiptBarcodeEnabled(enabled){
   return{success:true,enabled:!!enabled};
 }
 
+// إظهار/إخفاء تبويب "العروض" (الحزم النشطة) في شاشة الكاشير — بعض المحلات لا
+// تستخدم نظام الحزم إطلاقاً وتفضّل شريط أقسام أبسط بدون هذا التبويب الإضافي.
+function getOffersCategoryEnabled(){
+  return getSetting('pos_offers_category_enabled','1') !== '0';
+}
+function setOffersCategoryEnabled(enabled){
+  setSetting('pos_offers_category_enabled', enabled ? '1' : '0');
+  return{success:true,enabled:!!enabled};
+}
+
+// صورة مخصّصة لتبويب "العروض" نفسه (وليس لأي حزمة بمفردها) — تُحفظ كنص مسار
+// عادي بجدول الإعدادات لأن "العروض" ليست فئة حقيقية بجدول categories.
+function getOffersCategoryImage(){
+  const v = getSetting('pos_offers_category_image', '');
+  return v || null;
+}
+function setOffersCategoryImage(imagePath){
+  setSetting('pos_offers_category_image', imagePath ? String(imagePath) : '');
+  return{success:true,imagePath: imagePath ? String(imagePath) : null};
+}
+
 function getTaxDefaultRate(){
   const v=Number(getSetting('default_tax_rate','0'));
   return Number.isFinite(v)&&v>=0&&v<=100?v:0;
@@ -6152,6 +6273,13 @@ function getAccountingAccountId(branchId, code) {
   if (!row) throw new Error(`الحساب المحاسبي ${code} غير موجود أو غير نشط بهذا الفرع.`);
   return row.id;
 }
+
+function ensureInventoryAdjustmentAccount(branchId) {
+  const currency = String(getGlobalProfile()?.currency_code || 'USD').toUpperCase();
+  db.prepare('INSERT OR IGNORE INTO accounting_accounts(uuid,branch_id,code,name,account_type,currency_code) VALUES(?,?,?,?,?,?)')
+    .run(uuid(), branchId, '5900', 'Inventory Adjustments', 'expense', currency);
+  return getAccountingAccountId(branchId, '5900');
+}
 // مفتاح الفترة المحاسبية بصيغة YYYY-MM من أي تاريخ/طابع زمني.
 function accountingPeriodKeyOf(dateStr) { return String(dateStr || new Date().toISOString()).slice(0, 7); }
 function isAccountingPeriodLocked(branchId, dateStr) {
@@ -6239,7 +6367,7 @@ function getNetIncomeToDateFast(branchId, unit) {
 // الافتتاحي + صافي حركة القيود المرحّلة فقط (status='posted').
 function getTrialBalance(asOfDate = null) {
   const b = getCurrentBranch();
-  const cutoff = asOfDate ? `${asOfDate} 23:59:59` : '9999-12-31 23:59:59';
+  const cutoff = asOfDate ? `${asOfDate}T23:59:59.999Z` : '9999-12-31T23:59:59.999Z';
   const unit = Number(getGlobalProfile()?.currency_minor_unit || 2);
   const canUseCache = !hasPostedEntriesAfterCutoff(b.id, cutoff);
   const rows = canUseCache
@@ -6268,7 +6396,7 @@ function getTrialBalance(asOfDate = null) {
 function getIncomeStatement(fromDate = null, toDate = null) {
   const b = getCurrentBranch();
   const from = fromDate ? `${fromDate} 00:00:00` : '0001-01-01 00:00:00';
-  const to = toDate ? `${toDate} 23:59:59` : '9999-12-31 23:59:59';
+  const to = toDate ? `${toDate}T23:59:59.999Z` : '9999-12-31T23:59:59.999Z';
   const unit = Number(getGlobalProfile()?.currency_minor_unit || 2);
   const rows = db.prepare(`
     SELECT a.code, a.name, a.account_type, COALESCE(SUM(l.credit_minor - l.debit_minor),0) AS net_minor
@@ -6290,7 +6418,7 @@ function getIncomeStatement(fromDate = null, toDate = null) {
 // هذا ما يضمن Assets = Liabilities + Equity فعلياً.
 function getBalanceSheet(asOfDate = null) {
   const b = getCurrentBranch();
-  const cutoff = asOfDate ? `${asOfDate} 23:59:59` : '9999-12-31 23:59:59';
+  const cutoff = asOfDate ? `${asOfDate}T23:59:59.999Z` : '9999-12-31T23:59:59.999Z';
   const unit = Number(getGlobalProfile()?.currency_minor_unit || 2);
   const canUseCache = !hasPostedEntriesAfterCutoff(b.id, cutoff);
   const rows = canUseCache
@@ -6328,7 +6456,7 @@ function getAccountLedger(accountId, fromDate = null, toDate = null) {
   const account = db.prepare('SELECT * FROM accounting_accounts WHERE id=? AND branch_id=?').get(Number(accountId), b.id);
   if (!account) throw new Error('الحساب غير موجود في الفرع الحالي.');
   const from = fromDate ? `${fromDate} 00:00:00` : '0001-01-01 00:00:00';
-  const to = toDate ? `${toDate} 23:59:59` : '9999-12-31 23:59:59';
+  const to = toDate ? `${toDate}T23:59:59.999Z` : '9999-12-31T23:59:59.999Z';
   const unit = Number(getGlobalProfile()?.currency_minor_unit || 2);
   const openingBeforeMinor = db.prepare(`
     SELECT COALESCE(SUM(l.debit_minor - l.credit_minor),0) AS v FROM accounting_journal_lines l
@@ -6525,6 +6653,7 @@ module.exports = {
   adoptSharedBranch,
   listCategories,
   setCategoryImage,
+  setCategoryPosHidden,
   moveCategoryOrder,
   createCategory,
   listProducts,
@@ -6636,6 +6765,10 @@ module.exports = {
   saveTaxDefaultRate,
   getReceiptBarcodeEnabled,
   setReceiptBarcodeEnabled,
+  getOffersCategoryEnabled,
+  setOffersCategoryEnabled,
+  getOffersCategoryImage,
+  setOffersCategoryImage,
   getLoyaltySettings,
   saveLoyaltySettings,
   getLoyaltyRedemptionQuote,

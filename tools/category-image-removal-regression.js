@@ -13,6 +13,6 @@ const db = fs.readFileSync(path.join(root, 'database', 'db.js'), 'utf8');
 assert.match(settings, /data-remove-cat="\$\{c\.id\}"/, 'A category with an image must expose a remove action.');
 assert.match(settings, /categories\.setImage\(categoryId, null\)/, 'Removing an image must clear the stored image path.');
 assert.match(db, /UPDATE categories SET image_path=\? WHERE id=\?'\)\.run\(imagePath \|\| null/, 'The database must persist an empty image as NULL.');
-assert.match(pos, /c\.image_path[\s\S]*?: `<span class="category-tab-icon">/, 'Image-free categories must retain their cashier tab fallback.');
+assert.match(pos, /c\.image_path[\s\S]*?: `<span class="category-tab-icon"/, 'Image-free categories must retain their cashier tab fallback.');
 
 console.log('CATEGORY IMAGE REMOVAL REGRESSION: PASS (removal and no-image cashier tab fallback)');

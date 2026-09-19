@@ -116,6 +116,15 @@
       <div class="report-panel settings-panel">
         <h2 data-i18n="settings.categories.title">فئات الكاشير (صور وترتيب)</h2>
         <div class="field-hint" data-i18n="settings.categories.hint">كل الفئات تظهر كتبويبات سريعة بشاشة الكاشير: الصورة اختيارية، وبدونها يظهر أول حرف من اسم الفئة. يمكنك إضافة الصورة أو مسحها لاحقاً، ثم رتّب الأقسام بالأسهم.</div>
+
+        <label class="switch-row" style="margin-bottom:14px;">
+          <input type="checkbox" id="fieldOffersCategoryEnabled" />
+          <span>إظهار تبويب "العروض" في شاشة الكاشير</span>
+        </label>
+        <div class="field-hint" style="margin-top:-10px; margin-bottom:14px;">عند التفعيل، تظهر الحزم/العروض النشطة في تبويب مستقل باسم "العروض" بدل ظهورها ضمن كل الفئات. عطّل هذا الخيار لإخفاء التبويب كلياً إن كنت لا تستخدم نظام الحزم.</div>
+
+        <div id="offersImageCard" class="category-images-grid" style="margin-bottom:16px;"></div>
+
         <div id="categoryImagesList" class="category-images-grid"></div>
       </div>
 

@@ -97,6 +97,12 @@ async function loadOverview() {
   document.getElementById('ovRevenue').textContent = formatMoney(income.totalRevenue);
   document.getElementById('ovExpense').textContent = formatMoney(income.totalExpense);
   document.getElementById('ovNet').textContent = formatMoney(income.netIncome);
+  // توضيح صريح لأكتر لبس بيصير بين المحاسبة والتقارير: "إجمالي المبيعات" بصفحة
+  // التقارير يشمل الضريبة المحصّلة من الزبون (لأنها فعلياً مبلغ دخل بالصندوق)،
+  // بينما هذا الرقم هنا (الإيراد المحاسبي) يستثنيها عمداً لأنها أمانة للحكومة
+  // وليست ربحاً للمحل — فالفرق بين الرقمين طبيعي ومتوقّع وليس خطأ بالنظام.
+  document.getElementById('ovRevenueExplain').textContent =
+    'هذا الرقم بدون الضريبة المحصّلة من الزبون (تظهر كالتزام لا كربح). لو قارنته بـ"إجمالي المبيعات" بصفحة التقارير رح تلاقيه أقل بمقدار الضريبة تماماً — هذا طبيعي وليس خطأ.';
   const netExplain = document.getElementById('ovNetExplain');
   if (income.netIncome > 0) netExplain.textContent = `ربحت ${formatMoney(income.netIncome)} صافي بهالفترة (بعد كل المصاريف).`;
   else if (income.netIncome < 0) netExplain.textContent = `خسرت ${formatMoney(Math.abs(income.netIncome))} صافي بهالفترة — مصاريفك تجاوزت مبيعاتك.`;

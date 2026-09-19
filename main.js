@@ -1612,6 +1612,7 @@ ipcMain.handle('bundles:delete', (_event, id) => {
 });
 ipcMain.handle('categories:list', () => { requireAccountReady(); return db.listCategories(); });
 ipcMain.handle('categories:setImage', (_event, { categoryId, imagePath }) => { requireAdmin(); return db.setCategoryImage(categoryId, imagePath); });
+ipcMain.handle('categories:setPosHidden', (_event, { categoryId, hidden }) => { requireAdmin(); return db.setCategoryPosHidden(categoryId, hidden); });
 ipcMain.handle('categories:move', (_event, { categoryId, direction }) => { requireAdmin(); return db.moveCategoryOrder(categoryId, direction); });
 ipcMain.handle('categories:create', (_event, category) => {
   requireManagerOrAdmin();
@@ -1767,6 +1768,18 @@ ipcMain.handle('receipt:barcodeEnabled', (_event, payload) => {
   if (payload && payload.save != null) { requireAdmin(); return db.setReceiptBarcodeEnabled(payload.save); }
   requireAccountReady();
   return { enabled: db.getReceiptBarcodeEnabled() };
+});
+
+ipcMain.handle('pos:offersCategoryEnabled', (_event, payload) => {
+  if (payload && payload.save != null) { requireAdmin(); return db.setOffersCategoryEnabled(payload.save); }
+  requireAccountReady();
+  return { enabled: db.getOffersCategoryEnabled() };
+});
+
+ipcMain.handle('pos:offersCategoryImage', (_event, payload) => {
+  if (payload && Object.prototype.hasOwnProperty.call(payload, 'save')) { requireAdmin(); return db.setOffersCategoryImage(payload.save); }
+  requireAccountReady();
+  return { imagePath: db.getOffersCategoryImage() };
 });
 
 /* ---------------- المبيعات ---------------- */

@@ -1009,6 +1009,46 @@ Object.assign(TRANSLATIONS.en, {
   'audit.time': 'Time', 'audit.user': 'User', 'audit.action': 'Action', 'audit.level': 'Level', 'audit.details': 'Details',
   'audit.empty': 'No matching operations.',
 });
+Object.assign(TRANSLATIONS.tr, {
+  'common.noName': 'İsimsiz',
+  'common.commandPalette': 'Hızlı gezinme',
+  'common.commandSearch': 'Ekran veya işlem ara...',
+  'common.commandHint': 'Gezinmek için ↑ ↓, seçmek için Enter',
+  'common.commandEmpty': 'Eşleşen sonuç yok',
+  'audit.actions.login_success': 'Başarılı giriş',
+  'audit.actions.login_failed': 'Başarısız giriş denemesi',
+  'audit.actions.logout': 'Çıkış yapıldı',
+  'audit.actions.sale_created': 'Yeni fatura',
+  'audit.actions.table_order_updated': 'Masa siparişi güncellendi',
+  'audit.actions.table_order_closed': 'Masa siparişi kapatıldı',
+  'audit.actions.tables_merged': 'Masalar birleştirildi',
+  'audit.actions.table_bill_split': 'Masa faturası bölündü',
+  'audit.actions.return_created': 'İade',
+  'audit.actions.inventory_adjusted': 'Stok düzeltmesi',
+  'audit.actions.customer_payment_received': 'Müşteri borcu tahsilatı',
+  'audit.actions.printing_config_updated': 'Yazdırma ayarları güncellendi',
+  'audit.actions.automatic_printed': 'Otomatik yazdırma',
+  'audit.actions.automatic_print_failed': 'Otomatik yazdırma başarısız',
+  'audit.actions.runtime_error': 'Çalışma zamanı hatası',
+});
+Object.assign(TRANSLATIONS.en, {
+  'common.noName': 'No name',
+  'audit.actions.login_success': 'Successful sign-in',
+  'audit.actions.login_failed': 'Failed sign-in attempt',
+  'audit.actions.logout': 'Signed out',
+  'audit.actions.sale_created': 'New invoice',
+  'audit.actions.table_order_updated': 'Table order updated',
+  'audit.actions.table_order_closed': 'Table order closed',
+  'audit.actions.tables_merged': 'Tables merged',
+  'audit.actions.table_bill_split': 'Table bill split',
+  'audit.actions.return_created': 'Return',
+  'audit.actions.inventory_adjusted': 'Inventory adjusted',
+  'audit.actions.customer_payment_received': 'Customer debt payment received',
+  'audit.actions.printing_config_updated': 'Printing settings updated',
+  'audit.actions.automatic_printed': 'Automatic print',
+  'audit.actions.automatic_print_failed': 'Automatic print failed',
+  'audit.actions.runtime_error': 'Runtime error',
+});
 
 Object.assign(TRANSLATIONS.ar, {
   'common.delete': 'حذف',
@@ -1131,6 +1171,7 @@ function applyTranslations(lang) {
 // نحفظ النص العربي الأصلي في DOM مرة واحدة، لذلك يبقى تبديل اللغة قابلاً للعكس.
 const STATIC_TRANSLATIONS = {
   en: {
+    'جارٍ التحميل...': 'Loading...',
     'إدارة المنتجات': 'Product management', '+ منتج جديد': '+ New product', 'الاسم': 'Name', 'الفئة': 'Category', 'السعر': 'Price', 'المخزون': 'Stock', 'الباركود': 'Barcode', 'لا توجد منتجات مطابقة.': 'No matching products.', 'منتج جديد': 'New product', 'الصورة': 'Image', 'اختر صورة...': 'Choose image...', 'اسم المنتج *': 'Product name *', 'فئة جديدة (اختياري)': 'New category (optional)', 'السعر *': 'Price *', 'التكلفة': 'Cost', 'نسبة الضريبة %': 'Tax rate %', 'الوحدة': 'Unit', 'الكود الداخلي (SKU)': 'Internal code (SKU)', 'تتبّع المخزون لهذا المنتج': 'Track inventory for this product', 'الكمية الحالية': 'Current quantity', 'حد التنبيه (إعادة الطلب)': 'Reorder alert level', '+ خيارات متقدمة (أزياء / مطاعم)': '+ Advanced options (fashion / restaurant)', 'منتج أساسي (اجعل هذا متغيّراً تابعاً له — أزياء)': 'Parent product (fashion variant)', 'المقاس (أزياء)': 'Size (fashion)', 'اللون (أزياء)': 'Color (fashion)', 'هذا صنف مُحضّر (مطعم) وله مكوّنات': 'Prepared menu item (restaurant)',
     'إدارة المخزون': 'Inventory management', 'الكميات': 'Quantities', 'سجل الحركة': 'Movement log', 'المنخفضة فقط': 'Low stock only', 'التاريخ': 'Date', 'التغيير': 'Change', 'السبب': 'Reason', 'ملاحظات': 'Notes', 'تسوية المخزون': 'Inventory adjustment', 'نوع الحركة': 'Movement type', 'إضافة كمية (+)': 'Add quantity (+)', 'خصم كمية (−)': 'Remove quantity (-)', 'تحديد الكمية الفعلية (جرد)': 'Set actual quantity (count)', 'القيمة': 'Value', 'ملاحظات (اختياري)': 'Notes (optional)', 'حفظ': 'Save', 'إلغاء': 'Cancel',
     'العملاء': 'Customers', '+ عميل جديد': '+ New customer', 'الهاتف': 'Phone', 'نقاط الولاء': 'Loyalty points', 'لا يوجد عملاء بعد.': 'No customers yet.', 'المستخدمون': 'Users', '+ مستخدم جديد': '+ New user', 'الاسم الكامل *': 'Full name *', 'اسم المستخدم *': 'Username *', 'الدور *': 'Role *', 'الحساب مفعّل (يمكنه تسجيل الدخول)': 'Account enabled (can sign in)',
@@ -1145,7 +1186,8 @@ const STATIC_TRANSLATIONS = {
     'إدارة المخزون': 'Stok yönetimi', 'الكميات': 'Miktarlar', 'سجل الحركة': 'Hareket kaydı', 'المنخفضة فقط': 'Yalnızca düşük stok', 'التاريخ': 'Tarih', 'التغيير': 'Değişim', 'السبب': 'Neden', 'ملاحظات': 'Notlar', 'تسوية المخزون': 'Stok düzeltmesi',
     'العملاء': 'Müşteriler', '+ عميل جديد': '+ Yeni müşteri', 'الهاتف': 'Telefon', 'نقاط الولاء': 'Sadakat puanları', 'المستخدمون': 'Kullanıcılar', '+ مستخدم جديد': '+ Yeni kullanıcı', 'اسم المستخدم *': 'Kullanıcı adı *', 'الدور *': 'Rol *',
     'التقارير': 'Raporlar', 'تصدير Excel': 'Excel dışa aktar', 'تصدير PDF': 'PDF dışa aktar', 'اليوم': 'Bugün', 'آخر 7 أيام': 'Son 7 gün', 'آخر 30 يوم': 'Son 30 gün', 'تطبيق': 'Uygula', 'عدد الفواتير': 'Fatura sayısı', 'إجمالي المبيعات': 'Toplam satış', 'حسب طريقة الدفع': 'Ödeme yöntemine göre', 'الأكثر مبيعاً': 'En çok satanlar', 'المبيعات اليومية': 'Günlük satışlar', 'أرباح التوصيل': 'Teslimat geliri',
-    'الوردية': 'Vardiya', 'فتح الوردية': 'Vardiya aç', 'إغلاق الوردية': 'Vardiyayı kapat', 'المرتجعات': 'İadeler', 'رقم الفاتورة': 'Fatura numarası', 'بحث': 'Ara', 'الطاولات': 'Masalar', '+ طاولة جديدة': '+ Yeni masa', 'الإعدادات': 'Ayarlar', 'إنشاء نسخة احتياطية': 'Yedek oluştur', 'استعادة نسخة احتياطية': 'Yedeği geri yükle', 'المزامنة مع السيرفر المركزي': 'Merkezi sunucu eşitleme', 'عنوان الخادم': 'Sunucu adresi', 'مزامنة الآن': 'Şimdi eşitle'
+    'الوردية': 'Vardiya', 'فتح الوردية': 'Vardiya aç', 'إغلاق الوردية': 'Vardiyayı kapat', 'المرتجعات': 'İadeler', 'رقم الفاتورة': 'Fatura numarası', 'بحث': 'Ara', 'الطاولات': 'Masalar', '+ طاولة جديدة': '+ Yeni masa', 'الإعدادات': 'Ayarlar', 'إنشاء نسخة احتياطية': 'Yedek oluştur', 'استعادة نسخة احتياطية': 'Yedeği geri yükle', 'المزامنة مع السيرفر المركزي': 'Merkezi sunucu eşitleme', 'عنوان الخادم': 'Sunucu adresi', 'مزامنة الآن': 'Şimdi eşitle',
+    '+ خيارات متقدمة (أزياء / مطاعم)': '+ Gelişmiş seçenekler (moda / restoran)', 'إرسال للمطبخ 🖨️': 'Mutfağa gönder 🖨️', 'إضافة': 'Ekle', 'إضافة كمية (+)': 'Miktar ekle (+)', 'اسم الفرع': 'Şube adı', 'اسم/رقم الطاولة *': 'Masa adı/numarası *', 'الاسم الكامل *': 'Ad soyad *', 'البحث عن فاتورة لإرجاعها': 'İade edilecek faturayı bul', 'الحساب مفعّل (يمكنه تسجيل الدخول)': 'Hesap aktif (giriş yapabilir)', 'الدفع وإغلاق الطاولة': 'Öde ve masayı kapat', 'العلامة التجارية (تظهر على الفاتورة)': 'Marka (fişte görünür)', 'القيمة': 'Değer', 'الكاش الفعلي المعدود بالصندوق': 'Kasada sayılan gerçek nakit', 'الكمية الحالية': 'Mevcut miktar', 'الكود الداخلي (SKU)': 'Dahili kod (SKU)', 'اللون (أزياء)': 'Renk (moda)', 'المقاس (أزياء)': 'Beden (moda)', 'النسخ الاحتياطي والاستعادة': 'Yedekleme ve geri yükleme', 'الوردية الحالية': 'Mevcut vardiya', 'بيانات الفرع ونوع النشاط': 'Şube bilgileri ve işletme türü', 'تتبّع المخزون لهذا المنتج': 'Bu ürün için stok takibi yap', 'تحديد الكمية الفعلية (جرد)': 'Gerçek miktarı belirle (sayım)', 'تفعيل المزامنة': 'Eşitlemeyi etkinleştir', 'تنفيذ المرتجع': 'İadeyi gerçekleştir', 'حد التنبيه (إعادة الطلب)': 'Uyarı eşiği (yeniden sipariş)', 'حد الخصم المسموح للكاشير': 'Kasiyer indirim limiti', 'حفظ إعدادات المزامنة': 'Eşitleme ayarlarını kaydet', 'حفظ الإعدادات': 'Ayarları kaydet', 'حفظ الطلب': 'Siparişi kaydet', 'خصم كمية (−)': 'Miktar düş (-)', 'رسوم التوصيل': 'Teslimat ücreti', 'رمز الوصول (Token)': 'Erişim jetonu (Token)', 'سبب الإرجاع': 'İade nedeni', 'طاولة جديدة': 'Yeni masa', 'طريقة استرداد المبلغ': 'İade yöntemi', 'عدد المقاعد': 'Koltuk sayısı', 'عدد طلبات التوصيل': 'Teslimat sipariş sayısı', 'فئة جديدة (اختياري)': 'Yeni kategori (isteğe bağlı)', 'قيمة المنتجات': 'Ürün değeri', 'لا توجد وردية مفتوحة حالياً': 'Şu anda açık vardiya yok', 'لا يوجد عملاء بعد.': 'Henüz müşteri yok.', 'مبلغ افتتاح الصندوق (كاش)': 'Kasa açılış tutarı (nakit)', 'ملاحظات (اختياري)': 'Notlar (isteğe bağlı)', 'منتج أساسي (اجعل هذا متغيّراً تابعاً له — أزياء)': 'Ana ürün (bunu ona bağlı bir varyant yap — moda)', 'نسبة الضريبة %': 'Vergi oranı %', 'نوع الحركة': 'Hareket türü', 'نوع النشاط': 'İşletme türü', 'هذا صنف مُحضّر (مطعم) وله مكوّنات': 'Bu hazırlanan bir üründür (restoran) ve bileşenleri var'
   }
 };
 const STATIC_ORIGINALS = new WeakMap();
@@ -1846,6 +1888,11 @@ const RAW_TRANSLATIONS = {
   "رئيسي": "Host"
 },
   tr: {
+  "كلمة المرور الحالية": "Mevcut şifre",
+  "كلمة المرور الجديدة": "Yeni şifre",
+  "تأكيد كلمة المرور الجديدة": "Yeni şifreyi onayla",
+  "الكاش الافتتاحي": "Açılış nakiti",
+  "فتح جلسة اختيارية": "İsteğe bağlı oturum aç",
   "رقم PIN غير صحيح": "PIN geçersiz.",
   "حدث خطأ أثناء التحقق:": "Doğrulama sırasında hata oluştu:",
   "لا يفعل شيئاً": "Hiçbir şey yapmaz",

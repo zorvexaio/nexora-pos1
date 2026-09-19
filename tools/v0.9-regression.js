@@ -9,7 +9,7 @@ const checks=[
 ['open table close writes payment ledger', /INSERT INTO payment_transactions\(uuid,branch_id,sale_id,shift_id,method,currency_code,amount/m.test(db)],
 ['merge preserves historical cost', /item\.cost_at_sale \|\| 0\);/m.test(db)],
 ['split recomputes line total', /const lineTotal = Number\(item\.unit_price\) \* Number\(item\.quantity\);/m.test(db)],
-['inventory adjustment validates product', /SELECT id, is_active, track_inventory FROM products WHERE id=\?/m.test(db)],
+['inventory adjustment validates product', /SELECT id, is_active, track_inventory(?:, cost)? FROM products WHERE id=\?/m.test(db)],
 ['inventory adjustment rejects zero', /!Number\.isFinite\(changeQty\) \|\| changeQty===0/m.test(db)],
 ['schema keeps unique invoice numbers', /invoice_number TEXT UNIQUE/m.test(schema)],
 ['main sale derives user identity', /const trustedSale = \{ \.\.\.sale, userId: currentUser\.id/m.test(main)],

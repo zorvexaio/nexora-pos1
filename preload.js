@@ -49,6 +49,7 @@ contextBridge.exposeInMainWorld('api', {
   categories: {
     list: () => ipcRenderer.invoke('categories:list'),
     setImage: (categoryId, imagePath) => ipcRenderer.invoke('categories:setImage', { categoryId, imagePath }),
+    setPosHidden: (categoryId, hidden) => ipcRenderer.invoke('categories:setPosHidden', { categoryId, hidden }),
     move: (categoryId, direction) => ipcRenderer.invoke('categories:move', { categoryId, direction }),
     create: (category) => ipcRenderer.invoke('categories:create', category),
   },
@@ -152,6 +153,10 @@ contextBridge.exposeInMainWorld('api', {
     print: () => ipcRenderer.invoke('receipt:print'),
     qr: (saleId) => ipcRenderer.invoke('receipt:qr', saleId),
     barcodeEnabled: (payload) => ipcRenderer.invoke('receipt:barcodeEnabled', payload),
+  },
+  pos: {
+    offersCategoryEnabled: (payload) => ipcRenderer.invoke('pos:offersCategoryEnabled', payload),
+    offersCategoryImage: (payload) => ipcRenderer.invoke('pos:offersCategoryImage', payload),
   },
   global: {
     get: () => ipcRenderer.invoke('global:get'),

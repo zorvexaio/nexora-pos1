@@ -255,7 +255,11 @@ async function init() {
 
 async function refreshActiveBundles() {
   try {
+    const hadOffersTabCandidate = activeBundles.length > 0;
     activeBundles = await window.api.bundles.listActive();
+    // إعادة بناء تبويبات الأقسام فقط لو تغيّرت وجود/غياب حزم نشطة (ظهور أو اختفاء
+    // تبويب "العروض")، تفادياً لإعادة رسم الشريط كامل كل ٣ دقائق بلا داعٍ.
+    if (hadOffersTabCandidate !== (activeBundles.length > 0)) initCategoryTabs();
     renderProducts();
     renderCart();
   } catch {
@@ -300,7 +304,25 @@ function selectedOrderType() {
 }
 
 let selectedCategoryId = null;
+// رمز خاص (وليس رقم فئة حقيقي من قاعدة البيانات) لتبويب "العروض" — عند اختياره
+// تُعرض الحزم النشطة فقط بدل جلب منتجات بفئة معيّنة.
+const OFFERS_CATEGORY_ID = '__offers__';
+let offersCategoryEnabled = true;
+
+// نقطة تنبيه صغيرة على تبويب "العروض" لو فيه عرض نشط لسا ما فتح الكاشير تبويب
+// العروض من وقت ما ظهر — تُحفظ محلياً بهذا الجهاز فقط (لا تحتاج قاعدة بيانات)،
+// وتختفي بمجرد ما يضغط الكاشير على التبويب نفسه.
+const OFFERS_SEEN_KEY = 'nexora_pos_seen_offer_ids';
+function getSeenOfferIds() {
+  try { return new Set(JSON.parse(localStorage.getItem(OFFERS_SEEN_KEY) || '[]')); } catch { return new Set(); }
+}
+function markOffersSeen(ids) {
+  try { localStorage.setItem(OFFERS_SEEN_KEY, JSON.stringify(ids)); } catch { /* تجاهل: مجرد تفضيل عرض محلي */ }
+}
 const categoryTabs = document.getElementById('categoryTabs');
+const categoryTabsWrap = document.getElementById('categoryTabsWrap');
+const catScrollLeftBtn = document.getElementById('catScrollLeft');
+const catScrollRightBtn = document.getElementById('catScrollRight');
 const qtyBufferInput = document.getElementById('qtyBufferInput');
 const qtyBufferStatus = document.getElementById('qtyBufferStatus');
 const { MAX_QUANTITY, parseQuickQuantity, canAccumulateQuantity } = window.quantityBuffer;
@@ -341,44 +363,195 @@ qtyBufferInput?.addEventListener('blur', () => {
 });
 updateQuantityBufferStatus({ ok: true, quantity: 1 });
 
-// تبويبات الفئات (بالصور) تظهر فقط لو فيه فئات معرّف لها صورة — متجر بلا صور فئات
-// (زي أغلب السوبرماركت) يفضل بحث نصي بسيط بدون أي تبويبات تشغل مساحة الشاشة.
+// تبويبات الفئات: شريط أفقي بعرض ثابت لكل تبويب (زي تبويبات المتصفح) — كل فئة تظهر
+// دائماً، سواء أكان عندها صورة مرفوعة أم لا. لو فيه فئات أكتر من عرض الشاشة يظهر
+// تمرير أفقي (عجلة الماوس أو أزرار سهم) بدل ما تلتف الأقسام لسطر ثانٍ وتاكل مساحة
+// شبكة المنتجات. الفئة بلا صورة تاخد أيقونة حرف بلون ثابت (مشتق من اسمها) بدل حرف
+// عشوائي على خلفية رمادية، حتى تبقى متّسقة بصرياً مع تبويبات الصور المجاورة لها.
+const CATEGORY_CHIP_PALETTE = [
+  ['#4338ca', '#6a5cf5'], ['#0f766e', '#14b8a6'], ['#b45309', '#f59e0b'],
+  ['#be123c', '#fb7185'], ['#1d4ed8', '#60a5fa'], ['#7e22ce', '#c084fc'],
+  ['#15803d', '#4ade80'], ['#a16207', '#eab308'], ['#0e7490', '#22d3ee'],
+];
+function categoryChipGradient(seed) {
+  let hash = 0;
+  const s = String(seed || '');
+  for (let i = 0; i < s.length; i += 1) hash = (hash * 31 + s.charCodeAt(i)) >>> 0;
+  const [from, to] = CATEGORY_CHIP_PALETTE[hash % CATEGORY_CHIP_PALETTE.length];
+  return `linear-gradient(135deg, ${from}, ${to})`;
+}
+
+// أيقونة تمثيلية لصنف/قسم بلا صورة مرفوعة: نطابق كلمات شائعة بأسماء الأصناف
+// العربية مع إيموجي مناسب، بدل حرف واحد بلا دلالة. هدفها تسريع التعرّف البصري
+// للكاشير (يلقط الصنف من شكله قبل ما يقرأ الاسم كامل)، مش بديل عن صورة حقيقية —
+// لو رُفعت صورة فعلية للمنتج/القسم لاحقاً هي الأولى دائماً (انظر renderProducts).
+const ITEM_ICON_KEYWORDS = [
+  ['🍗', ['فروج', 'دجاج', 'بروستد', 'تكة', 'طاووق']],
+  ['🌯', ['شاورما', 'شاوما', 'لفة', 'لفه']],
+  ['🍢', ['مشاوي', 'كباب', 'كفتة', 'كفته', 'شيش', 'لحم', 'لحمة', 'لحمه']],
+  ['🥤', ['كولا', 'بيبسي', 'عصير', 'مشروب', 'مياه', 'ماء', 'فانتا', 'سفن']],
+  ['🍕', ['بيتزا']],
+  ['🍔', ['برجر', 'همبرغر', 'همبرجر']],
+  ['🍟', ['بطاطا', 'بطاطس', 'فرايز']],
+  ['🥗', ['سلطة', 'سلطه']],
+  ['🍰', ['كيك', 'حلا', 'حلويات', 'حلويات', 'بقلاوة', 'كنافة']],
+  ['☕', ['قهوة', 'نسكافيه', 'اسبريسو', 'إسبريسو']],
+  ['🍵', ['شاي']],
+  ['🍞', ['خبز', 'صامولي', 'صامولى']],
+  ['🐟', ['سمك']],
+  ['🍳', ['بيض', 'فطور', 'فطار']],
+  ['🍚', ['رز', 'أرز', 'ارز']],
+  ['🍦', ['ايس كريم', 'آيس كريم', 'بوظة', 'بوظه']],
+];
+function guessItemIcon(name) {
+  const n = String(name || '');
+  for (const [icon, words] of ITEM_ICON_KEYWORDS) {
+    if (words.some((w) => n.includes(w))) return icon;
+  }
+  return n.trim().charAt(0) || '🍽️';
+}
+
 async function initCategoryTabs() {
   try {
-    const categories = await window.api.categories.list();
-    // كل فئة مضافة من الإعدادات بتظهر كتبويب دايماً — صورة لو مرفوعة، وإلا أول حرف من
-    // اسم الفئة كأيقونة نصية، بدل ما تختفي التبويبات بالكامل لمجرد عدم وجود صور.
-    if (!categories.length) { categoryTabs.classList.add('hidden'); return; }
-    categoryTabs.classList.remove('hidden');
+    const allCategories = await window.api.categories.list();
+    // فئة مخفيّة (pos_hidden) تبقى موجودة بمنتجاتها كاملة — فقط تبويبها السريع يختفي
+    // من شريط الكاشير، حتى يقدر صاحب المحل يخفي أي فئة نادرة الاستخدام بضغطة واحدة
+    // من الإعدادات دون حذفها أو التأثير على منتجاتها.
+    const categories = allCategories.filter((c) => !c.pos_hidden);
+    try {
+      offersCategoryEnabled = (await window.api.pos.offersCategoryEnabled()).enabled !== false;
+    } catch { offersCategoryEnabled = true; }
+    // تبويب "العروض" يظهر فقط لو فيه حزم نشطة فعلاً ولم يُلغِه المدير من الإعدادات —
+    // بدون هذا الشرط كان تبويب الحزم يختلط بكل الفئات الأخرى بدل أن يكون قسماً قائماً بذاته.
+    const showOffersTab = offersCategoryEnabled && activeBundles.length > 0;
+    if (!categories.length && !showOffersTab) { categoryTabsWrap.classList.add('hidden'); return; }
+    categoryTabsWrap.classList.remove('hidden');
     const allTab = `<button type="button" class="category-tab active" data-cat="">
-      <span class="category-tab-icon">🍽️</span><span>${t('pos.allCategories', 'الكل')}</span>
+      <span class="category-tab-icon" style="background:${categoryChipGradient('__all__')}">🍽️</span>
+      <span class="category-tab-label">${t('pos.allCategories', 'الكل')}</span>
     </button>`;
+    let offersImagePath = null;
+    if (showOffersTab) {
+      try { offersImagePath = (await window.api.pos.offersCategoryImage()).imagePath || null; } catch { offersImagePath = null; }
+    }
+    const seenOfferIds = getSeenOfferIds();
+    const hasUnseenOffer = showOffersTab && activeBundles.some((b) => !seenOfferIds.has(b.id));
+    const offersTab = showOffersTab ? `
+      <button type="button" class="category-tab category-tab-offers" data-cat="${OFFERS_CATEGORY_ID}">
+        <span class="category-tab-thumb-wrap">
+          ${offersImagePath
+            ? `<img class="category-tab-thumb" src="${escapeHtml(offersImagePath)}" alt="" loading="lazy" draggable="false" />`
+            : `<span class="category-tab-icon" style="background:linear-gradient(135deg, var(--brand-gold), #e6c876)">📦</span>`}
+          ${hasUnseenOffer ? '<span class="offer-new-dot" title="عرض جديد"></span>' : ''}
+        </span>
+        <span class="category-tab-label">${ts('العروض')}</span>
+      </button>
+    ` : '';
     const tabs = categories.map((c) => `
       <button type="button" class="category-tab" data-cat="${c.id}">
         ${c.image_path
-          ? `<img src="${escapeHtml(c.image_path)}" alt="" />`
-          : `<span class="category-tab-icon">${escapeHtml((c.name || '').trim().charAt(0) || '🏷️')}</span>`}
-        <span>${escapeHtml(c.name)}</span>
+          ? `<img class="category-tab-thumb" src="${escapeHtml(c.image_path)}" alt="" loading="lazy" draggable="false" />`
+          : `<span class="category-tab-icon" style="background:${categoryChipGradient(c.id ?? c.name)}">${escapeHtml(guessItemIcon(c.name))}</span>`}
+        <span class="category-tab-label">${escapeHtml(c.name)}</span>
       </button>
     `).join('');
-    categoryTabs.innerHTML = allTab + tabs;
+    categoryTabs.innerHTML = allTab + offersTab + tabs;
     categoryTabs.querySelectorAll('.category-tab').forEach((btn) => {
       btn.addEventListener('click', () => {
         categoryTabs.querySelectorAll('.category-tab').forEach((b) => b.classList.remove('active'));
         btn.classList.add('active');
         selectedCategoryId = btn.dataset.cat || null;
+        if (selectedCategoryId === OFFERS_CATEGORY_ID) {
+          // الكاشير فتح تبويب العروض فعلياً: نعتبر كل العروض الحالية "مشاهَدة" ونخفي نقطة التنبيه.
+          markOffersSeen(activeBundles.map((b) => b.id));
+          btn.querySelector('.offer-new-dot')?.remove();
+        }
         loadProducts(searchInput.value);
+        btn.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' });
       });
     });
+    // صورة تعذّر تحميلها (ملف محذوف/مسار خاطئ): نرجع لأيقونة الحرف الملوّنة بدل مربع فارغ.
+    categoryTabs.querySelectorAll('img.category-tab-thumb').forEach((img) => {
+      img.addEventListener('error', () => {
+        const btn = img.closest('.category-tab');
+        const isOffers = btn?.dataset.cat === OFFERS_CATEGORY_ID;
+        const name = btn?.querySelector('.category-tab-label')?.textContent || '';
+        const icon = document.createElement('span');
+        icon.className = 'category-tab-icon';
+        icon.style.background = isOffers ? 'linear-gradient(135deg, var(--brand-gold), #e6c876)' : categoryChipGradient(btn?.dataset.cat || name);
+        icon.textContent = isOffers ? '📦' : guessItemIcon(name);
+        img.replaceWith(icon);
+      }, { once: true });
+    });
+    initCategoryTabsScroll();
   } catch (err) { console.error('تعذّر تحميل تبويبات الفئات', err); }
+}
+
+// تمرير شريط الأقسام: عجلة الماوس العمودية تُترجم لتمرير أفقي، وزرّا السهم يظهران
+// فقط لو فيه محتوى مخفي بتلك الجهة، ويختفيان تلقائياً لو الأقسام تتسع للعرض كله —
+// بالضبط زي شريط تبويبات المتصفح، بدل ما يبقيا ظاهرين دائماً بلا داعٍ.
+let categoryScrollBound = false;
+function initCategoryTabsScroll() {
+  updateCategoryScrollButtons();
+  if (categoryScrollBound) return;
+  categoryScrollBound = true;
+  categoryTabs.addEventListener('wheel', (e) => {
+    if (categoryTabs.scrollWidth <= categoryTabs.clientWidth) return;
+    if (Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
+    e.preventDefault();
+    categoryTabs.scrollLeft += e.deltaY;
+  }, { passive: false });
+  categoryTabs.addEventListener('scroll', updateCategoryScrollButtons);
+  window.addEventListener('resize', updateCategoryScrollButtons);
+  // "لخلف" (catScrollLeftBtn) و"لقدّام" (catScrollRightBtn) بمعنى منطقي (بداية/نهاية
+  // شريط الأقسام)، مش بمعنى فيزيائي — الاتجاه الفعلي (يمين/يسار) بيتحدد تلقائياً حسب
+  // اتجاه الصفحة عبر inset-inline-start/end بالـ CSS. متصفح Chromium يستخدم قيمة
+  // scrollLeft سالبة بواجهات RTL، فنعكس إشارة التمرير بس بهالحالة.
+  const scrollToward = (end) => {
+    const rtl = document.dir === 'rtl';
+    const amount = categoryTabs.clientWidth * 0.8;
+    const delta = end === rtl ? -amount : amount;
+    categoryTabs.scrollBy({ left: delta, behavior: 'smooth' });
+  };
+  catScrollLeftBtn.addEventListener('click', () => scrollToward(false));
+  catScrollRightBtn.addEventListener('click', () => scrollToward(true));
+}
+
+function updateCategoryScrollButtons() {
+  const el = categoryTabs;
+  const overflowing = el.scrollWidth > el.clientWidth + 2;
+  categoryTabsWrap.classList.toggle('no-scroll-btns', !overflowing);
+  if (!overflowing) {
+    catScrollLeftBtn.classList.add('hidden');
+    catScrollRightBtn.classList.add('hidden');
+    return;
+  }
+  // نطبّع scrollLeft بقيمة مطلقة لأن Chromium يُرجعه سالباً بواجهات RTL — القيمة
+  // المطلقة هنا تمثّل دائماً "المسافة من بداية الشريط منطقياً" بغض النظر عن الاتجاه.
+  const maxScroll = el.scrollWidth - el.clientWidth;
+  const pos = Math.abs(el.scrollLeft);
+  const atStart = pos <= 2;
+  const atEnd = pos >= maxScroll - 2;
+  catScrollLeftBtn.classList.toggle('hidden', atStart);
+  catScrollRightBtn.classList.toggle('hidden', atEnd);
 }
 
 async function loadProducts(search = '') {
   const seq = ++productSearchRequestSeq;
+  // تبويب "العروض": يعرض الحزم النشطة فقط، بلا أي طلب منتجات بفئة وهمية غير
+  // موجودة فعلياً بقاعدة البيانات — إلا لو الكاشير يبحث/يمسح باركود، فوقتها البحث
+  // يبقى شاملاً كل المنتجات بغض النظر عن التبويب المفتوح.
+  if (selectedCategoryId === OFFERS_CATEGORY_ID && !search) {
+    productsGrid.removeAttribute('aria-busy');
+    products = [];
+    renderProducts();
+    return;
+  }
   productsGrid.setAttribute('aria-busy', 'true');
   if (!products.length) setPageLoading(productsGrid, true, t('common.loading', 'جارٍ التحميل...'));
   try {
-    const result = await window.api.products.list({ search, categoryId: selectedCategoryId || undefined, topLevelOnly: !search, limit: search ? 80 : 250 });
+    const effectiveCategoryId = selectedCategoryId === OFFERS_CATEGORY_ID ? undefined : (selectedCategoryId || undefined);
+    const result = await window.api.products.list({ search, categoryId: effectiveCategoryId, topLevelOnly: !search, limit: search ? 80 : 250 });
     if (seq !== productSearchRequestSeq) return;
     products = Array.isArray(result) ? result : [];
     renderProducts();
@@ -510,47 +683,62 @@ async function handleSearchKeydown(e) {
 function renderProducts() {
   productsGrid.replaceChildren();
   productsGrid.removeAttribute('aria-busy');
-  if (products.length === 0) {
-    const term = searchInput.value.trim();
-    renderPageEmptyState(productsGrid, {
-      icon: term ? '?' : '+',
-      title: term ? 'لا توجد نتائج' : 'لا توجد منتجات بعد',
-      message: term ? `${ts('لم نعثر على منتج يطابق')} «${term}». ${ts('جرّب اسماً أقصر أو امسح الباركود.')}` : t('pos.noProducts'),
-      actionText: term ? 'مسح البحث' : '' ,
-      onAction: term ? () => { searchInput.value = ''; loadProducts(); searchInput.focus(); } : null,
-    });
+  const term = searchInput.value.trim();
+  // تبويب "العروض" (وليس أي تبويب آخر) هو المكان الوحيد اللي تظهر فيه بطاقات الحزم —
+  // طالما الكاشير مو عم يبحث فعلياً (البحث/الباركود يبقى شاملاً كل المنتجات دائماً
+  // بغض النظر عن التبويب المفتوح).
+  const isOffersView = selectedCategoryId === OFFERS_CATEGORY_ID && !term;
+  const bundlesToShow = isOffersView ? activeBundles.filter((b) => b.items && b.items.length > 0) : [];
+
+  if (bundlesToShow.length === 0 && products.length === 0) {
+    renderPageEmptyState(productsGrid, isOffersView
+      ? { icon: '📦', title: ts('لا توجد عروض حالياً'), message: ts('لم تُضف أي حزمة/عرض نشط بعد من صفحة الحزم.') }
+      : {
+        icon: term ? '?' : '+',
+        title: term ? 'لا توجد نتائج' : 'لا توجد منتجات بعد',
+        message: term ? `${ts('لم نعثر على منتج يطابق')} «${term}». ${ts('جرّب اسماً أقصر أو امسح الباركود.')}` : t('pos.noProducts'),
+        actionText: term ? 'مسح البحث' : '',
+        onAction: term ? () => { searchInput.value = ''; loadProducts(); searchInput.focus(); } : null,
+      });
     return;
   }
   const fragment = document.createDocumentFragment();
 
-  // أزرار الحزم (الاسم اللي كتبه المدير عند إنشاء الحزمة) تظهر أولاً كخيار مستقل قابل
-  // للضغط، مباشرة قبل شبكة المنتجات العادية — بدون أي إعداد إضافي من الكاشير. ضغطة
-  // واحدة تضيف كل أصناف الحزمة دفعة وحدة، وخصم الحزمة يُحسب تلقائياً كالمعتاد.
-  for (const b of activeBundles) {
-    if (!b.items || b.items.length === 0) continue;
+  // أزرار الحزم (الاسم اللي كتبه المدير عند إنشاء الحزمة) تظهر فقط ضمن تبويب "العروض"
+  // المخصّص لها — بدل ما تختلط قبل شبكة المنتجات بكل الفئات الأخرى كما كانت سابقاً.
+  // ضغطة واحدة تضيف كل أصناف الحزمة دفعة وحدة، وخصم الحزمة يُحسب تلقائياً كالمعتاد.
+  for (const b of bundlesToShow) {
     const card = document.createElement('button');
     card.type = 'button';
     card.className = 'product-card bundle-card';
     card.dataset.bundleId = String(b.id);
     const itemsSummary = b.items.map((i) => `${i.product_name} ×${i.quantity}`).join('، ');
     card.innerHTML = `
-      <div class="name">📦 ${escapeHtml(b.name)}</div>
-      <div class="price">${bundleUnitPrice(b).toFixed(2)}</div>
-      <div class="stock">${escapeHtml(itemsSummary)}</div>
+      <span class="bundle-offer-badge">${ts('عرض')}</span>
+      <div class="card-icon" style="background:linear-gradient(135deg, var(--brand-gold), #e6c876)">📦</div>
+      <div class="name">${escapeHtml(b.name)}</div>
+      <div class="card-meta-row">
+        <span class="price-badge">${bundleUnitPrice(b).toFixed(2)}</span>
+        <span class="stock" title="${escapeHtml(itemsSummary)}">${escapeHtml(itemsSummary)}</span>
+      </div>
     `;
     fragment.appendChild(card);
   }
 
-  for (const p of products) {
+  const productsToShow = isOffersView ? [] : products;
+  for (const p of productsToShow) {
     const card = document.createElement('button');
     card.type = 'button';
     card.className = 'product-card';
     card.dataset.productId = String(p.id);
     const lowStock = p.track_inventory && p.stock <= (p.min_quantity || 0);
     card.innerHTML = `
+      <div class="card-icon" style="background:${categoryChipGradient(p.category_id ?? p.name)}">${escapeHtml(guessItemIcon(p.name))}</div>
       <div class="name">${escapeHtml(p.name)}${p.variant_count ? ` <span class="variant-badge">${t('pos.selectBadge')}</span>` : ''}</div>
-      <div class="price">${p.price.toFixed(2)}</div>
-      ${p.track_inventory ? `<div class="stock ${lowStock ? 'low' : ''}">${t('pos.stockLabel')}${p.stock}</div>` : ''}
+      <div class="card-meta-row">
+        <span class="price-badge">${p.price.toFixed(2)}</span>
+        ${p.track_inventory ? `<span class="stock ${lowStock ? 'low' : ''}">${t('pos.stockLabel')}${p.stock}</span>` : ''}
+      </div>
     `;
     fragment.appendChild(card);
   }

@@ -23,6 +23,7 @@ const discountForm = document.getElementById('discountForm');
 const fieldMaxDiscountPercent = document.getElementById('fieldMaxDiscountPercent');
 const taxDefaultForm = document.getElementById('taxDefaultForm');
 const fieldReceiptBarcodeEnabled = document.getElementById('fieldReceiptBarcodeEnabled');
+const fieldOffersCategoryEnabled = document.getElementById('fieldOffersCategoryEnabled');
 const fieldTaxDefaultRate = document.getElementById('fieldTaxDefaultRate');
 const loyaltyForm = document.getElementById('loyaltyForm');
 const fieldLoyaltyEarnRate = document.getElementById('fieldLoyaltyEarnRate');
@@ -95,8 +96,11 @@ async function init() {
 
   loadAutoBackupStatus();
   renderCategoryImagesPanel();
+  renderOffersImageCard();
   fieldReceiptBarcodeEnabled.checked = (await window.api.receipt.barcodeEnabled()).enabled !== false;
   fieldReceiptBarcodeEnabled.addEventListener('change', saveReceiptBarcodeEnabled);
+  fieldOffersCategoryEnabled.checked = (await window.api.pos.offersCategoryEnabled()).enabled !== false;
+  fieldOffersCategoryEnabled.addEventListener('change', saveOffersCategoryEnabled);
   currentBranch = await window.api.branches.current();
   branchNameEl.textContent = currentBranch ? currentBranch.name : '';
   fieldBranchUuid.value = currentBranch ? currentBranch.uuid : '';
@@ -438,21 +442,65 @@ const PLACEHOLDER_IMG =
     `<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" fill="#f0f0f0"/><text x="32" y="38" font-size="24" text-anchor="middle" fill="#c1c5cb">🛒</text></svg>`
   );
 
+async function renderOffersImageCard() {
+  const holder = document.getElementById('offersImageCard');
+  if (!holder) return;
+  let imagePath = null;
+  try { imagePath = (await window.api.pos.offersCategoryImage()).imagePath || null; } catch { imagePath = null; }
+  holder.innerHTML = `
+    <div class="category-image-card" data-offers="1">
+      <img src="${escapeHtml(imagePath || PLACEHOLDER_IMG)}" alt="" class="thumb" />
+      <div class="category-image-name">العروض</div>
+      <button type="button" class="btn btn-secondary btn-sm" id="pickOffersImageBtn">${imagePath ? 'تغيير الصورة' : 'اختر صورة'}</button>
+      ${imagePath ? `<button type="button" class="btn btn-danger btn-sm" id="removeOffersImageBtn">مسح الصورة</button>` : ''}
+    </div>
+  `;
+  document.getElementById('pickOffersImageBtn')?.addEventListener('click', async () => {
+    const result = await window.api.dialog.selectImage();
+    if (!result) return;
+    try {
+      await window.api.pos.offersCategoryImage({ save: result.url });
+      renderOffersImageCard();
+    } catch (err) { showToast('تعذّر حفظ صورة تبويب العروض: ' + err.message, 'error'); }
+  });
+  document.getElementById('removeOffersImageBtn')?.addEventListener('click', async () => {
+    if (!window.confirm('هل تريد مسح صورة تبويب العروض؟ سيبقى التبويب ظاهراً بأيقونة افتراضية بدل الصورة.')) return;
+    try {
+      await window.api.pos.offersCategoryImage({ save: null });
+      showToast('تم مسح صورة تبويب العروض.');
+      renderOffersImageCard();
+    } catch (err) { showToast('تعذّر مسح الصورة: ' + err.message, 'error'); }
+  });
+}
+
 async function renderCategoryImagesPanel() {
   const list = document.getElementById('categoryImagesList');
   const categories = await window.api.categories.list();
   list.innerHTML = categories.map((c, idx) => `
-    <div class="category-image-card" data-id="${c.id}">
+    <div class="category-image-card ${c.pos_hidden ? 'is-hidden-cat' : ''}" data-id="${c.id}">
       <img src="${escapeHtml(c.image_path || PLACEHOLDER_IMG)}" alt="" class="thumb" />
-      <div class="category-image-name">${escapeHtml(c.name)}</div>
+      <div class="category-image-name">${escapeHtml(c.name)}${c.pos_hidden ? ` <span class="hidden-cat-badge">مخفية</span>` : ''}</div>
       <div class="category-order-row">
         <button type="button" class="btn btn-secondary btn-sm" data-move="up" data-id="${c.id}" ${idx === 0 ? 'disabled' : ''}>▲</button>
         <button type="button" class="btn btn-secondary btn-sm" data-move="down" data-id="${c.id}" ${idx === categories.length - 1 ? 'disabled' : ''}>▼</button>
       </div>
       <button type="button" class="btn btn-secondary btn-sm" data-pick-cat="${c.id}">${c.image_path ? 'تغيير الصورة' : 'اختر صورة'}</button>
       ${c.image_path ? `<button type="button" class="btn btn-danger btn-sm" data-remove-cat="${c.id}">مسح الصورة</button>` : ''}
+      <button type="button" class="btn ${c.pos_hidden ? 'btn-primary' : 'btn-secondary'} btn-sm" data-toggle-hidden="${c.id}" data-hidden="${c.pos_hidden ? '1' : '0'}">${c.pos_hidden ? 'إظهار في الكاشير' : 'إخفاء من الكاشير'}</button>
     </div>
   `).join('') || '<div class="field-hint">لا توجد فئات بعد — تُنشأ تلقائياً عند إضافة منتج بفئة جديدة من صفحة المنتجات.</div>';
+
+  list.querySelectorAll('[data-toggle-hidden]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const categoryId = parseInt(btn.dataset.toggleHidden, 10);
+      const nextHidden = btn.dataset.hidden !== '1';
+      try {
+        await window.api.categories.setPosHidden(categoryId, nextHidden);
+        showToast(nextHidden ? 'تم إخفاء الفئة من شاشة الكاشير.' : 'أصبحت الفئة ظاهرة في شاشة الكاشير.');
+        renderCategoryImagesPanel();
+      } catch (err) { showToast('تعذّر تغيير حالة الفئة: ' + err.message, 'error'); }
+    });
+  });
 
   list.querySelectorAll('[data-pick-cat]').forEach((btn) => {
     btn.addEventListener('click', async () => {
@@ -496,6 +544,16 @@ async function saveReceiptBarcodeEnabled() {
   } catch (err) {
     showToast(t('settings.toast.saveErrorGeneric') + err.message, 'error');
     fieldReceiptBarcodeEnabled.checked = !fieldReceiptBarcodeEnabled.checked;
+  }
+}
+
+async function saveOffersCategoryEnabled() {
+  try {
+    await window.api.pos.offersCategoryEnabled({ save: fieldOffersCategoryEnabled.checked });
+    showToast(fieldOffersCategoryEnabled.checked ? 'سيظهر تبويب العروض في الكاشير.' : 'تم إخفاء تبويب العروض من الكاشير.');
+  } catch (err) {
+    showToast(t('settings.toast.saveErrorGeneric') + err.message, 'error');
+    fieldOffersCategoryEnabled.checked = !fieldOffersCategoryEnabled.checked;
   }
 }
 

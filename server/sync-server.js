@@ -14,17 +14,17 @@ const path = require('path');
 // اتصال SQLite المحلي أعلاه (المخصَّص فقط لسجل مزامنة central-sync.db). بما أن هذا
 // الملف يعمل داخل نفس عملية Electron الرئيسية (main.js)، فطلب هذه الوحدة هنا يُرجع
 // نفس singleton المُهيَّأ فعلاً (نفس اتصال قاعدة البيانات المشفّرة)، لا اتصالاً جديداً.
-// مهم: لا نستدعي require('../database/db') هنا مباشرة (top-level). هذا الملف يُحمَّل
-// عبر require('./server/sync-server') في أعلى main.js — أي فوراً عند بدء تشغيل العملية
-// الرئيسية، قبل app.whenReady() بكثير. وبما أن database/db.js يفتح مفتاح التشفير عبر
-// safeStorage فوراً عند التحميل، فاستدعاء require المبكر هذا يكسر "مخزن مفاتيح نظام
-// التشغيل" على ويندوز (safeStorage غير جاهز قبل ready). لذلك نأجّل الـ require لحين أول
-// استخدام فعلي — وهو دائماً بعد ready لأن createSyncServer() نفسها لا تُستدعى إلا من
-// main.js داخل app.whenReady().
-let _appDb = null;
-function appDb() {
-  if (!_appDb) _appDb = require('../database/db');
-  return _appDb;
+//
+// حرج جداً: هذا الـ require يجب أن يبقى "كسولاً" (بداخل دالة، لا أعلى الملف) — main.js
+// يستورد createSyncServer من هذا الملف في أعلى main.js مباشرةً (قبل app.whenReady()
+// بمراحل)، وrequire لملف بأكمله في Node.js ينفّذ فوراً كل كوده top-level بما فيه أي
+// require آخر بداخله. لو كان هذا السطر top-level هنا، فسيُحمَّل database/db.js (ويُنفَّذ
+// getEncryptionKey عبر safeStorage) لحظة استيراد sync-server.js نفسه — أي قبل
+// app.whenReady() بكثير — وwindows.safeStorage.isEncryptionAvailable() غير موثوقة إطلاقاً
+// قبل ذلك (ترجع false)، فتنكسر قاعدة البيانات المشفّرة بالكامل من أول تشغيل. هذا بالضبط
+// ما حدث فعلياً عند إضافة ميزة الكرسون (كانت تستورد database/db مباشرة أعلى الملف).
+function getAppDb() {
+  return require('../database/db');
 }
 
 function send(res, status, body) {
@@ -106,7 +106,7 @@ const WAITER_PAGE_HTML = `<!DOCTYPE html>
   .screen { display:none; padding:16px; padding-bottom:100px; }
   .screen.active { display:block; }
   .pair-box { max-width:320px; margin:60px auto; text-align:center; }
-  .pair-box input { width:100%; font-size:28px; text-align:center; letter-spacing:8px; padding:14px; border:2px solid var(--line); border-radius:12px; margin:16px 0; }
+  .pair-box input { width:100%; font-size:22px; text-align:center; letter-spacing:4px; padding:14px; border:2px solid var(--line); border-radius:12px; margin:16px 0; }
   .btn { display:block; width:100%; padding:14px; border:none; border-radius:12px; background:var(--primary); color:#fff; font-size:16px; font-weight:700; cursor:pointer; }
   .btn:disabled { opacity:.5; }
   .error-msg { color:var(--danger); font-size:13px; margin-top:8px; min-height:18px; }
@@ -138,7 +138,7 @@ const WAITER_PAGE_HTML = `<!DOCTYPE html>
   <div class="pair-box">
     <h2>ربط جهاز الكرسون</h2>
     <p style="color:#666; font-size:13px;">اكتب الكود المعروض على شاشة الكاشير الرئيسي (الإعدادات &gt; مشاركة الشبكة المحلية)</p>
-    <input id="pairCode" inputmode="numeric" maxlength="4" placeholder="0000" autofocus />
+    <input id="pairCode" inputmode="numeric" maxlength="8" placeholder="00000000" autofocus />
     <button class="btn" id="pairBtn">ربط الجهاز</button>
     <div class="error-msg" id="pairError"></div>
   </div>
@@ -198,7 +198,7 @@ const WAITER_PAGE_HTML = `<!DOCTYPE html>
     var code = document.getElementById('pairCode').value.trim();
     var err = document.getElementById('pairError');
     err.textContent = '';
-    if (!/^\\d{4}$/.test(code)) { err.textContent = 'اكتب 4 أرقام.'; return; }
+    if (!/^\\d{8}$/.test(code)) { err.textContent = 'اكتب 8 أرقام.'; return; }
     fetch('/pair', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code: code }) })
       .then(function (r) { return r.json().then(function (b) { return { ok: r.ok, body: b }; }); })
       .then(function (res) {
@@ -490,8 +490,8 @@ function createSyncServer({ dbPath, port = 0, rateLimit = 60, onLog = () => {}, 
       const branchUuid = authenticateWaiter(req.headers['x-branch-uuid']);
       if (!branchUuid) return send(res, 401, { message: 'Unauthorized' });
       try {
-        const categories = appDb().listCategories();
-        const products = appDb().listProducts({ limit: 500 });
+        const categories = getAppDb().listCategories();
+        const products = getAppDb().listProducts({ limit: 500 });
         return send(res, 200, { categories, products });
       } catch (error) { return send(res, 400, { message: error.message }); }
     }
@@ -500,7 +500,7 @@ function createSyncServer({ dbPath, port = 0, rateLimit = 60, onLog = () => {}, 
       const branchUuid = authenticateWaiter(req.headers['x-branch-uuid']);
       if (!branchUuid) return send(res, 401, { message: 'Unauthorized' });
       try {
-        return send(res, 200, { tables: appDb().listTables() });
+        return send(res, 200, { tables: getAppDb().listTables() });
       } catch (error) { return send(res, 400, { message: error.message }); }
     }
 
@@ -525,8 +525,8 @@ function createSyncServer({ dbPath, port = 0, rateLimit = 60, onLog = () => {}, 
         // "إضافة" فقط لا "استبدال": نجمع الكمية المطلوبة الآن فوق أي كمية سابقة موجودة
         // بالفعل بنفس الطلب المفتوح (من كاشير آخر أو كرسون آخر)، بدل حذف ما سبق كتابته —
         // لأن الكرسون لا يرى بالضرورة تفاصيل ما أضافه غيره على نفس الطاولة قبله.
-        const openSale = appDb().getOrCreateOpenSale(tableId, null);
-        const existing = appDb().getOpenSaleForTable(tableId);
+        const openSale = getAppDb().getOrCreateOpenSale(tableId, null);
+        const existing = getAppDb().getOpenSaleForTable(tableId);
         const merged = new Map();
         for (const it of (existing && existing.items) || []) {
           const key = `${it.product_id}::${it.notes || ''}`;
@@ -537,8 +537,8 @@ function createSyncServer({ dbPath, port = 0, rateLimit = 60, onLog = () => {}, 
           const prior = merged.get(key);
           merged.set(key, { productId: Number(it.productId), quantity: (prior ? prior.quantity : 0) + Number(it.quantity), notes: it.notes || '' });
         }
-        const result = appDb().setOpenSaleItems(openSale.id, Array.from(merged.values()));
-        appDb().logAudit({ userId: null, action: 'table_order_updated_by_waiter', entityType: 'sale', entityId: openSale.id, details: { itemCount: items.length } });
+        const result = getAppDb().setOpenSaleItems(openSale.id, Array.from(merged.values()));
+        getAppDb().logAudit({ userId: null, action: 'table_order_updated_by_waiter', entityType: 'sale', entityId: openSale.id, details: { itemCount: items.length } });
         let kitchen = null;
         if (typeof sendKitchenTicket === 'function') {
           try { kitchen = await sendKitchenTicket(openSale.id); } catch (_) { kitchen = { success: false }; }
@@ -557,9 +557,9 @@ function createSyncServer({ dbPath, port = 0, rateLimit = 60, onLog = () => {}, 
       const tableId = Number(body.tableId);
       if (!Number.isInteger(tableId) || tableId <= 0) return send(res, 400, { message: 'طاولة غير صالحة.' });
       try {
-        const openSale = appDb().getOpenSaleForTable(tableId);
+        const openSale = getAppDb().getOpenSaleForTable(tableId);
         if (!openSale) return send(res, 400, { message: 'لا يوجد طلب مفتوح على هذه الطاولة.' });
-        return send(res, 200, appDb().requestBillForTable(openSale.id));
+        return send(res, 200, getAppDb().requestBillForTable(openSale.id));
       } catch (error) { return send(res, 400, { message: error.message }); }
     }
 
