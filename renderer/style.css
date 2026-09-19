@@ -181,8 +181,8 @@ label { display: block; font-size: 12.5px; font-weight: 700; color: var(--text-s
 .topbar {
   display: flex; align-items: center; flex-wrap: wrap; gap: 10px 22px; padding: 12px 24px;
   background: linear-gradient(180deg, var(--surface), var(--surface-soft));
-  border-bottom: 1px solid var(--line);
-  box-shadow: 0 1px 0 var(--brand-gold), var(--shadow-sm);
+    border-bottom: 3px solid var(--brand-gold);
+  box-shadow: var(--shadow-sm);
   -webkit-app-region: drag; position: relative; z-index: 20;
 }
 .topbar * { -webkit-app-region: no-drag; }
