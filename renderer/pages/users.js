@@ -70,6 +70,7 @@ function renderTable(users) {
       <td>${SHIFT_TYPE_LABELS[u.shift_type] || SHIFT_TYPE_LABELS.morning}</td>
       <td>${u.is_active ? '<span class="status-active">مفعّل</span>' : '<span class="status-inactive">معطّل</span>'}</td>
       <td>${u.has_pin ? '<span class="status-active">مُعيَّن</span>' : '<span class="status-inactive">—</span>'}</td>
+      <td class="sales-modify-cell">${salesModifyCell(u)}</td>
       <td class="row-actions">
         <button class="btn btn-secondary btn-sm" data-action="edit">تعديل</button>
         <button class="btn btn-secondary btn-sm" data-action="pin">${u.has_pin ? 'تغيير PIN' : 'تعيين PIN'}</button>
@@ -77,11 +78,40 @@ function renderTable(users) {
         ${u.id === loggedInUser.id ? '' : '<button class="btn btn-danger btn-sm" data-action="delete">حذف</button>'}
       </td>
     `;
+    tr.querySelector('[data-sales-modify]')?.addEventListener('change', (e) => toggleSalesModify(u, e.target));
     tr.querySelector('[data-action="edit"]').addEventListener('click', () => openModal(u));
     tr.querySelector('[data-action="pin"]').addEventListener('click', () => openPinModal(u));
     tr.querySelector('[data-action="clearPin"]')?.addEventListener('click', () => clearPin(u));
     tr.querySelector('[data-action="delete"]')?.addEventListener('click', () => deleteUser(u));
     tableBody.appendChild(tr);
+  }
+}
+
+// عمود "تعديل الفواتير": علامة صح يضعها المدير العام بجانب الكاشير، مع شرح لماذا/ماذا تسمح به، ومن منحها وسببها.
+function salesModifyCell(u) {
+  if (u.role === 'admin' || u.role === 'manager') return `<span class="status-active" title="${escapeHtml(ts('المدير يملك هذه الصلاحية بحكم دوره.'))}">${ts('بحكم الدور')}</span>`;
+  const on = Number(u.can_modify_sales) === 1;
+  const why = ts('لماذا؟ تسمح للكاشير بتعديل أصناف أو طريقة دفع فاتورة مكتملة (بدون ارتجاع). كل تعديل يُسجَّل باسمه في التدقيق ويتطلب سبباً.');
+  const granted = on ? `<small class="field-hint">${escapeHtml(ts('منحها'))}: ${escapeHtml(u.modify_sales_granted_by_name || '—')} · ${escapeHtml(String(u.modify_sales_granted_at || '').slice(0, 16))}<br>${escapeHtml(ts('السبب'))}: ${escapeHtml(u.modify_sales_reason || '—')}</small>` : '';
+  return `<label title="${escapeHtml(why)}" style="display:flex;gap:6px;align-items:center;cursor:pointer;"><input type="checkbox" data-sales-modify ${on ? 'checked' : ''} ${u.is_active ? '' : 'disabled'} /> <span>${ts('يسمح بتعديل الفواتير')}</span></label>${granted}`;
+}
+async function toggleSalesModify(u, checkbox) {
+  const enable = checkbox.checked;
+  try {
+    let reason = '';
+    if (enable) {
+      reason = await promptDialog(ts('سبب السماح لهذا الكاشير بتعديل الفواتير (يُحفظ في سجل التدقيق):'), '', {});
+      if (reason === null || String(reason).trim().length < 3) { checkbox.checked = false; if (reason !== null) showToast(ts('اكتب السبب (3 أحرف على الأقل).'), 'error'); return; }
+    } else if (!(await confirmDialog(ts('سحب صلاحية تعديل الفواتير من هذا المستخدم؟'), { tone: 'warning' }))) {
+      checkbox.checked = true;
+      return;
+    }
+    await window.api.users.setSalesModify(u.id, enable, reason);
+    showToast(enable ? ts('تم تفعيل تعديل الفواتير لهذا المستخدم.') : ts('تم سحب صلاحية تعديل الفواتير.'), 'success');
+    await loadUsers();
+  } catch (err) {
+    checkbox.checked = !enable;
+    showToast(err.message || ts('حدث خطأ أثناء الحفظ'), 'error');
   }
 }
 
@@ -121,14 +151,14 @@ async function saveUser(e) {
   // تحذير عند تعديل حسابك أنت وتعطيله أو إنزال دوره عن admin (قد يقفل الوصول للإدارة)
   if (currentEditId === loggedInUser.id) {
     const losingAdmin = fieldRole.value !== 'admin' || !fieldIsActive.checked;
-    if (losingAdmin && !confirm(t('users.confirmRemoveAdminPrivilege', 'أنت توشك على إزالة صلاحية المدير العام عن حسابك الحالي أو تعطيله. هل تريد المتابعة؟'))) {
+    if (losingAdmin && !(await confirmDialog(t('users.confirmRemoveAdminPrivilege', 'أنت توشك على إزالة صلاحية المدير العام عن حسابك الحالي أو تعطيله. هل تريد المتابعة؟'), { tone: 'warning' }))) {
       return;
     }
   }
 
   const saveBtn = document.getElementById('saveBtn');
   saveBtn.disabled = true;
-  saveBtn.textContent = 'جارٍ الحفظ...';
+  saveBtn.textContent = t('common.savingBusy', 'جارٍ الحفظ...');
 
   try {
     const payload = {
@@ -145,14 +175,14 @@ async function saveUser(e) {
       result = await window.api.users.update(payload);
     } else {
       if (!fieldPassword.value) {
-        alert(ts('كلمة المرور مطلوبة للمستخدم الجديد'));
+        showToast(ts('كلمة المرور مطلوبة للمستخدم الجديد'), 'error');
         return;
       }
       result = await window.api.users.create(payload);
     }
 
     if (result && result.success === false) {
-      alert(result.message || ts('حدث خطأ أثناء الحفظ'));
+      showToast(result.message || ts('حدث خطأ أثناء الحفظ'), 'error');
       return;
     }
 
@@ -162,10 +192,10 @@ async function saveUser(e) {
     closeModal();
     await loadUsers();
   } catch (err) {
-    alert(ts('حدث خطأ أثناء الحفظ: ') + err.message);
+    showToast(ts('حدث خطأ أثناء الحفظ: ') + err.message, 'error');
   } finally {
     saveBtn.disabled = false;
-    saveBtn.textContent = 'حفظ';
+    saveBtn.textContent = t('common.save', 'حفظ');
   }
 }
 
@@ -186,11 +216,11 @@ function closePinModal() {
 async function savePin() {
   pinModalError.classList.add('hidden');
   savePinBtn.disabled = true;
-  savePinBtn.textContent = 'جارٍ الحفظ...';
+  savePinBtn.textContent = t('common.savingBusy', 'جارٍ الحفظ...');
   try {
     const result = await window.api.users.setPin(pinModalUserId, normalizeDigits(fieldNewPin.value.trim()));
     if (!result.success) {
-      pinModalError.textContent = result.message || 'تعذّر حفظ الـ PIN';
+      pinModalError.textContent = result.message || ts('تعذّر حفظ الـ PIN');
       pinModalError.classList.remove('hidden');
       return;
     }
@@ -201,12 +231,12 @@ async function savePin() {
     pinModalError.classList.remove('hidden');
   } finally {
     savePinBtn.disabled = false;
-    savePinBtn.textContent = 'حفظ';
+    savePinBtn.textContent = t('common.save', 'حفظ');
   }
 }
 
 async function clearPin(user) {
-  if (!confirm(`${t('users.clearPinFor','مسح رقم PIN الخاص بـ')} "${user.full_name}"؟ ${t('users.clearPinWarning','لن يعود يقدر يدخل بالـ PIN بعدها.')}`)) return;
+  if (!(await confirmDialog(`${t('users.clearPinFor','مسح رقم PIN الخاص بـ')} "${user.full_name}"؟ ${t('users.clearPinWarning','لن يعود يقدر يدخل بالـ PIN بعدها.')}`, { tone: 'danger', confirmLabel: t('common.delete','حذف') }))) return;
   await window.api.users.clearPin(user.id);
   await loadUsers();
 }
@@ -215,19 +245,19 @@ async function clearPin(user) {
 // وإلا يُعطَّل حسابه تلقائياً (لا يعود يقدر يسجّل دخول) مع إبقاء سجلاته القديمة سليمة —
 // نعرض له بوضوح أي الحالتين حدثت فعلاً بدل الافتراض الصامت.
 async function deleteUser(user) {
-  if (!confirm(`حذف المستخدم "${user.full_name}"؟ إذا كان له سجلات سابقة (مبيعات، ورديات، رواتب...) سيُعطَّل حسابه بدلاً من حذفه نهائياً، ولن يستطيع تسجيل الدخول بعدها.`)) return;
+  if (!(await confirmDialog(tf('users.confirmDeleteUser', { name: user.full_name }), { tone: 'danger', confirmLabel: t('common.delete','حذف') }))) return;
   try {
     const result = await window.api.users.delete(user.id);
     if (!result?.success) {
-      alert(result?.message || ts('تعذر حذف المستخدم'));
+      showToast(result?.message || ts('تعذر حذف المستخدم'), 'error');
       return;
     }
     if (!result.hardDeleted && result.deactivatedInstead) {
-      alert(`لم يكن الحذف النهائي ممكناً لأن "${user.full_name}" مرتبط بسجلات سابقة (مبيعات/ورديات/رواتب/تدقيق). تم تعطيل حسابه بدلاً من ذلك ولن يستطيع تسجيل الدخول بعد الآن.`);
+      await infoDialog(tf('users.deactivatedInsteadOfDeleted', { name: user.full_name }));
     }
     await loadUsers();
   } catch (err) {
-    alert(ts('حدث خطأ أثناء الحذف: ') + err.message);
+    showToast(ts('حدث خطأ أثناء الحذف: ') + err.message, 'error');
   }
 }
 

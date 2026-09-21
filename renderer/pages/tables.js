@@ -64,7 +64,7 @@ function openMergeModal() {
   const occupied = latestTables.filter(t => t.occupied);
   if (!occupied.length) { showToast(t('tables.toast.noOccupiedTable'), 'info'); return; }
   mergeSourceTable.innerHTML = occupied.map(row => `<option value="${row.id}">${escapeHtml(row.name)} — ${window.t ? window.t('tables.occupiedPrefix', 'مشغولة') : 'مشغولة'} — ${row.openTotal.toFixed(2)}</option>`).join('');
-  mergeTargetTable.innerHTML = latestTables.map(t => `<option value="${t.id}">${escapeHtml(t.name)}${t.occupied ? ' ' + ts('(مشغولة)') : ''}</option>`).join('');
+  mergeTargetTable.innerHTML = latestTables.map(table => `<option value="${table.id}">${escapeHtml(table.name)}${table.occupied ? ' ' + ts('(مشغولة)') : ''}</option>`).join('');
   const alternative = latestTables.find(t => t.id !== occupied[0].id);
   if (!alternative) { showToast(t('tables.toast.addSecondTableFirst'), 'info'); return; }
   mergeTargetTable.value = String(alternative.id);
@@ -74,7 +74,7 @@ function openMergeModal() {
 async function mergeSelectedTables() {
   const source = Number(mergeSourceTable.value), target = Number(mergeTargetTable.value);
   if (source === target) { showToast(t('tables.toast.selectDifferentTarget'), 'info'); return; }
-  if (!confirm(ts('سيتم نقل كل الأصناف إلى الطاولة الهدف. متابعة؟'))) return;
+  if (!(await confirmDialog(ts('سيتم نقل كل الأصناف إلى الطاولة الهدف. متابعة؟'), { tone: 'warning' }))) return;
   try {
     await window.api.tables.merge(source, target);
     mergeTablesModal.classList.add('hidden');
@@ -86,39 +86,39 @@ function renderTables(tables) {
   tablesGrid.innerHTML = '';
   emptyState.style.display = tables.length === 0 ? 'block' : 'none';
   if (tables.length === 0) {
-    renderPageEmptyState(emptyState, { icon: '◫', title: 'لا توجد طاولات بعد', message: 'أضف أول طاولة لتبدأ إدارة الطلبات داخل المحل.', actionText: 'إضافة أول طاولة', onAction: () => addTableBtn.click() });
+    renderPageEmptyState(emptyState, { icon: '◫', title: ts('لا توجد طاولات بعد'), message: ts('أضف أول طاولة لتبدأ إدارة الطلبات داخل المحل.'), actionText: ts('إضافة أول طاولة'), onAction: () => addTableBtn.click() });
     mergeTablesBtn.classList.add('hidden');
     return;
   }
 
-  for (const t of tables) {
+  for (const table of tables) {
     const card = document.createElement('div');
-    card.className = `table-card ${t.occupied ? 'occupied' : 'free'} ${t.billRequested ? 'bill-requested' : ''}`;
+    card.className = `table-card ${table.occupied ? 'occupied' : 'free'} ${table.billRequested ? 'bill-requested' : ''}`;
     card.innerHTML = `
-      ${t.billRequested ? `<div class="bill-request-badge">🔔 ${ts('طلب الحساب')} <button data-action="ackBill" class="ack-bill-btn">${ts('تم')}</button></div>` : ''}
-      <div class="table-name">${escapeHtml(t.name)}</div>
-      <div class="table-seats">${t.seats} ${ts('مقاعد')}</div>
-      <div class="table-status">${t.occupied ? `${ts('مشغولة')} — ${t.openTotal.toFixed(2)}` : ts('متاحة')}</div>
+      ${table.billRequested ? `<div class="bill-request-badge">🔔 ${ts('طلب الحساب')} <button data-action="ackBill" class="ack-bill-btn">${ts('تم')}</button></div>` : ''}
+      <div class="table-name">${escapeHtml(table.name)}</div>
+      <div class="table-seats">${table.seats} ${ts('مقاعد')}</div>
+      <div class="table-status">${table.occupied ? `${ts('مشغولة')} — ${table.openTotal.toFixed(2)}` : ts('متاحة')}</div>
       ${
-        !t.occupied && (loggedInUser.role === 'admin' || loggedInUser.role === 'manager')
-          ? `<button class="table-delete" data-action="delete" title="${window.t ? window.t('tables.deleteTitle', 'حذف الطاولة') : 'حذف الطاولة'}">✕</button>`
+        !table.occupied && (loggedInUser.role === 'admin' || loggedInUser.role === 'manager')
+          ? `<button class="table-delete" data-action="delete" title="${t('tables.deleteTitle', 'حذف الطاولة')}">✕</button>`
           : ''
       }
       ${
-        t.occupied && (loggedInUser.role === 'admin' || loggedInUser.role === 'manager')
-          ? `<button class="table-release" data-action="release" title="${window.t ? window.t('tables.releaseTitle', 'تحرير الطاولة إن كانت عالقة بدون أصناف') : 'تحرير الطاولة إن كانت عالقة بدون أصناف'}">${window.t ? window.t('tables.release', 'تحرير') : 'تحرير'}</button>`
+        table.occupied && (loggedInUser.role === 'admin' || loggedInUser.role === 'manager')
+          ? `<button class="table-release" data-action="release" title="${t('tables.releaseTitle')}">${t('tables.release')}</button>`
           : ''
       }
     `;
     card.addEventListener('click', (e) => {
       if (e.target.dataset.action === 'delete' || e.target.dataset.action === 'release' || e.target.dataset.action === 'ackBill') return; // الأزرار تتعامل بمفردها
-      window.location.href = `table-order.html?tableId=${t.id}`;
+      window.location.href = `table-order.html?tableId=${table.id}`;
     });
     const ackBtn = card.querySelector('[data-action="ackBill"]');
     if (ackBtn) {
       ackBtn.addEventListener('click', async (e) => {
         e.stopPropagation();
-        if (t.openSaleId) await window.api.tables.acknowledgeBill(t.openSaleId);
+        if (table.openSaleId) await window.api.tables.acknowledgeBill(table.openSaleId);
         loadTables();
       });
     }
@@ -126,8 +126,8 @@ function renderTables(tables) {
     if (deleteBtn) {
       deleteBtn.addEventListener('click', async (e) => {
         e.stopPropagation();
-        if (!confirm(`${window.t ? window.t('tables.confirmDeletePrefix','حذف') : 'حذف'} "${t.name}"؟`)) return;
-        const result = await window.api.tables.delete(t.id);
+        if (!(await confirmDialog(`${t('tables.confirmDeletePrefix','حذف')} "${table.name}"؟`, { tone: 'danger', confirmLabel: t('common.delete','حذف') }))) return;
+        const result = await window.api.tables.delete(table.id);
         if (result && result.success === false) {
           showToast(result.message, 'error');
           return;

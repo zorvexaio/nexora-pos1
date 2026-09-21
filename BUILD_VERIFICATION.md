@@ -13,7 +13,7 @@
 - Updater: `electron-updater 6.8.9`
 - Builder: `electron-builder 26.15.7`
 - Schema target: `15`
-- Immutable migration journal: `v2..v15` (14 migrations)
+- Immutable migration journal: `v2..v23` (22 migrations)
 
 ## ما تم إثباته في بيئة المصدر الحالية
 - `npm run test:engineering` = PASS لفحوصات المصدر والمنطق والـsecurity/financial/regression.

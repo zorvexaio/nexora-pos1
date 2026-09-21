@@ -16,7 +16,10 @@ function runNode(script,args=[]){const r=spawnSync(process.execPath,[path.join(r
 
 add('source-version', fs.readFileSync(path.join(root,'VERSION'),'utf8').trim() === pkg.version ? 'PASS':'FAIL', `package version=${pkg.version}`, true);
 add('node-engine', pkg.engines?.node === '>=22.12.0' ? 'PASS':'FAIL', `required=${pkg.engines?.node}`, true);
-add('migration-chain', runNode('migration-chain-regression.js').ok ? 'PASS':'FAIL', 'schema journal is v2..v15 and schema.sql contains Payroll V2', true);
+const migrationChain = runNode('migration-chain-regression.js');
+// نص التفصيل يُشتق من الإخراج الفعلي للفحص نفسه (بدل نص ثابت كان يقول "v2..v15" بلا
+// أي علاقة بالمخطط الفعلي) — فلا يحتاج تحديثاً يدوياً كل ما أُضيفت ترحيلة جديدة.
+add('migration-chain', migrationChain.ok ? 'PASS':'FAIL', migrationChain.ok ? migrationChain.output.trim() : migrationChain.output, true);
 const sourceSuite = runNode('test-engineering-source-runner.js');
 add('engineering-source-suite', sourceSuite.ok ? 'PASS':'FAIL', sourceSuite.ok ? 'source regression suite passed' : sourceSuite.output, true);
 

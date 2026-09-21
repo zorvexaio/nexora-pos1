@@ -8,6 +8,28 @@
 // لـ showToast فيها يفشل بخطأ "escapeHtml is not defined" (راجع سجل التدقيق: أخطاء
 // renderer_rejection المتكررة). لو صفحة مُعيّنة عندها نسختها الخاصة، إعادة التعريف
 // هنا غير ضارة — تعريفات الدوال بنفس النطاق لا تتعارض بجافاسكربت.
+// يطابق حساب الباك-إند (core/money.js): تقريب لكل سطر بالوحدة الصغرى، وضريبة شاملة = gross × rate ÷ (100 + rate).
+// يُستخدم في معاينة السلة/تعديل الفاتورة حتى لا يختلف إجمالي الشاشة عن الفاتورة المحفوظة بوحدة صغرى.
+function computeCartLineTax(price, quantity, ratePercent, inclusive, minorUnit = 2) {
+  const unit = Number.isInteger(minorUnit) && minorUnit >= 0 && minorUnit <= 3 ? minorUnit : 2;
+  const scale = 10 ** unit;
+  const unitMinor = Math.round(Number((Number(price || 0) * scale).toFixed(6)));
+  const grossMinor = Math.max(0, Math.round(Number((unitMinor * Number(quantity || 0)).toFixed(6))));
+  const bps = Math.max(0, Math.round((Number(ratePercent) || 0) * 100));
+  const den = inclusive ? 10000 + bps : 10000;
+  const taxMinor = bps > 0 ? Math.floor((grossMinor * bps * 2 + den) / (2 * den)) : 0;
+  const netMinor = inclusive ? Math.max(0, grossMinor - taxMinor) : grossMinor;
+  return { grossMinor, taxMinor, netMinor, scale };
+}
+function sumCartTax(lines, minorUnit = 2) {
+  const parts = lines.map((i) => computeCartLineTax(i.price, i.quantity, i.taxRate, !!i.taxInclusive, minorUnit));
+  const scale = parts.length ? parts[0].scale : 10 ** (Number.isInteger(minorUnit) ? minorUnit : 2);
+  return {
+    subtotal: parts.reduce((n, p) => n + p.netMinor, 0) / scale,
+    tax: parts.reduce((n, p) => n + p.taxMinor, 0) / scale,
+  };
+}
+
 function escapeHtml(str) {
   const div = document.createElement('div');
   div.textContent = str == null ? '' : String(str);
@@ -62,15 +84,16 @@ function normalizeDigits(value) {
  * إن لم يكن مصرّحاً له، يُعيد توجيهه ويُرجع null (على استدعاء الصفحة عدم المتابعة في هذه الحالة).
  * allowedRoles = null يعني: أي مستخدم مسجّل دخوله يكفي (بدون قيد دور إضافي).
  */
-async function guardPage(allowedRoles, redirectPath) {
+async function guardPage(allowedRoles, redirectPath, options = {}) {
   const user = await window.api.auth.currentUser();
 
   if (!user) {
     window.location.href = redirectPath;
     return null;
   }
-  if (allowedRoles && !allowedRoles.includes(user.role)) {
-    alert(t('common.noPermission'));
+  // options.allowIf: استثناء بحسب المستخدم (مثل كاشير فُوِّض بتعديل الفواتير) رغم أن دوره ليس ضمن الأدوار المسموحة.
+  if (allowedRoles && !allowedRoles.includes(user.role) && !(typeof options.allowIf === 'function' && options.allowIf(user))) {
+    await infoDialog(t('common.noPermission'));
     window.location.href = redirectPath;
     return null;
   }
@@ -163,6 +186,108 @@ function selectDialog(label, choices, defaultValue) {
   });
 }
 
+// تحل محلّ window.confirm() الأصلي بنفس شكل .modal-overlay/.modal، ومترجمة بالكامل.
+// tone: 'default' | 'danger' | 'warning' — يلوّن الأيقونة وزر التأكيد، ولإجراءات الخطر
+// يُركَّز زر الإلغاء افتراضياً (أكثر أماناً من تنفيذ حذف بضغطة Enter عارضة).
+function confirmDialog(message, options = {}) {
+  const {
+    title = null,
+    confirmLabel = t('common.ok', 'موافق'),
+    cancelLabel = t('common.cancel', 'إلغاء'),
+    tone = 'default',
+  } = options;
+  return new Promise((resolve) => {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    const modal = document.createElement('div');
+    modal.className = 'modal';
+    modal.setAttribute('role', 'alertdialog');
+    modal.setAttribute('aria-modal', 'true');
+
+    if (tone === 'danger' || tone === 'warning') {
+      const icon = document.createElement('div');
+      icon.className = `confirm-dialog-icon tone-${tone}`;
+      icon.innerHTML = tone === 'danger'
+        ? '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4M12 17h.01M10.3 3.9 2.5 17.5A1.6 1.6 0 0 0 4 20h16a1.6 1.6 0 0 0 1.5-2.5L13.7 3.9a1.6 1.6 0 0 0-2.8 0Z"/></svg>'
+        : '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 8v5M12 16h.01"/><circle cx="12" cy="12" r="9"/></svg>';
+      modal.appendChild(icon);
+    }
+    if (title) {
+      const h2 = document.createElement('h2');
+      h2.className = 'confirm-dialog-title';
+      h2.textContent = title;
+      modal.appendChild(h2);
+    }
+    const p = document.createElement('div');
+    p.className = 'confirm-dialog-message';
+    p.textContent = message;
+    modal.appendChild(p);
+
+    const actions = document.createElement('div');
+    actions.className = 'modal-actions';
+    const cancelBtn = document.createElement('button');
+    cancelBtn.type = 'button'; cancelBtn.className = 'btn btn-secondary'; cancelBtn.textContent = cancelLabel;
+    const okBtn = document.createElement('button');
+    okBtn.type = 'button';
+    okBtn.className = tone === 'danger' ? 'btn btn-danger' : 'btn btn-primary';
+    okBtn.textContent = confirmLabel;
+    actions.appendChild(cancelBtn); actions.appendChild(okBtn);
+    modal.appendChild(actions);
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
+
+    const cleanup = (result) => { overlay.remove(); document.removeEventListener('keydown', onKeydown); resolve(result); };
+    cancelBtn.addEventListener('click', () => cleanup(false));
+    okBtn.addEventListener('click', () => cleanup(true));
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) cleanup(false); });
+    function onKeydown(e) {
+      if (e.key === 'Escape') { e.preventDefault(); cleanup(false); }
+      else if (e.key === 'Enter') { e.preventDefault(); cleanup(true); }
+    }
+    document.addEventListener('keydown', onKeydown);
+    setTimeout(() => (tone === 'danger' ? cancelBtn : okBtn).focus(), 0);
+  });
+}
+
+// تحل محلّ window.alert() في الحالات التي تعرض معلومات مركّبة/متعددة الأسطر (تفاصيل
+// تحويل، ملخص إغلاق وردية...). لرسائل الحالة القصيرة (نجاح/خطأ سطر واحد) استخدم
+// showToast() بدلها فهي أخف وغير معطِّلة لعمل المستخدم.
+function infoDialog(message, options = {}) {
+  const { title = null, okLabel = t('common.ok', 'موافق') } = options;
+  return new Promise((resolve) => {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    const modal = document.createElement('div');
+    modal.className = 'modal';
+    modal.setAttribute('role', 'alertdialog');
+    modal.setAttribute('aria-modal', 'true');
+    if (title) {
+      const h2 = document.createElement('h2');
+      h2.className = 'confirm-dialog-title';
+      h2.textContent = title;
+      modal.appendChild(h2);
+    }
+    const p = document.createElement('div');
+    p.className = 'confirm-dialog-message';
+    p.textContent = message;
+    modal.appendChild(p);
+    const actions = document.createElement('div');
+    actions.className = 'modal-actions';
+    const okBtn = document.createElement('button');
+    okBtn.type = 'button'; okBtn.className = 'btn btn-primary'; okBtn.textContent = okLabel;
+    actions.appendChild(okBtn);
+    modal.appendChild(actions);
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
+    const cleanup = () => { overlay.remove(); document.removeEventListener('keydown', onKeydown); resolve(); };
+    okBtn.addEventListener('click', cleanup);
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) cleanup(); });
+    function onKeydown(e) { if (e.key === 'Escape' || e.key === 'Enter') { e.preventDefault(); cleanup(); } }
+    document.addEventListener('keydown', onKeydown);
+    setTimeout(() => okBtn.focus(), 0);
+  });
+}
+
 async function applyRuntimeBranding() {
   try {
     const branding = await window.api.branding.get();
@@ -190,7 +315,7 @@ function setupTopbar(user) {
   if (roleEl) roleEl.textContent = roleLabels()[user.role] || user.role;
   if (logoutBtn) {
     logoutBtn.addEventListener('click', async () => {
-      if (confirm(t('common.confirmLogout'))) {
+      if (await confirmDialog(t('common.confirmLogout'))) {
         await window.api.auth.logout();
       }
     });
@@ -308,7 +433,9 @@ async function setupThemeToggle() {
 function applyNavVisibility(user) {
   document.querySelectorAll('.nav-links a[data-roles]').forEach((a) => {
     const roles = a.getAttribute('data-roles').split(',');
-    if (!roles.includes(user.role)) a.style.display = 'none';
+    // رابط المرتجعات يظهر للكاشير المفوَّض بتعديل الفواتير (صفحة التعديل نفسها تخفي الارتجاع عنه).
+    const delegatedReturns = /(^|\/)returns\.html$/.test(a.getAttribute('href') || '') && Number(user.can_modify_sales) === 1;
+    if (!roles.includes(user.role) && !delegatedReturns) a.style.display = 'none';
   });
 }
 
@@ -354,25 +481,39 @@ document.addEventListener('keydown', (event) => {
   let input = null;
   let items = [];
   let selected = 0;
+  // المسارات مكتوبة كلها نسبةً لمجلد renderer/ (الجذر)، بصرف النظر من أين فُتحت
+  // اللوحة. common.js يُحمَّل من renderer/index.html (الكاشير، بجذر renderer/)
+  // ومن كل صفحات renderer/pages/*.html (مستوى أعمق بمجلد واحد) على حد سواء —
+  // فمسار نسبي واحد ثابت (مثل 'tables.html' بلا بادئة pages/) كان يعمل فقط لو
+  // فُتحت اللوحة من داخل pages/، ويفشل (صفحة غير موجودة) لو فُتحت من الكاشير نفسه،
+  // والعكس صحيح لرابط الكاشير '../index.html'. pageRoot() تحسب البادئة الصحيحة
+  // ديناميكياً حسب موقع الصفحة الحالية فعلياً بدل افتراض موقع واحد ثابت.
   const routes = [
-    ['nav.pos', '../index.html'],
-    ['nav.tables', 'tables.html'],
-    ['nav.products', 'products.html'],
-    ['nav.bundles', 'bundles.html'],
-    ['nav.inventory', 'inventory.html'],
-    ['nav.customers', 'customers.html'],
-    ['nav.suppliers', 'suppliers.html'],
-    ['nav.reports', 'reports.html'],
-    ['nav.payroll', 'payroll.html'],
-    ['nav.users', 'users.html'],
-    ['nav.settings', 'settings.html']
+    ['nav.pos', 'index.html'],
+    ['nav.tables', 'pages/tables.html'],
+    ['nav.products', 'pages/products.html'],
+    ['nav.bundles', 'pages/bundles.html'],
+    ['nav.inventory', 'pages/inventory.html'],
+    ['nav.customers', 'pages/customers.html'],
+    ['nav.suppliers', 'pages/suppliers.html'],
+    ['nav.reports', 'pages/reports.html'],
+    ['nav.accounting', 'pages/accounting.html'],
+    ['nav.returns', 'pages/returns.html'],
+    ['nav.cashSession', 'pages/shift.html'],
+    ['nav.audit', 'pages/audit.html'],
+    ['nav.payroll', 'pages/payroll.html'],
+    ['nav.users', 'pages/users.html'],
+    ['nav.settings', 'pages/settings.html']
   ];
-  function pageRoot() { return location.pathname.endsWith('/renderer/index.html') || location.pathname.endsWith('/renderer/') ? '' : ''; }
+  function pageRoot() { return location.pathname.includes('/renderer/pages/') ? '../' : ''; }
   function visibleRoutes() {
-    return routes.filter(([key, href]) => {
-      const nav = Array.from(document.querySelectorAll('.nav-links a')).find(a => a.getAttribute('data-i18n') === key);
-      return !nav || nav.offsetParent !== null;
-    });
+    const root = pageRoot();
+    return routes
+      .filter(([key]) => {
+        const nav = Array.from(document.querySelectorAll('.nav-links a')).find(a => a.getAttribute('data-i18n') === key);
+        return !nav || nav.offsetParent !== null;
+      })
+      .map(([key, href]) => [key, root + href]);
   }
   function close() { if (palette) palette.remove(); palette = null; input = null; items = []; }
   const safe = (value) => String(value ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[ch]));
@@ -550,7 +691,7 @@ function setPageLoading(container, loading, label = 'جارٍ التحميل...'
 function enhanceFormSubmit(form, button, successMessage) {
   if (!form || !button) return;
   form.addEventListener('submit', async () => {
-    setBusy(button, true, t('common.loading', 'جارٍ الحفظ...'));
+    setBusy(button, true, t('common.savingBusy', 'جارٍ الحفظ...'));
     if (successMessage) setTimeout(() => showToast(successMessage), 0);
   }, { once: false });
 }

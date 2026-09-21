@@ -1,11 +1,11 @@
-# Nexora POS v0.52.1 — Release Status
+# Nexora POS v0.52.17 — Release Status
 
 **Status: Engineering Source Release / Release Candidate. Not yet commercially verified.**
 
 ## مثبت
 - JavaScript syntax checks clean.
 - Financial/security static checks clean.
-- Migration chain v2..v18 explicitly checked (append-only chain integrity: v16 shifts-minor-trigger-null-fix, v17 accounting-extensions, v18 payroll-advance-disbursement-method).
+- Migration chain v2..v23 explicitly checked (append-only chain integrity, latest: v21 accounting-balance-cache, v22 payroll-advances-accounting, v23 inventory-account-correction) — see `tools/migration-chain-regression.js`, the source of truth for the current chain, so this line doesn't need manual updates to stay accurate.
 - Payroll regression suite and schema checks are available.
 - `npm run test:release` (`test-engineering.js` + `release-preflight.js`) passes end-to-end in this environment.
 - `better-sqlite3-multiple-ciphers` is pinned to an exact version (`13.0.3`, no caret range) in `package.json`, matching what `release-preflight`/`engineering-audit` require.

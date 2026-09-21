@@ -34,7 +34,7 @@ ok('table creation validates name and seat range', /اسم الطاولة مطل
 ok('category and supplier creation validate names', /function createCategory\(c\)[\s\S]*?اسم الفئة مطلوب/.test(db) && /function createSupplier\(s\)[\s\S]*?اسم المورد مطلوب/.test(db));
 ok('i18n has no duplicate keys in ar/tr/en', ['ar','tr','en'].every(lang=>{const b=langBlock(lang); return !!b && !hasDuplicateKeys(b);}));
 ok('sales snapshot tax inclusivity survives item writes', /tax_inclusive/.test(db) && /item\.taxInclusive \? 1 : 0/.test(db) && /item\.tax_inclusive \? 1 : 0/.test(db));
-ok('returns use post-tax discounted merchandise amounts', /refundableUnitAmount\(saleItem\)/.test(db) && /saleItemsTotalBeforeDiscount/.test(db) && /saleDiscountPool/.test(db));
+ok('returns use post-tax discounted merchandise amounts', /refundableAmountMinor\(saleItem/.test(db) && /saleItemsTotalBeforeDiscount/.test(db) && /saleDiscountPool/.test(db));
 ok('cashier discount cap is fail-safe', /Number\(getSetting\('max_cashier_discount_percent'/.test(db) && /Number\.isFinite\(value\) \? Math\.min\(100, Math\.max\(0, value\)\) : 10/.test(db));
 ok('opening/closing cash sessions validate actor and money', /مبلغ افتتاح الصندوق غير صالح/.test(db) && /المبلغ الفعلي في الصندوق غير صالح/.test(db) && /لا يمكن إغلاق جلسة صندوق/.test(db));
 const preloadChannels=new Set([...preload.matchAll(/\.(?:invoke|send|sendSync)\(\s*['"]([^'"]+)['"]/g)].map(m=>m[1]));

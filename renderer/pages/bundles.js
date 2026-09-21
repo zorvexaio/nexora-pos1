@@ -58,27 +58,27 @@ function renderTable() {
 
   for (const b of bundles) {
     const tr = document.createElement('tr');
-    const itemsSummary = b.items.map((i) => `${escapeHtml(i.product_name)} ×${i.quantity}`).join('، ');
+    const itemsSummary = b.items.map((i) => `${escapeHtml(i.product_name)} ×${i.quantity}`).join(t('common.listSeparator', '، '));
     const discountLabel =
       b.discount_type === 'fixed_price' ? `${t('bundles.fixedPrice','سعر ثابت')}: ${b.discount_value.toFixed(2)}` : `${b.discount_value}%`;
     tr.innerHTML = `
       <td>${escapeHtml(b.name)}</td>
       <td>${itemsSummary || '—'}</td>
       <td>${discountLabel}</td>
-      <td>${b.is_active ? '<span class="status-active">فعّالة</span>' : '<span class="status-inactive">متوقفة</span>'}</td>
+      <td>${b.is_active ? `<span class="status-active">${t('bundles.active')}</span>` : `<span class="status-inactive">${t('bundles.inactive')}</span>`}</td>
       <td class="actions"></td>
     `;
     const actionsCell = tr.querySelector('.actions');
 
     const editBtn = document.createElement('button');
     editBtn.className = 'btn btn-secondary btn-sm';
-    editBtn.textContent = 'تعديل';
+    editBtn.textContent = t('common.edit', 'تعديل');
     editBtn.addEventListener('click', () => openModal(b));
     actionsCell.appendChild(editBtn);
 
     const toggleBtn = document.createElement('button');
     toggleBtn.className = 'btn btn-secondary btn-sm';
-    toggleBtn.textContent = b.is_active ? 'إيقاف' : 'تفعيل';
+    toggleBtn.textContent = b.is_active ? t('bundles.deactivate') : t('bundles.activate');
     toggleBtn.addEventListener('click', () => toggleActive(b));
     actionsCell.appendChild(toggleBtn);
 
@@ -98,7 +98,7 @@ async function toggleActive(b) {
 }
 
 async function removeBundle(b) {
-  if (!confirm(`${t('bundles.confirmDeletePrefix', 'حذف عرض')} "${b.name}"؟`)) return;
+  if (!(await confirmDialog(`${t('bundles.confirmDeletePrefix', 'حذف عرض')} "${b.name}"؟`, { tone: 'danger', confirmLabel: t('common.delete','حذف') }))) return;
   await window.api.bundles.delete(b.id);
   await loadBundles();
 }
@@ -116,7 +116,7 @@ function bundleToPayload(b) {
 
 function openModal(bundle) {
   currentEditId = bundle ? bundle.id : null;
-  modalTitle.textContent = bundle ? 'تعديل عرض' : 'عرض جديد';
+  modalTitle.textContent = bundle ? t('bundles.editOffer') : t('bundles.newOffer');
   fieldName.value = bundle ? bundle.name : '';
   fieldDiscountType.value = bundle ? bundle.discount_type : 'percent';
   fieldDiscountValue.value = bundle ? bundle.discount_value : '';
@@ -166,7 +166,7 @@ function renderItemsTable() {
     const removeBtn = document.createElement('button');
     removeBtn.type = 'button';
     removeBtn.className = 'btn btn-danger btn-sm';
-    removeBtn.textContent = 'إزالة';
+    removeBtn.textContent = t('bundles.remove');
     removeBtn.addEventListener('click', () => {
       currentItems = currentItems.filter((i) => i.productId !== item.productId);
       renderItemsTable();
@@ -183,11 +183,11 @@ async function saveBundle(e) {
   // الشرط الصحيح: منتج واحد على الأقل، وإذا كان منتجاً واحداً فقط لازم كميته أكبر من 1
   // (وإلا الخصم على قطعة وحدة مالوش معنى "تجميعي" — يُعدَّل سعر المنتج مباشرة بدل حزمة).
   if (currentItems.length === 0) {
-    alert(ts('أضف منتجاً واحداً على الأقل للعرض.'));
+    showToast(ts('أضف منتجاً واحداً على الأقل للعرض.'), 'error');
     return;
   }
   if (currentItems.length === 1 && Number(currentItems[0].quantity) <= 1) {
-    alert(ts('لعرض منتج واحد فقط، يجب أن تكون الكمية المطلوبة أكبر من 1 (مثال: 3 قطع بسعر خاص). لخصم على قطعة واحدة، عدّل سعر المنتج مباشرة بدل إنشاء عرض.'));
+    await infoDialog(ts('لعرض منتج واحد فقط، يجب أن تكون الكمية المطلوبة أكبر من 1 (مثال: 3 قطع بسعر خاص). لخصم على قطعة واحدة، عدّل سعر المنتج مباشرة بدل إنشاء عرض.'));
     return;
   }
 

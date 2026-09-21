@@ -73,7 +73,7 @@ function switchTab(name) {
   if (name === 'periods') loadPeriods();
 }
 
-const accountTypeLabel = (t) => ({ asset: 'أصول', liability: 'خصوم', equity: 'حقوق ملكية', revenue: 'إيراد', expense: 'مصروف' }[t] || t);
+const accountTypeLabel = (type) => ({ asset: t('accounting.type.asset'), liability: t('accounting.type.liability'), equity: t('accounting.type.equity'), revenue: t('accounting.type.revenue'), expense: t('accounting.type.expense') }[type] || type);
 
 // كود الحساب الافتراضي → اسم بسيط بالعربي، لبناء "نظرة عامة" بلغة غير محاسبية.
 // الحسابات المخصّصة اللي يضيفها الأدمن (خارج هالقائمة) تُجمع حسب نوعها فقط.
@@ -101,12 +101,11 @@ async function loadOverview() {
   // التقارير يشمل الضريبة المحصّلة من الزبون (لأنها فعلياً مبلغ دخل بالصندوق)،
   // بينما هذا الرقم هنا (الإيراد المحاسبي) يستثنيها عمداً لأنها أمانة للحكومة
   // وليست ربحاً للمحل — فالفرق بين الرقمين طبيعي ومتوقّع وليس خطأ بالنظام.
-  document.getElementById('ovRevenueExplain').textContent =
-    'هذا الرقم بدون الضريبة المحصّلة من الزبون (تظهر كالتزام لا كربح). لو قارنته بـ"إجمالي المبيعات" بصفحة التقارير رح تلاقيه أقل بمقدار الضريبة تماماً — هذا طبيعي وليس خطأ.';
+  document.getElementById('ovRevenueExplain').textContent = t('accounting.revenueExplain');
   const netExplain = document.getElementById('ovNetExplain');
-  if (income.netIncome > 0) netExplain.textContent = `ربحت ${formatMoney(income.netIncome)} صافي بهالفترة (بعد كل المصاريف).`;
-  else if (income.netIncome < 0) netExplain.textContent = `خسرت ${formatMoney(Math.abs(income.netIncome))} صافي بهالفترة — مصاريفك تجاوزت مبيعاتك.`;
-  else netExplain.textContent = 'تعادلت مبيعاتك مع مصاريفك بالضبط بهالفترة.';
+  if (income.netIncome > 0) netExplain.textContent = tf('accounting.netIncomeGain', { amount: formatMoney(income.netIncome) });
+  else if (income.netIncome < 0) netExplain.textContent = tf('accounting.netIncomeLoss', { amount: formatMoney(Math.abs(income.netIncome)) });
+  else netExplain.textContent = t('accounting.netIncomeBreakeven');
 
   const cash = sumByCode(balance.assets, overviewCashCodes);
   const inventory = sumByCode(balance.assets, overviewInventoryCodes);
@@ -129,7 +128,7 @@ async function loadTrialBalance() {
   document.getElementById('trialTotalDebit').textContent = formatMoney(result.totalDebit);
   document.getElementById('trialTotalCredit').textContent = formatMoney(result.totalCredit);
   const flag = document.getElementById('trialBalanceFlag');
-  flag.textContent = result.balanced ? 'متوازن' : 'غير متوازن — راجع القيود';
+  flag.textContent = result.balanced ? t('accounting.balanced') : t('accounting.unbalancedReview');
   flag.className = 'balance-flag ' + (result.balanced ? 'ok' : 'bad');
 }
 
@@ -142,10 +141,10 @@ async function loadIncomeStatement() {
   document.getElementById('incomeNet').textContent = formatMoney(result.netIncome);
   document.getElementById('incomeRevenueBody').innerHTML = result.revenue
     .map((r) => `<tr><td>${escapeHtml(r.code)}</td><td>${escapeHtml(r.name)}</td><td class="num">${formatMoney(r.amount)}</td></tr>`).join('')
-    || '<tr><td colspan="3" class="empty-state">لا توجد حركة إيرادات بهذه الفترة</td></tr>';
+    || `<tr><td colspan="3" class="empty-state">${t('accounting.noRevenueThisPeriod')}</td></tr>`;
   document.getElementById('incomeExpenseBody').innerHTML = result.expense
     .map((r) => `<tr><td>${escapeHtml(r.code)}</td><td>${escapeHtml(r.name)}</td><td class="num">${formatMoney(r.amount)}</td></tr>`).join('')
-    || '<tr><td colspan="3" class="empty-state">لا توجد حركة مصاريف بهذه الفترة</td></tr>';
+    || `<tr><td colspan="3" class="empty-state">${t('accounting.noExpenseThisPeriod')}</td></tr>`;
 }
 
 async function loadBalanceSheet() {
@@ -155,12 +154,12 @@ async function loadBalanceSheet() {
   document.getElementById('balanceTotalLiabilities').textContent = formatMoney(result.totalLiabilities);
   document.getElementById('balanceTotalEquity').textContent = formatMoney(result.totalEquity);
   const flag = document.getElementById('balanceFlag');
-  flag.textContent = result.balanced ? 'متوازن (الأصول = الخصوم + حقوق الملكية)' : 'غير متوازن — راجع القيود';
+  flag.textContent = result.balanced ? t('accounting.balancedFull') : t('accounting.unbalancedReview');
   flag.className = 'balance-flag ' + (result.balanced ? 'ok' : 'bad');
   const row = (r) => `<tr><td>${escapeHtml(r.code)}</td><td>${escapeHtml(r.name)}</td><td class="num">${formatMoney(r.balance)}</td></tr>`;
-  document.getElementById('balanceAssetsBody').innerHTML = result.assets.map(row).join('') || '<tr><td colspan="3" class="empty-state">لا شيء</td></tr>';
-  document.getElementById('balanceLiabilitiesBody').innerHTML = result.liabilities.map(row).join('') || '<tr><td colspan="3" class="empty-state">لا شيء</td></tr>';
-  document.getElementById('balanceEquityBody').innerHTML = result.equity.map(row).join('') || '<tr><td colspan="3" class="empty-state">لا شيء</td></tr>';
+  document.getElementById('balanceAssetsBody').innerHTML = result.assets.map(row).join('') || `<tr><td colspan="3" class="empty-state">${t('accounting.nothing')}</td></tr>`;
+  document.getElementById('balanceLiabilitiesBody').innerHTML = result.liabilities.map(row).join('') || `<tr><td colspan="3" class="empty-state">${t('accounting.nothing')}</td></tr>`;
+  document.getElementById('balanceEquityBody').innerHTML = result.equity.map(row).join('') || `<tr><td colspan="3" class="empty-state">${t('accounting.nothing')}</td></tr>`;
 }
 
 async function loadLedger() {
@@ -172,18 +171,18 @@ async function loadLedger() {
   document.getElementById('ledgerOpening').textContent = formatMoney(result.openingBalance);
   document.getElementById('ledgerBody').innerHTML = result.rows
     .map((r) => `<tr><td>${escapeHtml(String(r.date || '').slice(0, 10))}</td><td>${escapeHtml(r.memo || '—')}</td><td>${escapeHtml(r.referenceType || '—')}${r.referenceId ? ' #' + escapeHtml(String(r.referenceId)) : ''}</td><td class="num">${r.debit ? formatMoney(r.debit) : ''}</td><td class="num">${r.credit ? formatMoney(r.credit) : ''}</td><td class="num">${formatMoney(r.balance)}</td></tr>`)
-    .join('') || '<tr><td colspan="6" class="empty-state">لا توجد حركات بهذه الفترة</td></tr>';
+    .join('') || `<tr><td colspan="6" class="empty-state">${t('accounting.noMovementsThisPeriod')}</td></tr>`;
 }
 
-const journalRefLabels = { sale: 'بيع', purchase_order: 'شراء', return: 'مرتجع', supplier_payment: 'دفعة مورد', customer_payment: 'تحصيل عميل', payroll_payment: 'صرف راتب', payroll_accrual: 'استحقاق راتب' };
+const journalRefLabel = (type) => ({ sale: t('accounting.ref.sale'), purchase_order: t('accounting.ref.purchase_order'), return: t('accounting.ref.return'), supplier_payment: t('accounting.ref.supplier_payment'), customer_payment: t('accounting.ref.customer_payment'), payroll_payment: t('accounting.ref.payroll_payment'), payroll_accrual: t('accounting.ref.payroll_accrual') }[type] || type);
 
 async function loadJournal() {
   const from = document.getElementById('journalFrom').value || null;
   const to = document.getElementById('journalTo').value || null;
   const entries = await window.api.accounting.listJournalEntries({ from: from ? `${from} 00:00:00` : undefined, to: to ? `${to} 23:59:59` : undefined });
   document.getElementById('journalBody').innerHTML = entries
-    .map((e) => `<tr><td>${escapeHtml(String(e.entry_date || '').slice(0, 16).replace('T', ' '))}</td><td>${escapeHtml(e.memo || '—')}</td><td>${escapeHtml(journalRefLabels[e.reference_type] || e.reference_type || '—')}${e.reference_id ? ' #' + escapeHtml(String(e.reference_id)) : ''}</td><td>${escapeHtml(e.status)}</td></tr>`)
-    .join('') || '<tr><td colspan="4" class="empty-state">لا توجد قيود بهذه الفترة</td></tr>';
+    .map((e) => `<tr><td>${escapeHtml(String(e.entry_date || '').slice(0, 16).replace('T', ' '))}</td><td>${escapeHtml(e.memo || '—')}</td><td>${escapeHtml(journalRefLabel(e.reference_type) || '—')}${e.reference_id ? ' #' + escapeHtml(String(e.reference_id)) : ''}</td><td>${escapeHtml(e.status)}</td></tr>`)
+    .join('') || `<tr><td colspan="4" class="empty-state">${t('accounting.noEntriesThisPeriod')}</td></tr>`;
 }
 
 async function loadPeriods() {
@@ -193,11 +192,11 @@ async function loadPeriods() {
     const locked = p.status === 'locked';
     const actionBtn = isAdminUser
       ? (locked
-          ? `<button class="btn btn-secondary btn-sm" data-reopen="${escapeHtml(p.period_key)}">إعادة فتح</button>`
-          : `<button class="btn btn-danger btn-sm" data-lock="${escapeHtml(p.period_key)}">إقفال</button>`)
+          ? `<button class="btn btn-secondary btn-sm" data-reopen="${escapeHtml(p.period_key)}">${t('accounting.reopen')}</button>`
+          : `<button class="btn btn-danger btn-sm" data-lock="${escapeHtml(p.period_key)}">${t('accounting.lock')}</button>`)
       : '';
-    return `<tr><td>${escapeHtml(p.period_key)}</td><td class="${locked ? 'period-locked' : 'period-open'}">${locked ? 'مقفلة' : 'مفتوحة'}</td><td>${escapeHtml(String(p.locked_at || '—'))}</td><td>${actionBtn}</td></tr>`;
-  }).join('') || '<tr><td colspan="4" class="empty-state">لا توجد فترات مقفلة بعد — كل الفترات مفتوحة تلقائياً حتى تُقفَل</td></tr>';
+    return `<tr><td>${escapeHtml(p.period_key)}</td><td class="${locked ? 'period-locked' : 'period-open'}">${locked ? t('accounting.periodLocked') : t('accounting.periodOpen')}</td><td>${escapeHtml(String(p.locked_at || '—'))}</td><td>${actionBtn}</td></tr>`;
+  }).join('') || `<tr><td colspan="4" class="empty-state">${t('accounting.noLockedPeriodsYet')}</td></tr>`;
 
   document.querySelectorAll('[data-reopen]').forEach((btn) => btn.addEventListener('click', () => onReopenPeriod(btn.dataset.reopen)));
   document.querySelectorAll('[data-lock]').forEach((btn) => btn.addEventListener('click', () => onLockPeriodKey(btn.dataset.lock)));
@@ -210,7 +209,7 @@ async function onLockPeriod() {
 }
 
 async function onLockPeriodKey(key) {
-  if (!confirm(`تأكيد إقفال الفترة ${key}؟ لن يمكن إضافة أي قيد محاسبي جديد بتاريخ ضمنها (مبيعات/مشتريات/مرتجعات/رواتب) إلا بعد إعادة فتحها.`)) return;
+  if (!(await confirmDialog(tf('accounting.confirmLockPeriod', { key }), { tone: 'warning', confirmLabel: t('accounting.lock') }))) return;
   try {
     await window.api.accounting.lockPeriod(key);
     showToast(t('accounting.toast.periodClosed'), 'success');
@@ -238,7 +237,7 @@ let manualLines = [];
 let manualLineSeq = 0;
 
 function accountOptionsHtml(selectedId) {
-  return '<option value="">اختر حساب…</option>' + accountsCache
+  return `<option value="">${t('accounting.chooseAccount', 'اختر حساب…')}</option>` + accountsCache
     .map((a) => `<option value="${a.id}" ${String(a.id) === String(selectedId) ? 'selected' : ''}>${escapeHtml(a.code)} — ${escapeHtml(a.name)}</option>`)
     .join('');
 }
@@ -262,9 +261,9 @@ function renderManualLines() {
     <tr data-row="${line.rowId}">
       <td><select class="manual-line-account" data-row="${line.rowId}">${accountOptionsHtml(line.accountId)}</select></td>
       <td><input class="manual-line-memo" data-row="${line.rowId}" type="text" value="${escapeHtml(line.memo)}" /></td>
-      <td><input class="manual-line-debit num" data-row="${line.rowId}" type="number" step="0.01" min="0" value="${line.debit}" /></td>
-      <td><input class="manual-line-credit num" data-row="${line.rowId}" type="number" step="0.01" min="0" value="${line.credit}" /></td>
-      <td><button class="btn btn-secondary btn-sm manual-line-remove" data-row="${line.rowId}" type="button">حذف</button></td>
+      <td><input class="manual-line-debit num" data-row="${line.rowId}" type="text" inputmode="decimal" value="${line.debit}" /></td>
+      <td><input class="manual-line-credit num" data-row="${line.rowId}" type="text" inputmode="decimal" value="${line.credit}" /></td>
+      <td><button class="btn btn-secondary btn-sm manual-line-remove" data-row="${line.rowId}" type="button">${t('common.delete', 'حذف')}</button></td>
     </tr>`).join('');
 
   body.querySelectorAll('.manual-line-account').forEach((el) => el.addEventListener('change', (e) => {
@@ -276,14 +275,14 @@ function renderManualLines() {
   body.querySelectorAll('.manual-line-debit').forEach((el) => el.addEventListener('input', (e) => {
     const line = findManualLine(e.target.dataset.row);
     line.debit = e.target.value;
-    if (Number(e.target.value) > 0) line.credit = '';
+    if (parseLocaleNumber(e.target.value) > 0) line.credit = '';
     renderManualLines();
     recalcManualTotals();
   }));
   body.querySelectorAll('.manual-line-credit').forEach((el) => el.addEventListener('input', (e) => {
     const line = findManualLine(e.target.dataset.row);
     line.credit = e.target.value;
-    if (Number(e.target.value) > 0) line.debit = '';
+    if (parseLocaleNumber(e.target.value) > 0) line.debit = '';
     renderManualLines();
     recalcManualTotals();
   }));
@@ -297,13 +296,13 @@ function findManualLine(rowId) {
 }
 
 function recalcManualTotals() {
-  const totalDebit = manualLines.reduce((sum, l) => sum + (Number(l.debit) || 0), 0);
-  const totalCredit = manualLines.reduce((sum, l) => sum + (Number(l.credit) || 0), 0);
+  const totalDebit = manualLines.reduce((sum, l) => sum + (parseLocaleNumber(l.debit) || 0), 0);
+  const totalCredit = manualLines.reduce((sum, l) => sum + (parseLocaleNumber(l.credit) || 0), 0);
   document.getElementById('manualTotalDebit').textContent = formatMoney(totalDebit);
   document.getElementById('manualTotalCredit').textContent = formatMoney(totalCredit);
   const balanced = totalDebit > 0 && Math.abs(totalDebit - totalCredit) < 0.005;
   const flag = document.getElementById('manualBalanceFlag');
-  flag.textContent = balanced ? 'متوازن' : 'غير متوازن';
+  flag.textContent = balanced ? t('accounting.balanced') : t('accounting.unbalanced');
   flag.className = 'balance-flag ' + (balanced ? 'ok' : 'bad');
   document.getElementById('manualPostBtn').disabled = !balanced;
   return balanced;
@@ -340,8 +339,8 @@ async function onPostManualEntry() {
   const lines = manualLines.map((l) => ({
     accountId: Number(l.accountId) || null,
     memo: l.memo || null,
-    debit: Number(l.debit) || 0,
-    credit: Number(l.credit) || 0,
+    debit: parseLocaleNumber(l.debit) || 0,
+    credit: parseLocaleNumber(l.credit) || 0,
   }));
   if (lines.some((l) => !l.accountId)) { showToast(t('accounting.toast.selectAccountEachLine'), 'error'); return; }
   if (lines.some((l) => l.debit === 0 && l.credit === 0)) { showToast(t('accounting.toast.lineNeedsAmount'), 'error'); return; }

@@ -57,10 +57,12 @@ const fieldKitchenPrinterName = document.getElementById('fieldKitchenPrinterName
 const fieldReceiptAutoPrint = document.getElementById('fieldReceiptAutoPrint');
 const fieldReceiptPrinterName = document.getElementById('fieldReceiptPrinterName');
 const fieldKitchenPrinterMode = document.getElementById('fieldKitchenPrinterMode');
+const fieldKitchenPrinterPaperWidth = document.getElementById('fieldKitchenPrinterPaperWidth');
 const fieldKitchenPrinterIp = document.getElementById('fieldKitchenPrinterIp');
 const fieldKitchenPrinterPort = document.getElementById('fieldKitchenPrinterPort');
 const testKitchenNetworkPrinterBtn = document.getElementById('testKitchenNetworkPrinterBtn');
 const fieldReceiptPrinterMode = document.getElementById('fieldReceiptPrinterMode');
+const fieldReceiptPrinterPaperWidth = document.getElementById('fieldReceiptPrinterPaperWidth');
 const fieldReceiptPrinterIp = document.getElementById('fieldReceiptPrinterIp');
 const fieldReceiptPrinterPort = document.getElementById('fieldReceiptPrinterPort');
 const testReceiptNetworkPrinterBtn = document.getElementById('testReceiptNetworkPrinterBtn');
@@ -168,9 +170,11 @@ async function init() {
   fieldKitchenPrinterMode.value = printing.kitchenPrinterMode || 'system';
   fieldKitchenPrinterIp.value = printing.kitchenPrinterIp || '';
   fieldKitchenPrinterPort.value = printing.kitchenPrinterPort || '9100';
+  fieldKitchenPrinterPaperWidth.value = printing.kitchenPrinterPaperWidth || '80';
   fieldReceiptPrinterMode.value = printing.receiptPrinterMode || 'system';
   fieldReceiptPrinterIp.value = printing.receiptPrinterIp || '';
   fieldReceiptPrinterPort.value = printing.receiptPrinterPort || '9100';
+  fieldReceiptPrinterPaperWidth.value = printing.receiptPrinterPaperWidth || '80';
   togglePrinterModeFields();
   printingForm.addEventListener('submit', savePrintingConfig);
   fieldKitchenPrinterMode.addEventListener('change', togglePrinterModeFields);
@@ -324,7 +328,8 @@ async function savePrintingConfig(event) {
       kitchenAutoPrint: fieldKitchenAutoPrint.checked, kitchenPrinterName: fieldKitchenPrinterName.value,
       receiptAutoPrint: fieldReceiptAutoPrint.checked, receiptPrinterName: fieldReceiptPrinterName.value,
       kitchenPrinterMode: fieldKitchenPrinterMode.value, kitchenPrinterIp: fieldKitchenPrinterIp.value, kitchenPrinterPort: fieldKitchenPrinterPort.value,
-      receiptPrinterMode: fieldReceiptPrinterMode.value, receiptPrinterIp: fieldReceiptPrinterIp.value, receiptPrinterPort: fieldReceiptPrinterPort.value,
+      receiptPrinterMode: fieldReceiptPrinterMode.value, receiptPrinterIp: fieldReceiptPrinterIp.value, receiptPrinterPort: fieldReceiptPrinterPort.value, receiptPrinterPaperWidth: fieldReceiptPrinterPaperWidth.value,
+      kitchenPrinterPaperWidth: fieldKitchenPrinterPaperWidth.value,
     });
     showToast(t('settings.toast.autoPrintSaved'));
   } catch (err) { showToast(t('settings.toast.savePrintFailed') + err.message, 'error'); }
@@ -357,7 +362,7 @@ async function saveGlobalProfile(event) {
       fiscalizationMode: fieldFiscalizationMode.value, fiscalProvider: fieldFiscalProvider.value,
     });
     showToast(t('settings.toast.localeSaved'));
-  } catch (e) { showToast(t('settings.toast.saveFailedShort') + e.message, 'error'); }
+  } catch (e) { showToast(t('settings.toast.saveFailedShort') + ts(e.message), 'error'); }
   finally { btn.disabled = false; }
 }
 
@@ -450,9 +455,9 @@ async function renderOffersImageCard() {
   holder.innerHTML = `
     <div class="category-image-card" data-offers="1">
       <img src="${escapeHtml(imagePath || PLACEHOLDER_IMG)}" alt="" class="thumb" />
-      <div class="category-image-name">العروض</div>
-      <button type="button" class="btn btn-secondary btn-sm" id="pickOffersImageBtn">${imagePath ? 'تغيير الصورة' : 'اختر صورة'}</button>
-      ${imagePath ? `<button type="button" class="btn btn-danger btn-sm" id="removeOffersImageBtn">مسح الصورة</button>` : ''}
+      <div class="category-image-name">${t('settings.categoryImages.offersTabName')}</div>
+      <button type="button" class="btn btn-secondary btn-sm" id="pickOffersImageBtn">${imagePath ? t('settings.categoryImages.changeImage') : t('settings.categoryImages.chooseImage')}</button>
+      ${imagePath ? `<button type="button" class="btn btn-danger btn-sm" id="removeOffersImageBtn">${t('settings.categoryImages.removeImage')}</button>` : ''}
     </div>
   `;
   document.getElementById('pickOffersImageBtn')?.addEventListener('click', async () => {
@@ -461,15 +466,15 @@ async function renderOffersImageCard() {
     try {
       await window.api.pos.offersCategoryImage({ save: result.url });
       renderOffersImageCard();
-    } catch (err) { showToast('تعذّر حفظ صورة تبويب العروض: ' + err.message, 'error'); }
+    } catch (err) { showToast(t('settings.categoryImages.saveOffersImageFailed') + err.message, 'error'); }
   });
   document.getElementById('removeOffersImageBtn')?.addEventListener('click', async () => {
-    if (!window.confirm('هل تريد مسح صورة تبويب العروض؟ سيبقى التبويب ظاهراً بأيقونة افتراضية بدل الصورة.')) return;
+    if (!(await confirmDialog(t('settings.categoryImages.confirmRemoveOffersImage'), { tone: 'danger', confirmLabel: t('common.delete', 'حذف') }))) return;
     try {
       await window.api.pos.offersCategoryImage({ save: null });
-      showToast('تم مسح صورة تبويب العروض.');
+      showToast(t('settings.categoryImages.offersImageRemoved'));
       renderOffersImageCard();
-    } catch (err) { showToast('تعذّر مسح الصورة: ' + err.message, 'error'); }
+    } catch (err) { showToast(t('settings.categoryImages.removeImageFailed') + err.message, 'error'); }
   });
 }
 
@@ -479,16 +484,16 @@ async function renderCategoryImagesPanel() {
   list.innerHTML = categories.map((c, idx) => `
     <div class="category-image-card ${c.pos_hidden ? 'is-hidden-cat' : ''}" data-id="${c.id}">
       <img src="${escapeHtml(c.image_path || PLACEHOLDER_IMG)}" alt="" class="thumb" />
-      <div class="category-image-name">${escapeHtml(c.name)}${c.pos_hidden ? ` <span class="hidden-cat-badge">مخفية</span>` : ''}</div>
+      <div class="category-image-name">${escapeHtml(c.name)}${c.pos_hidden ? ` <span class="hidden-cat-badge">${t('settings.categoryImages.hiddenBadge')}</span>` : ''}</div>
       <div class="category-order-row">
         <button type="button" class="btn btn-secondary btn-sm" data-move="up" data-id="${c.id}" ${idx === 0 ? 'disabled' : ''}>▲</button>
         <button type="button" class="btn btn-secondary btn-sm" data-move="down" data-id="${c.id}" ${idx === categories.length - 1 ? 'disabled' : ''}>▼</button>
       </div>
-      <button type="button" class="btn btn-secondary btn-sm" data-pick-cat="${c.id}">${c.image_path ? 'تغيير الصورة' : 'اختر صورة'}</button>
-      ${c.image_path ? `<button type="button" class="btn btn-danger btn-sm" data-remove-cat="${c.id}">مسح الصورة</button>` : ''}
-      <button type="button" class="btn ${c.pos_hidden ? 'btn-primary' : 'btn-secondary'} btn-sm" data-toggle-hidden="${c.id}" data-hidden="${c.pos_hidden ? '1' : '0'}">${c.pos_hidden ? 'إظهار في الكاشير' : 'إخفاء من الكاشير'}</button>
+      <button type="button" class="btn btn-secondary btn-sm" data-pick-cat="${c.id}">${c.image_path ? t('settings.categoryImages.changeImage') : t('settings.categoryImages.chooseImage')}</button>
+      ${c.image_path ? `<button type="button" class="btn btn-danger btn-sm" data-remove-cat="${c.id}">${t('settings.categoryImages.removeImage')}</button>` : ''}
+      <button type="button" class="btn ${c.pos_hidden ? 'btn-primary' : 'btn-secondary'} btn-sm" data-toggle-hidden="${c.id}" data-hidden="${c.pos_hidden ? '1' : '0'}">${c.pos_hidden ? t('settings.categoryImages.showInPos') : t('settings.categoryImages.hideFromPos')}</button>
     </div>
-  `).join('') || '<div class="field-hint">لا توجد فئات بعد — تُنشأ تلقائياً عند إضافة منتج بفئة جديدة من صفحة المنتجات.</div>';
+  `).join('') || `<div class="field-hint">${t('settings.categoryImages.noCategoriesYet')}</div>`;
 
   list.querySelectorAll('[data-toggle-hidden]').forEach((btn) => {
     btn.addEventListener('click', async () => {
@@ -496,9 +501,9 @@ async function renderCategoryImagesPanel() {
       const nextHidden = btn.dataset.hidden !== '1';
       try {
         await window.api.categories.setPosHidden(categoryId, nextHidden);
-        showToast(nextHidden ? 'تم إخفاء الفئة من شاشة الكاشير.' : 'أصبحت الفئة ظاهرة في شاشة الكاشير.');
+        showToast(nextHidden ? t('settings.categoryImages.categoryHidden') : t('settings.categoryImages.categoryShown'));
         renderCategoryImagesPanel();
-      } catch (err) { showToast('تعذّر تغيير حالة الفئة: ' + err.message, 'error'); }
+      } catch (err) { showToast(t('settings.categoryImages.toggleHiddenFailed') + err.message, 'error'); }
     });
   });
 
@@ -510,7 +515,7 @@ async function renderCategoryImagesPanel() {
       try {
         await window.api.categories.setImage(categoryId, result.url);
         renderCategoryImagesPanel();
-      } catch (err) { showToast('تعذّر حفظ صورة الفئة: ' + err.message, 'error'); }
+      } catch (err) { showToast(t('settings.categoryImages.saveCategoryImageFailed') + err.message, 'error'); }
     });
   });
   list.querySelectorAll('[data-remove-cat]').forEach((btn) => {
@@ -518,12 +523,12 @@ async function renderCategoryImagesPanel() {
       const categoryId = parseInt(btn.dataset.removeCat, 10);
       const card = btn.closest('.category-image-card');
       const categoryName = card?.querySelector('.category-image-name')?.textContent || '';
-      if (!window.confirm(`هل تريد مسح صورة قسم «${categoryName}»؟ سيبقى القسم ظاهراً في الكاشير بدون صورة.`)) return;
+      if (!(await confirmDialog(tf('settings.categoryImages.confirmRemoveCategoryImage', { name: categoryName }), { tone: 'danger', confirmLabel: t('common.delete', 'حذف') }))) return;
       try {
         await window.api.categories.setImage(categoryId, null);
-        showToast('تم مسح صورة الفئة. سيظهر القسم في الكاشير بدون صورة.');
+        showToast(t('settings.categoryImages.categoryImageRemoved'));
         renderCategoryImagesPanel();
-      } catch (err) { showToast('تعذّر مسح صورة الفئة: ' + err.message, 'error'); }
+      } catch (err) { showToast(t('settings.categoryImages.removeCategoryImageFailed') + err.message, 'error'); }
     });
   });
   list.querySelectorAll('[data-move]').forEach((btn) => {
@@ -762,7 +767,7 @@ function renderDiscoveredDevices(devices) {
 async function setLanRole(role) {
   if (role === 'terminal') {
     const current = await window.api.lan.getStatus();
-    if (current.role !== 'terminal' && !confirm(t('lan.pairConfirm','سيتحوّل هذا الجهاز إلى طرفية تابعة لمحل آخر، وتُستبدل هويته الحالية عند الاقتران. تأكيد؟'))) return;
+    if (current.role !== 'terminal' && !(await confirmDialog(t('lan.pairConfirm','سيتحوّل هذا الجهاز إلى طرفية تابعة لمحل آخر، وتُستبدل هويته الحالية عند الاقتران. تأكيد؟'), { tone: 'warning' }))) return;
   }
   try {
     await window.api.lan.setRole(role, fieldLanDeviceName.value.trim());
@@ -800,7 +805,7 @@ async function connectToDevice(device) {
 }
 
 async function disconnectLan() {
-  if (!confirm(t('lan.disconnectConfirm','فصل هذا الجهاز عن مشاركة المحل؟ سيصبح يعمل ببياناته المحلية فقط من الآن.'))) return;
+  if (!(await confirmDialog(t('lan.disconnectConfirm','فصل هذا الجهاز عن مشاركة المحل؟ سيصبح يعمل ببياناته المحلية فقط من الآن.'), { tone: 'warning' }))) return;
   try {
     await window.api.lan.disconnect();
     await loadLanStatus();

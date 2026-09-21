@@ -1,4 +1,6 @@
 async function init() {
+  const printParams = new URLSearchParams(window.location.search);
+  document.body.dataset.paperWidth = ['58','80'].includes(printParams.get('paperWidth')) ? printParams.get('paperWidth') : '80';
   let lang = 'ar';
   try {
     if (window.api && window.api.language) lang = (await window.api.language.get()) || 'ar';
@@ -23,7 +25,13 @@ async function init() {
   }
 
   const [branding, currency] = await Promise.all([window.api.branding.get(), window.api.currency.get()]);
-  renderReceipt(sale, branding, currency);
+  let minorUnit = 2;
+  try {
+    const profile = await window.api.global.get();
+    const mu = Number(profile && profile.currency_minor_unit);
+    if (Number.isInteger(mu) && mu >= 0 && mu <= 3) minorUnit = mu;
+  } catch (err) { /* نستمر بخانتين إن تعذّرت القراءة */ }
+  renderReceipt(sale, branding, { ...currency, minorUnit });
   // بعض المحلات تفضّل فاتورة أقصر بلا رمز QR — قابل للتفعيل/الإلغاء من الإعدادات.
   let barcodeEnabled = true;
   try { barcodeEnabled = (await window.api.receipt.barcodeEnabled()).enabled !== false; }
@@ -38,6 +46,15 @@ async function init() {
 }
 
 function renderReceipt(sale, branding, currency = {}) {
+  // المبالغ تُعرض بخانات عملة المنشأة (0/2/3) وليس 2 ثابتة.
+  const minorUnit = Number.isInteger(currency.minorUnit) && currency.minorUnit >= 0 && currency.minorUnit <= 3 ? currency.minorUnit : 2;
+  const fmt = (v) => Number(v || 0).toFixed(minorUnit);
+  // الشمول يُقرأ من بنود الفاتورة المحفوظة (تاريخي) وليس من إعداد الضريبة الحالي.
+  const taxedItems = (sale.items || []).filter((i) => Number(i.tax_rate || 0) > 0);
+  const inclusiveTaxed = taxedItems.filter((i) => Number(i.tax_inclusive) === 1).length;
+  const taxModeNote = taxedItems.length && inclusiveTaxed === taxedItems.length
+    ? t('receipt.pricesIncludeTax')
+    : (inclusiveTaxed > 0 ? t('receipt.someItemsIncludeTax') : '');
   const PAYMENT_LABELS = { cash: t('receipt.cash'), card: t('receipt.card'), mixed: t('common.mixed') };
   const DISCOUNT_TYPE_LABELS = { percent: t('pos.percent'), fixed: t('pos.fixedAmount') };
 
@@ -50,12 +67,31 @@ function renderReceipt(sale, branding, currency = {}) {
       <div class="receipt-item">
         <div class="receipt-item-name">${escapeHtml(i.product_name)}</div>
         <div class="receipt-item-row">
-          <span>${i.quantity} × ${i.unit_price.toFixed(2)}</span>
-          <span>${i.line_total.toFixed(2)}</span>
+          <span>${i.quantity} × ${fmt(i.unit_price)}</span>
+          <span>${fmt(i.line_total)}</span>
         </div>
         ${i.notes ? `<div class="receipt-item-note">${escapeHtml(i.notes)}</div>` : ''}
       </div>`
     )
+    .join('');
+
+  // العروض (Bundles) المطبَّقة: إطار واضح بكلمة "عرض" ومكوّنات كل عرض، ثم سطر خصم العروض في الإجمالي.
+  const offersHtml = (Array.isArray(sale.bundles) ? sale.bundles : [])
+    .filter((b) => b && Array.isArray(b.items) && b.items.length)
+    .map((b) => {
+      const apps = Number(b.applications || 1);
+      const rows = b.items.map((oi) => `<div class="receipt-offer-item">${Number(oi.quantity || 0)} × ${escapeHtml(oi.product_name)}</div>`).join('');
+      // سعر العرض الفعلي = مجموع أسعار مكوّناته بأسعار الفاتورة − خصم العرض (يوضّح للزبون ما دفعه ومقدار التوفير).
+      const grossOffer = b.items.reduce((sum, oi) => {
+        const line = (sale.items || []).find((it) => (oi.product_id != null && Number(it.product_id) === Number(oi.product_id)) || String(it.product_name) === String(oi.product_name));
+        return sum + (line ? Number(line.unit_price || 0) * Number(oi.quantity || 0) : 0);
+      }, 0);
+      const saved = Number(b.discount || 0);
+      const priceLine = grossOffer > 0 && saved > 0
+        ? `<div class="receipt-offer-price"><span>${t('receipt.offerPrice')}</span><span>${fmt(Math.max(0, grossOffer - saved))}</span></div><div class="receipt-offer-saved"><span>${t('receipt.offerSaved')}</span><span>${fmt(saved)}</span></div>`
+        : '';
+      return `<div class="receipt-offer"><div class="receipt-offer-title">*** ${t('receipt.offer')} *** ${escapeHtml(b.name)}${apps > 1 ? ` ×${apps}` : ''}</div>${rows}${priceLine}</div>`;
+    })
     .join('');
 
   let paymentHtml = `<div class="receipt-row"><span>${t('receipt.paymentMethod')}</span><span>${
@@ -65,12 +101,12 @@ function renderReceipt(sale, branding, currency = {}) {
   if (sale.payment_method === 'cash') {
     const received = sale.cash_amount + sale.change_due;
     paymentHtml += `
-      <div class="receipt-row"><span>${t('receipt.cashReceived')}</span><span>${received.toFixed(2)}</span></div>
-      <div class="receipt-row"><span>${t('receipt.changeDue')}</span><span>${sale.change_due.toFixed(2)}</span></div>`;
+      <div class="receipt-row"><span>${t('receipt.cashReceived')}</span><span>${fmt(received)}</span></div>
+      <div class="receipt-row"><span>${t('receipt.changeDue')}</span><span>${fmt(sale.change_due)}</span></div>`;
   } else if (sale.payment_method === 'mixed') {
     paymentHtml += `
-      <div class="receipt-row"><span>${t('receipt.cash')}</span><span>${sale.cash_amount.toFixed(2)}</span></div>
-      <div class="receipt-row"><span>${t('receipt.card')}</span><span>${sale.card_amount.toFixed(2)}</span></div>`;
+      <div class="receipt-row"><span>${t('receipt.cash')}</span><span>${fmt(sale.cash_amount)}</span></div>
+      <div class="receipt-row"><span>${t('receipt.card')}</span><span>${fmt(sale.card_amount)}</span></div>`;
   }
 
   receiptEl.innerHTML = `
@@ -88,25 +124,28 @@ function renderReceipt(sale, branding, currency = {}) {
     <div class="receipt-divider"></div>
     ${sale.notes ? `<div class="receipt-order-note">${escapeHtml(sale.notes)}</div><div class="receipt-divider"></div>` : ''}
     <div class="receipt-items">${itemsHtml}</div>
+    ${offersHtml}
 
     <div class="receipt-divider"></div>
 
-    <div class="receipt-row"><span>${t('common.subtotal')}</span><span>${sale.subtotal.toFixed(2)}</span></div>
-    <div class="receipt-row"><span>${t('common.tax')}</span><span>${sale.tax_total.toFixed(2)}</span></div>
+    <div class="receipt-row"><span>${t('common.subtotal')}</span><span>${fmt(sale.subtotal)}</span></div>
+    <div class="receipt-row"><span>${t('common.tax')}</span><span>${fmt(sale.tax_total)}</span></div>
+    ${taxModeNote && Number(sale.tax_total) > 0 ? `<div class="receipt-item-note">${escapeHtml(taxModeNote)}</div>` : ''}
     ${
       sale.discount_total
-        ? `<div class="receipt-row"><span>${t('receipt.discount')}${sale.discount_type ? ` (${DISCOUNT_TYPE_LABELS[sale.discount_type] || escapeHtml(sale.discount_type || '')})` : ''}</span><span>-${sale.discount_total.toFixed(2)}</span></div>`
+        ? `<div class="receipt-row"><span>${t('receipt.discount')}${sale.discount_type ? ` (${DISCOUNT_TYPE_LABELS[sale.discount_type] || escapeHtml(sale.discount_type || '')})` : ''}</span><span>-${fmt(sale.discount_total)}</span></div>`
         : ''
     }
-    ${sale.order_type === 'delivery' && sale.delivery_fee ? `<div class="receipt-row"><span>${t('receipt.deliveryFee')}</span><span>${sale.delivery_fee.toFixed(2)}</span></div>` : ''}
+    ${Number(sale.bundle_discount_total || 0) > 0 ? `<div class="receipt-row"><span>${t('receipt.bundleDiscount')}</span><span>-${fmt(sale.bundle_discount_total)}</span></div>` : ''}
+    ${sale.order_type === 'delivery' && sale.delivery_fee ? `<div class="receipt-row"><span>${t('receipt.deliveryFee')}</span><span>${fmt(sale.delivery_fee)}</span></div>` : ''}
     ${
       sale.loyalty_points_redeemed
-        ? `<div class="receipt-row"><span>${t('receipt.loyaltyRedeemed')} (${sale.loyalty_points_redeemed} ${t('common.points')})</span><span>-${(sale.loyalty_redeemed_value || 0).toFixed(2)}</span></div>`
+        ? `<div class="receipt-row"><span>${t('receipt.loyaltyRedeemed')} (${sale.loyalty_points_redeemed} ${t('common.points')})</span><span>-${fmt(sale.loyalty_redeemed_value || 0)}</span></div>`
         : ''
     }
-    <div class="receipt-row receipt-total"><span>${t('receipt.total')}</span><span>${sale.grand_total.toFixed(2)} ${escapeHtml(currency.base || '')}</span></div>
+    <div class="receipt-row receipt-total"><span>${t('receipt.total')}</span><span>${fmt(sale.grand_total)} ${escapeHtml(currency.base || '')}</span></div>
     ${currency.showSecondaryOnReceipt && currency.secondary && currency.secondary !== currency.base ? `<div class="receipt-row"><span>${t('receipt.secondaryCurrency')}</span><span>${(sale.grand_total * (sale.exchange_rate || currency.rate || 1)).toFixed(2)} ${escapeHtml(currency.secondary)}</span></div>` : ''}
-    ${sale.due_amount ? `<div class="receipt-row"><span>${t('receipt.dueAmount')}</span><span>${sale.due_amount.toFixed(2)}</span></div>` : ''}
+    ${sale.due_amount ? `<div class="receipt-row"><span>${t('receipt.dueAmount')}</span><span>${fmt(sale.due_amount)}</span></div>` : ''}
 
     <div class="receipt-divider"></div>
     ${paymentHtml}

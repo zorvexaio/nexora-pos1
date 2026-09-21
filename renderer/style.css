@@ -181,8 +181,8 @@ label { display: block; font-size: 12.5px; font-weight: 700; color: var(--text-s
 .topbar {
   display: flex; align-items: center; flex-wrap: wrap; gap: 10px 22px; padding: 12px 24px;
   background: linear-gradient(180deg, var(--surface), var(--surface-soft));
-    border-bottom: 3px solid var(--brand-gold);
-  box-shadow: var(--shadow-sm);
+  border-bottom: 1px solid var(--line);
+  box-shadow: 0 1px 0 var(--brand-gold), var(--shadow-sm);
   -webkit-app-region: drag; position: relative; z-index: 20;
 }
 .topbar * { -webkit-app-region: no-drag; }
@@ -613,6 +613,12 @@ table.products-table, table.audit-table {
 .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
 .modal-actions .btn { padding: 11px 20px; font-weight: 700; }
 
+.confirm-dialog-icon { width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; margin-bottom: 14px; }
+.confirm-dialog-icon.tone-danger { background: var(--danger-light); color: var(--danger); }
+.confirm-dialog-icon.tone-warning { background: var(--warning-light); color: var(--warning); }
+.confirm-dialog-title { margin: 0 0 8px; }
+.confirm-dialog-message { white-space: pre-line; color: var(--text); line-height: 1.65; font-size: 14.5px; }
+
 .variant-list { display: flex; flex-direction: column; gap: 8px; margin: 12px 0; }
 .variant-option {
   display: flex; justify-content: space-between; align-items: center; padding: 13px 15px; border: 1.5px solid var(--line-strong);
@@ -799,36 +805,36 @@ table.products-table, table.audit-table {
    size: 80mm auto تخلي المتصفح يحسب طول الصفحة تلقائياً بطول المحتوى فعلياً،
    فتُقطع الورقة مباشرة بعد آخر سطر بدون أي هدر. العرض 80mm هو الأشيع لطابعات
    الفواتير الحرارية؛ لو الطابعة 58mm ينفع تغييره هون لاحقاً لنفس القيمة الفعلية. */
-@page { size: 80mm auto; margin: 0; }
+@page { size: auto; margin: 0; }
 .receipt-body {
   background: #e5e7eb; overflow-y: auto; height: auto; min-height: 100vh;
   display: flex; flex-direction: column; align-items: center; padding: 20px;
 }
 .receipt-actions { display: flex; gap: 10px; margin-bottom: 16px; }
-.receipt { width: 320px; background: #fff; border-radius: 10px; padding: 20px; font-size: 13px; color: #111827; box-shadow: 0 1px 4px rgba(0, 0, 0, .1); }
+.receipt { width: 320px; background: #fff; border-radius: 10px; padding: 20px; font-size: 15px; color: #111827; box-shadow: 0 1px 4px rgba(0, 0, 0, .1); }
 .receipt-header { text-align: center; margin-bottom: 10px; }
 .receipt-logo { max-width: 90px; max-height: 90px; width: auto; height: auto; object-fit: contain; display: block; margin: 0 auto 8px; }
-.receipt-brand { font-size: 17px; font-weight: 800; margin-bottom: 4px; line-height: 1.3; word-break: break-word; }
-.receipt-meta { font-size: 12px; color: #6b7280; }
+.receipt-brand { font-size: 19px; font-weight: 800; margin-bottom: 4px; line-height: 1.3; word-break: break-word; }
+.receipt-meta { font-size: 14px; color: #6b7280; }
 /* اسم العميل بارز وأكبر وضوحاً من بيانات الفاتورة العادية - عشان عامل التوصيل
    أو أي حد يمسك الفاتورة يقدر يقرأ لمين الطلب بنظرة سريعة من غير ما يدوّر. */
-.receipt-customer-name { font-size: 18px; font-weight: 800; color: #111827; margin: 4px 0; word-break: break-word; }
+.receipt-customer-name { font-size: 20px; font-weight: 800; color: #111827; margin: 4px 0; word-break: break-word; }
 .receipt-divider { border-top: 1px dashed #d1d5db; margin: 10px 0; }
 .receipt-items { display: flex; flex-direction: column; gap: 8px; }
 .receipt-item-name { font-weight: 600; }
-.receipt-item-row { display: flex; justify-content: space-between; color: #4b5563; font-size: 12.5px; }
-.receipt-item-note { color: #4b5563; font-size: 12px; font-style: italic; }
+.receipt-item-row { display: flex; justify-content: space-between; color: #4b5563; font-size: 14px; }
+.receipt-item-note { color: #4b5563; font-size: 14px; font-style: italic; }
 /* ملاحظة الطلب العامة على الفاتورة — أبرز من ملاحظة الصنف لأنها تخص الطلب كله. */
-.receipt-order-note { margin: 8px 0; padding: 7px 9px; background: var(--warning-light); border: 1.5px solid var(--warning-border); border-radius: 6px; color: var(--warning); font-weight: 700; font-size: 12.5px; line-height: 1.5; }
+.receipt-order-note { margin: 8px 0; padding: 7px 9px; background: var(--warning-light); border: 1.5px solid var(--warning-border); border-radius: 6px; color: var(--warning); font-weight: 700; font-size: 14.5px; line-height: 1.5; }
 .receipt-row { display: flex; justify-content: space-between; padding: 3px 0; }
-.receipt-total { font-size: 16px; font-weight: 800; border-top: 1px solid #e5e7eb; margin-top: 6px; padding-top: 8px; }
+.receipt-total { font-size: 18px; font-weight: 800; border-top: 1px solid #e5e7eb; margin-top: 6px; padding-top: 8px; }
 /* رمز QR أسفل الفاتورة — كان بدون أي تنسيق فيلتصق بالحافة بلا توسيط ولا مسافات. */
 .receipt-qr { display: block; width: 110px; height: 110px; margin: 14px auto 4px; }
 /* نص أسفل الفاتورة ("شكراً لزيارتكم" ورسالة التذييل المخصّصة): كان رمادي فاتح
    وخط عادي رفيع، وهذا يظهر باهتاً جداً أو شبه غير مقروء على أغلب طابعات الفواتير
    الحرارية (رأس الطباعة الحراري ما بيطلّع الرمادي الفاتح والخطوط الرفيعة بوضوح).
    خط أثقل وأكبر شوي يضمن ظهوره واضحاً على كل الطابعات تقريباً، مش بس طابعة معيّنة. */
-.receipt-footer { text-align: center; margin-top: 16px; color: #4b5563; font-size: 13px; font-weight: 700; }
+.receipt-footer { text-align: center; margin-top: 16px; color: #4b5563; font-size: 15px; font-weight: 700; }
 .kitchen-ticket { font-size: 15.5px; }
 .kitchen-item-name { font-weight: 700; }
 /* ملاحظة الصنف (⚠) كانت نص عادي بلا تمييز فبتضيع بسهولة أثناء الشغل في المطبخ —
@@ -837,6 +843,11 @@ table.products-table, table.audit-table {
 /* ملاحظة الطلب العامة (وليست ملاحظة صنف) — أكبر وأوضح من ملاحظة الصنف لأنها تخص
    الطلب كله وغالباً تعليمات حرجة (حساسية، طلب خاص) لازم تُقرأ أول حاجة. */
 .kitchen-order-note { margin: 8px 0; padding: 8px 10px; background: var(--warning-light); border: 2px solid var(--warning-border); border-radius: 6px; color: var(--warning); font-weight: 800; font-size: 15px; line-height: 1.5; }
+/* العروض (Bundles) على تذكرة المطبخ والفاتورة: إطار أسود سميك وعنوان بكلمة "عرض" يظهر على الطابعات الحرارية
+   (نستخدم نجوماً نصية بدل الرموز التعبيرية لأن بعض الطابعات لا تطبعها). */
+.kitchen-offer, .receipt-offer { margin: 6px 0; padding: 4px 6px; border: 2px solid #000; border-radius: 4px; }
+.kitchen-offer-title, .receipt-offer-title { text-align: center; font-weight: 800; padding-bottom: 3px; margin-bottom: 4px; border-bottom: 1.5px dashed #000; }
+.receipt-offer-item { font-weight: 700; }
 .kitchen-delivery-time { margin: 6px 0; padding: 5px 10px; background: var(--info-light); border: 1px solid var(--info-border); border-radius: 6px; color: var(--info); font-weight: 700; font-size: 13.5px; }
 
 /* تصحيح طريقة الدفع (مودال تفاصيل الفاتورة بالتقارير) — ميزة حساسة، لذا بتصميم
@@ -1078,3 +1089,32 @@ table.sticky-head thead th{position:sticky;top:0;background:var(--surface-soft);
 .invoice-modal-totals{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:14px}
 .invoice-modal-totals > div{display:flex;justify-content:space-between;padding:9px 12px;background:var(--surface-soft);border:1px solid var(--line);border-radius:var(--radius-sm);font-size:13px}
 .invoice-modal-totals > div.strong{grid-column:1 / -1;background:var(--primary-light);border-color:var(--primary-border);font-weight:900;font-size:15px}
+
+@media print { .kitchen-ticket { padding-bottom: 0 !important; margin-bottom: 0 !important; } .kitchen-ticket .receipt-divider { margin: 5px 0 !important; } .kitchen-ticket .kitchen-items { gap: 3px !important; } }
+
+.returns-sale-list{display:flex;flex-direction:column;gap:7px;margin-top:12px}.returns-sale-row{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:10px 12px;background:#fff;border:1px solid var(--line);border-radius:10px}.returns-sale-row small{display:block;color:#7b8493;margin-top:3px}.returns-sale-row>div:last-child{display:flex;align-items:center;gap:7px}.modify-grid{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(320px,.8fr);gap:18px}.modify-product-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(145px,1fr));gap:8px;margin-top:10px;max-height:520px;overflow:auto}.modify-product-card,.modify-bundle{border:1px solid var(--line);background:#fff;border-radius:10px;padding:11px;text-align:right;cursor:pointer}.modify-product-card strong,.modify-product-card span{display:block}.modify-product-card span{color:#6b7280;margin-top:4px}.modify-bundles{display:flex;gap:7px;flex-wrap:wrap;margin-top:9px}.modify-cart{display:flex;flex-direction:column;gap:7px;max-height:520px;overflow:auto}.modify-cart-row{display:grid;grid-template-columns:1fr 80px 38px;gap:7px;align-items:center;border:1px solid var(--line);border-radius:9px;padding:8px}.modify-cart-row small{display:block;color:#7b8493}.modify-cart-row input{height:36px;width:80px}.modify-totals{font-size:18px;font-weight:900;margin:12px 0;padding:10px;border-top:1px solid var(--line)}.modify-actions{margin-top:12px}@media(max-width:900px){.modify-grid{grid-template-columns:1fr}.returns-sale-row{align-items:flex-start;flex-direction:column}.returns-sale-row>div:last-child{width:100%}}
+
+.modify-category-tabs{display:flex;gap:7px;overflow:auto;padding:4px 0 8px;margin-top:8px}.modify-category-tab{flex:0 0 auto;border:1px solid var(--line);background:#fff;border-radius:9px;padding:8px 12px;cursor:pointer;font:inherit;font-weight:800}.modify-category-tab.active{background:var(--primary);color:#fff;border-color:var(--primary)}.modify-discount-box{margin-top:12px;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--surface-soft)}.modify-discount-fields{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:6px}.modify-discount-fields select,.modify-discount-fields input{height:38px;border:1px solid var(--line);border-radius:8px;padding:0 10px;background:#fff}.kitchen-ticket .receipt-divider:last-child{display:none}@page{margin:0}
+
+@media screen{.receipt-body[data-paper-width='58'] .receipt,.receipt-body[data-paper-width='58'] #receipt,.receipt-body[data-paper-width='58'] .kitchen-ticket{width:236px}.receipt-body[data-paper-width='80'] .receipt,.receipt-body[data-paper-width='80'] #receipt,.receipt-body[data-paper-width='80'] .kitchen-ticket{width:320px}}
+@media print{.receipt-body[data-paper-width='58'] .receipt{width:58mm!important}.receipt-body[data-paper-width='80'] .receipt{width:80mm!important}.receipt-body[data-paper-width='58'] .kitchen-ticket{width:58mm!important}.receipt-body[data-paper-width='80'] .kitchen-ticket{width:80mm!important}.kitchen-ticket{padding-bottom:0!important;margin-bottom:0!important}.kitchen-ticket .receipt-footer{display:none!important}.kitchen-ticket .receipt-divider:last-child{display:none!important}}
+
+/* ===== فاتورة أوضح: خطوط أكبر + إبراز العروض (v0.52.18) ===== */
+.receipt-body .receipt { font-size: 17px; line-height: 1.45; }
+.receipt-body .receipt-brand { font-size: 22px; }
+.receipt-body .receipt-meta { font-size: 15.5px; }
+.receipt-body .receipt-item-name { font-size: 17.5px; font-weight: 800; }
+.receipt-body .receipt-item-row { font-size: 16.5px; font-weight: 600; }
+.receipt-body .receipt-item-note { font-size: 15.5px; }
+.receipt-body .receipt-row { font-size: 16.5px; }
+.receipt-body .receipt-total { font-size: 23px; }
+.receipt-body .receipt-footer { font-size: 17px; }
+.receipt-body[data-paper-width='58'] .receipt { font-size: 15px; }
+.receipt-body[data-paper-width='58'] .receipt-item-name { font-size: 15.5px; }
+.receipt-body[data-paper-width='58'] .receipt-item-row, .receipt-body[data-paper-width='58'] .receipt-row { font-size: 14.5px; }
+.receipt-body[data-paper-width='58'] .receipt-total { font-size: 19px; }
+.receipt-body .receipt-offer { margin: 10px 0; padding: 6px 8px; border: 3px double #000; border-radius: 4px; }
+.receipt-body .receipt-offer-title { font-size: 18.5px; font-weight: 900; text-align: center; padding-bottom: 4px; margin-bottom: 5px; border-bottom: 2px dashed #000; }
+.receipt-body .receipt-offer-item { font-size: 16.5px; font-weight: 700; }
+.receipt-body .receipt-offer-price, .receipt-body .receipt-offer-saved { display: flex; justify-content: space-between; font-size: 17px; font-weight: 800; margin-top: 4px; padding-top: 3px; border-top: 1px solid #000; }
+.receipt-body .receipt-offer-saved { border-top: 0; margin-top: 0; padding-top: 0; font-weight: 700; }

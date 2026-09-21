@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-19T06:48:20.371Z",
+  "generatedAt": "2026-09-21T17:35:59.833Z",
   "version": "0.52.17",
   "mode": "source",
   "checks": [
@@ -18,7 +18,7 @@
     {
       "id": "migration-chain",
       "status": "PASS",
-      "detail": "schema journal is v2..v15 and schema.sql contains Payroll V2",
+      "detail": "Migration chain regression: PASS (v2..v23, 22 immutable migrations)",
       "blocking": true
     },
     {

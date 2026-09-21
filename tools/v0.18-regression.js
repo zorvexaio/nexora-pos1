@@ -3,7 +3,7 @@ const dbSource = fs.readFileSync('database/db.js','utf8');
 const pkg = JSON.parse(fs.readFileSync('package.json','utf8'));
 const schema = fs.readFileSync('database/schema.sql','utf8');
 const assertions = [
-  ['cash payment accepts tender above total and validates exact change', /paymentMethod === 'cash'[\s\S]*?cash \+ 0\.01 < t[\s\S]*?expectedChange[\s\S]*?Math\.abs\(change - expectedChange\)/],
+  ['cash payment accepts tender above total and validates exact change', /function validatePaymentAmountsMinor[\s\S]*?paymentMethod === 'cash'[\s\S]*?if \(cash < total\)[\s\S]*?if \(cash - total !== change\)/],
   ['purchase receipt writes branch weighted unit_cost into inventory', /INSERT INTO inventory \(branch_id, product_id, quantity, unit_cost, min_quantity/],
   ['purchase receipt updates unit_cost on existing inventory row', /unit_cost=excluded\.unit_cost/],
   ['purchase validates product activity before creating purchase order', /productCheck = db\.prepare\('SELECT id, is_active FROM products WHERE id=\?'/],

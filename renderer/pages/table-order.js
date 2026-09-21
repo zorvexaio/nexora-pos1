@@ -6,6 +6,20 @@ let cart = []; // { lineId, productId, name, price, taxRate, quantity, notes }
 let nextLineId = 1;
 let currentSaleId = null;
 let loggedInUser = null;
+// إعدادات الضريبة/العملة للمنشأة: نفس ما يستخدمه الكاشير (pos.js) حتى تتطابق المعاينة مع الباك-إند.
+let orgTaxMode = 'exclusive';
+let orgMinorUnit = 2;
+// ضريبة الصنف كما يحسبها الباك-إند: ملف الضريبة إن وُجد، وإلا نسبة المنتج + وضع المنشأة.
+function productTaxInfo(p) {
+  const hasProfile = p && p.tax_profile_rate != null;
+  return {
+    taxRate: hasProfile ? Number(p.tax_profile_rate) : Number((p && p.tax_rate) || 0),
+    taxInclusive: hasProfile ? Number(p.tax_profile_inclusive) === 1 : orgTaxMode === 'inclusive',
+  };
+}
+function cartLineFromSaleItem(i) {
+  return { productId: i.product_id, name: i.product_name, price: i.unit_price, taxRate: Number(i.tax_rate || 0), taxInclusive: Number(i.tax_inclusive) === 1, quantity: i.quantity, saleItemId: i.id, saleItemUuid: i.uuid || null, notes: i.notes || '' };
+}
 
 const productsGrid = document.getElementById('productsGrid');
 const searchInput = document.getElementById('searchInput');
@@ -27,7 +41,7 @@ async function goBackToTables() {
   try {
     if (currentSaleId) await saveOrder(false);
   } catch (err) {
-    const leaveAnyway = confirm(t('tableOrder.backSaveFailed', 'تعذر حفظ الطلب قبل الرجوع. هل تريد المتابعة؟'));
+    const leaveAnyway = await confirmDialog(t('tableOrder.backSaveFailed', 'تعذر حفظ الطلب قبل الرجوع. هل تريد المتابعة؟'), { tone: 'warning' });
     if (!leaveAnyway) return;
   }
   window.location.href = 'tables.html';
@@ -38,7 +52,7 @@ async function init() {
   if (!loggedInUser) return;
 
   if (!tableId) {
-    alert(t('tableOrder.invalidTable'));
+    await infoDialog(t('tableOrder.invalidTable'));
     window.location.href = 'tables.html';
     return;
   }
@@ -52,18 +66,17 @@ async function init() {
   tableNameLabel.textContent = tableName;
   tableTitle.textContent = `${typeof t === 'function' ? t('tableOrder.orderPrefix', 'طلب') : 'طلب'} ${tableName}`;
 
+  try {
+    const gp = await window.api.global.get();
+    orgTaxMode = gp?.tax_mode || 'exclusive';
+    const mu = Number(gp?.currency_minor_unit);
+    orgMinorUnit = Number.isInteger(mu) && mu >= 0 && mu <= 3 ? mu : 2;
+  } catch { orgTaxMode = 'exclusive'; orgMinorUnit = 2; }
+
   await window.api.tables.openSale(tableId); // يفتح طلباً جديداً إن لم يوجد
   const openSale = await window.api.tables.getOpenSale(tableId);
   currentSaleId = openSale.id;
-  cart = openSale.items.map((i) => ({
-    lineId: nextLineId++,
-    productId: i.product_id,
-    name: i.product_name,
-    price: i.unit_price,
-    taxRate: i.tax_rate,
-    quantity: i.quantity, saleItemId: i.id,
-    notes: i.notes || '',
-  }));
+  cart = openSale.items.map((i) => ({ lineId: nextLineId++, ...cartLineFromSaleItem(i) }));
   renderCart();
 
   await loadProducts();
@@ -112,7 +125,7 @@ function renderProducts() {
     const lowStock = p.track_inventory && p.stock <= (p.min_quantity || 0);
     card.innerHTML = `
       <div class="name">${escapeHtml(p.name)}${p.variant_count ? ` <span class="variant-badge">${t('pos.selectBadge')}</span>` : ''}</div>
-      <div class="price">${p.price.toFixed(2)}</div>
+      <div class="price">${p.price.toFixed(orgMinorUnit)}</div>
       ${p.track_inventory ? `<div class="stock ${lowStock ? 'low' : ''}">${t('pos.stockLabel')}${p.stock}</div>` : ''}
     `;
     card.addEventListener('click', () => (p.variant_count > 0 ? openVariantPicker(p) : addToCart(p)));
@@ -146,7 +159,7 @@ async function openVariantPicker(parentProduct) {
     row.className = 'variant-option';
     row.disabled = outOfStock;
     const label = [v.variant_size, v.variant_color].filter(Boolean).join(' / ') || v.name;
-    row.innerHTML = `<span>${escapeHtml(label)}</span><span>${v.price.toFixed(2)}</span>`;
+    row.innerHTML = `<span>${escapeHtml(label)}</span><span>${v.price.toFixed(orgMinorUnit)}</span>`;
     row.addEventListener('click', () => {
       addToCart(v);
       variantModal.classList.add('hidden');
@@ -160,7 +173,7 @@ function addToCart(product) {
   if (existing) {
     existing.quantity += 1;
   } else {
-    cart.push({ lineId: nextLineId++, productId: product.id, name: product.name, price: product.price, taxRate: product.tax_rate || 0, quantity: 1, notes: '' });
+    cart.push({ lineId: nextLineId++, productId: product.id, name: product.name, price: product.price, ...productTaxInfo(product), quantity: 1, notes: '' });
   }
   renderCart();
 }
@@ -201,7 +214,7 @@ saveItemNoteBtn?.addEventListener('click', () => {
   if (item) {
     item.notes = itemNoteInput.value.trim();
     renderCart();
-    saveOrder(false);
+    saveOrder(false).catch((err) => showToast(err?.message || t('tableOrder.saveFailed', 'تعذر حفظ الطلب.'), 'error'));
   }
   closeItemNoteModal();
 });
@@ -219,7 +232,7 @@ function renderCart() {
       <div class="cart-item-main">
         <span>${escapeHtml(item.name)}</span>
       <div class="qty-controls">${loggedInUser.role === 'cashier' ? `<span title="${t('pos.qtyLockedTooltip')}">${item.quantity}</span>` : `<button data-action="minus">−</button><span>${item.quantity}</span><button data-action="plus">+</button>`}</div>
-        <span>${(item.price * item.quantity).toFixed(2)}</span>
+        <span>${(item.price * item.quantity).toFixed(orgMinorUnit)}</span>
         <button type="button" class="note-btn ${item.notes ? 'has-note' : ''}" data-action="note" title="${t('pos.addNoteTooltip')}">📝</button>
       </div>
       ${item.notes ? `<div class="cart-item-note">${escapeHtml(item.notes)}</div>` : ''}
@@ -229,11 +242,10 @@ function renderCart() {
     row.querySelector('[data-action="note"]')?.addEventListener('click', () => openItemNoteModal(item.lineId));
     cartItemsEl.appendChild(row);
   }
-  const subtotal = cart.reduce((s, i) => s + i.price * i.quantity, 0);
-  const tax = cart.reduce((s, i) => s + i.price * i.quantity * (i.taxRate / 100), 0);
-  sumSubtotal.textContent = subtotal.toFixed(2);
-  sumTax.textContent = tax.toFixed(2);
-  sumTotal.textContent = (subtotal + tax).toFixed(2);
+  const { subtotal, tax } = sumCartTax(cart, orgMinorUnit);
+  sumSubtotal.textContent = subtotal.toFixed(orgMinorUnit);
+  sumTax.textContent = tax.toFixed(orgMinorUnit);
+  sumTotal.textContent = (subtotal + tax).toFixed(orgMinorUnit);
   checkoutBtn.disabled = cart.length === 0;
 }
 
@@ -245,6 +257,7 @@ function cartToItems() {
     taxRate: i.taxRate,
     lineTotal: i.price * i.quantity,
     notes: i.notes || null,
+    saleItemUuid: i.saleItemUuid || null,
   }));
 }
 
@@ -253,8 +266,8 @@ function cartToItems() {
 // دون أي رسالة توضّح السبب.
 function warnPrintOutcome(printOutcome) {
   if (!printOutcome) return;
-  if (printOutcome.kitchen && printOutcome.kitchen.success === false) alert(`⚠️ لم تُطبع تذكرة المطبخ: ${printOutcome.kitchen.reason || 'خطأ غير معروف'}`);
-  if (printOutcome.receipt && printOutcome.receipt.success === false) alert(`⚠️ لم تُطبع الفاتورة: ${printOutcome.receipt.reason || 'خطأ غير معروف'}`);
+  if (printOutcome.kitchen && printOutcome.kitchen.success === false) showToast(tf('tableOrder.kitchenPrintFailed', { reason: printOutcome.kitchen.reason || t('common.unknownError') }), 'error');
+  if (printOutcome.receipt && printOutcome.receipt.success === false) showToast(tf('tableOrder.receiptPrintFailed', { reason: printOutcome.receipt.reason || t('common.unknownError') }), 'error');
 }
 
 async function saveOrder(showAlert) {
@@ -262,7 +275,8 @@ async function saveOrder(showAlert) {
   // لا نستدعي الطباعة مرة ثانية من الواجهة حتى لا يصل للمطبخ وصلان لنفس الحفظ.
   const result = await window.api.tables.setItems(currentSaleId, cartToItems());
   warnPrintOutcome(result?.printOutcome);
-  if (showAlert) alert(t('tableOrder.orderSaved'));
+  if (showAlert) showToast(t('tableOrder.orderSaved'), 'success');
+  return result;
 }
 
 // زر "حفظ الطلب": يحفظ ثم يرجع مباشرة لشاشة الطاولات (بدون تنبيه يعطّل التدفق)،
@@ -272,7 +286,7 @@ async function saveOrderAndReturn() {
     await saveOrder(false);
     window.location.href = 'tables.html';
   } catch (err) {
-    alert(err.message || t('tableOrder.saveFailed', 'تعذر حفظ الطلب.'));
+    showToast(err.message || t('tableOrder.saveFailed', 'تعذر حفظ الطلب.'), 'error');
   }
 }
 
@@ -282,11 +296,18 @@ const splitTotal = document.getElementById('splitTotal');
 const splitCashReceived = document.getElementById('splitCashReceived');
 
 async function openSplitBill() {
-  await saveOrder(false);
-  const openSale = await window.api.tables.getOpenSale(tableId);
-  cart = openSale.items.map(i => ({ productId: i.product_id, name: i.product_name, price: i.unit_price, taxRate: i.tax_rate, quantity: i.quantity, saleItemId: i.id }));
+  // نفس قاعدة الدفع: لا نفتح نافذة التقسيم إن فشل حفظ الطلب أو قراءته، ونعرض السبب.
+  let openSale;
+  try {
+    await saveOrder(false);
+    openSale = await window.api.tables.getOpenSale(tableId);
+  } catch (err) {
+    showToast(err?.message || t('tableOrder.saveFailed', 'تعذر حفظ الطلب.'), 'error');
+    return;
+  }
+  cart = openSale.items.map(cartLineFromSaleItem);
   renderCart();
-  splitItems.innerHTML = cart.map(i => `<div class="cart-item"><span>${escapeHtml(i.name)} <small>(${t('tableOrder.availableQty')}${i.quantity})</small></span><input class="split-qty" data-item-id="${i.saleItemId}" data-price="${i.price}" data-tax="${i.taxRate || 0}" type="text" inputmode="numeric" data-max="${i.quantity}" value="0" style="width:75px" /></div>`).join('');
+  splitItems.innerHTML = cart.map(i => `<div class="cart-item"><span>${escapeHtml(i.name)} <small>(${t('tableOrder.availableQty')}${i.quantity})</small></span><input class="split-qty" data-item-id="${i.saleItemId}" data-price="${i.price}" data-tax="${i.taxRate || 0}" data-inclusive="${i.taxInclusive ? 1 : 0}" type="text" inputmode="numeric" data-max="${i.quantity}" value="0" style="width:75px" /></div>`).join('');
   splitItems.querySelectorAll('.split-qty').forEach(el => el.addEventListener('input', updateSplitTotal));
   document.querySelector('input[name="splitPayment"][value="cash"]').checked = true;
   splitCashReceived.value = '';
@@ -294,28 +315,34 @@ async function openSplitBill() {
   splitBillModal.classList.remove('hidden');
 }
 function updateSplitTotal() {
-  let total = 0;
-  splitItems.querySelectorAll('.split-qty').forEach(el => { const q = Math.min(Number(el.dataset.max), Math.max(0, parseLocaleNumber(el.value) || 0)); el.value = q; total += q * Number(el.dataset.price) * (1 + Number(el.dataset.tax) / 100); });
-  splitTotal.textContent = total.toFixed(2);
-  if (!splitCashReceived.value) splitCashReceived.value = total.toFixed(2);
+  const lines = [];
+  splitItems.querySelectorAll('.split-qty').forEach(el => {
+    const q = Math.min(Number(el.dataset.max), Math.max(0, parseLocaleNumber(el.value) || 0));
+    el.value = q;
+    lines.push({ price: Number(el.dataset.price), quantity: q, taxRate: Number(el.dataset.tax) || 0, taxInclusive: el.dataset.inclusive === '1' });
+  });
+  const parts = sumCartTax(lines, orgMinorUnit);
+  const total = parts.subtotal + parts.tax;
+  splitTotal.textContent = total.toFixed(orgMinorUnit);
+  if (!splitCashReceived.value) splitCashReceived.value = total.toFixed(orgMinorUnit);
 }
 document.getElementById('cancelSplitBillBtn').addEventListener('click', () => splitBillModal.classList.add('hidden'));
 document.querySelectorAll('input[name="splitPayment"]').forEach(el => el.addEventListener('change', () => document.getElementById('splitCashFields').classList.toggle('hidden', el.value !== 'cash')));
 document.getElementById('confirmSplitBillBtn').addEventListener('click', async () => {
   const selected = [...splitItems.querySelectorAll('.split-qty')].map(el => ({ saleItemId: Number(el.dataset.itemId), quantity: parseLocaleNumber(el.value) || 0 })).filter(x => x.quantity > 0);
-  const total = Number(splitTotal.textContent); if (!selected.length || !(total > 0)) return alert(t('tableOrder.selectQtyToPay'));
+  const total = Number(splitTotal.textContent); if (!selected.length || !(total > 0)) return showToast(t('tableOrder.selectQtyToPay'), 'error');
   const paymentMethod = document.querySelector('input[name="splitPayment"]:checked').value;
   const received = parseLocaleNumber(splitCashReceived.value) || 0;
-  if (paymentMethod === 'cash' && received < total - 0.001) return alert(t('tableOrder.splitCashInsufficient'));
+  if (paymentMethod === 'cash' && Math.round(received * 10 ** orgMinorUnit) < Math.round(total * 10 ** orgMinorUnit)) return showToast(t('tableOrder.splitCashInsufficient'), 'error');
   try {
     const result = await window.api.tables.split(currentSaleId, selected, { paymentMethod, cashAmount: paymentMethod === 'cash' ? received : 0, cardAmount: paymentMethod === 'card' ? total : 0, changeDue: paymentMethod === 'cash' ? received - total : 0 });
     splitBillModal.classList.add('hidden');
     const remaining = await window.api.tables.getOpenSale(tableId);
-    cart = remaining.items.map(i => ({ productId: i.product_id, name: i.product_name, price: i.unit_price, taxRate: i.tax_rate, quantity: i.quantity, saleItemId: i.id }));
+    cart = remaining.items.map(cartLineFromSaleItem);
     renderCart();
     warnPrintOutcome(result?.printOutcome);
-    alert(`${t('tableOrder.splitPaid')}${result.invoiceNumber || result.id}`);
-  } catch (err) { alert(t('tableOrder.splitFailed') + err.message); }
+    showToast(`${t('tableOrder.splitPaid')}${result.invoiceNumber || result.id}`, 'success');
+  } catch (err) { showToast(t('tableOrder.splitFailed') + err.message, 'error'); }
 });
 
 /* ---------------- اختيار العميل واستبدال نقاط الولاء ---------------- */
@@ -350,7 +377,7 @@ function resetLoyaltyState() {
 }
 function updateLoyaltyHint() {
   if (!loyaltyQuote) { loyaltyRedeemHint.textContent = ''; return; }
-  loyaltyRedeemHint.textContent = `الرصيد المتاح: ${loyaltyQuote.availablePoints} نقطة — أقصى استبدال: ${loyaltyQuote.maxRedeemablePoints} نقطة (خصم ${loyaltyQuote.maxRedeemableValue.toFixed(2)})`;
+  loyaltyRedeemHint.textContent = `الرصيد المتاح: ${loyaltyQuote.availablePoints} نقطة — أقصى استبدال: ${loyaltyQuote.maxRedeemablePoints} نقطة (خصم ${loyaltyQuote.maxRedeemableValue.toFixed(orgMinorUnit)})`;
 }
 async function refreshLoyaltyQuote() {
   if (!selectedCustomerId) { resetLoyaltyState(); return; }
@@ -379,7 +406,7 @@ function onLoyaltyRedeemChange() {
   loyaltyRedeemedPoints = val;
   loyaltyPointsInput.value = val;
   if (selectedPaymentMethod() === 'cash' && document.activeElement !== cashReceivedInput) {
-    cashReceivedInput.value = effectiveTotal().toFixed(2);
+    cashReceivedInput.value = effectiveTotal().toFixed(orgMinorUnit);
   }
   updatePaymentView();
 }
@@ -452,12 +479,30 @@ const confirmPaymentBtn = document.getElementById('confirmPaymentBtn');
 
 let currentTotal = 0;
 
+let checkoutBusy = false;
 async function checkout() {
-  if (cart.length === 0) return;
-  await saveOrder(false); // نحفظ آخر تعديلات قبل الدفع
-  const subtotal = cart.reduce((s, i) => s + i.price * i.quantity, 0);
-  const tax = cart.reduce((s, i) => s + i.price * i.quantity * (i.taxRate / 100), 0);
-  currentTotal = subtotal + tax;
+  if (cart.length === 0 || checkoutBusy) return;
+  checkoutBusy = true;
+  try {
+    await checkoutInner();
+  } finally {
+    checkoutBusy = false;
+  }
+}
+async function checkoutInner() {
+  // نحفظ آخر تعديلات قبل الدفع. لو فشل الحفظ (نقص مخزون، صلاحية، خطأ قاعدة بيانات...) لا نفتح نافذة الدفع
+  // ونعرض السبب للمستخدم، فلا تبقى الواجهة بحالة وهمية (مبلغ معروض لطلب لم يُحفظ).
+  let saved;
+  try {
+    saved = await saveOrder(false);
+  } catch (err) {
+    showToast(err?.message || t('tableOrder.saveFailed', 'تعذر حفظ الطلب.'), 'error');
+    return;
+  }
+  // المرجع هو إجمالي الباك-إند بعد الحفظ (نفس الحساب الذي سيُتحقَّق منه عند الدفع)؛
+  // المعاينة المحلية احتياط فقط إن لم يُرجع الحفظ إجمالياً.
+  const preview = sumCartTax(cart, orgMinorUnit);
+  currentTotal = Number.isFinite(Number(saved?.grandTotal)) ? Number(saved.grandTotal) : preview.subtotal + preview.tax;
 
   document.querySelector('input[name="paymentMethod"][value="cash"]').checked = true;
   mixedCashInput.value = '';
@@ -537,17 +582,17 @@ function updatePaymentView() {
   cashFields.classList.toggle('hidden', method !== 'cash');
   mixedFields.classList.toggle('hidden', method !== 'mixed');
   paymentError.classList.add('hidden');
-  paymentTotalDisplay.textContent = effectiveTotal().toFixed(2);
+  paymentTotalDisplay.textContent = effectiveTotal().toFixed(orgMinorUnit);
   if (method === 'cash') {
-    if (document.activeElement !== cashReceivedInput) cashReceivedInput.value = effectiveTotal().toFixed(2);
+    if (document.activeElement !== cashReceivedInput) cashReceivedInput.value = effectiveTotal().toFixed(orgMinorUnit);
     const received = parseLocaleNumber(cashReceivedInput.value) || 0;
-    changeDueDisplay.textContent = Math.max(received - effectiveTotal(), 0).toFixed(2);
+    changeDueDisplay.textContent = Math.max(received - effectiveTotal(), 0).toFixed(orgMinorUnit);
   } else if (method === 'mixed') {
     const cashPart = parseLocaleNumber(mixedCashInput.value) || 0;
     const remaining = effectiveTotal() - cashPart;
-    mixedRemainingDisplay.textContent = remaining.toFixed(2);
+    mixedRemainingDisplay.textContent = remaining.toFixed(orgMinorUnit);
     if (!mixedCardInput.value || document.activeElement !== mixedCardInput) {
-      mixedCardInput.value = Math.max(remaining, 0).toFixed(2);
+      mixedCardInput.value = Math.max(remaining, 0).toFixed(orgMinorUnit);
     }
   }
 }
@@ -558,7 +603,7 @@ mixedCashInput.addEventListener('input', updatePaymentView);
 mixedCardInput.addEventListener('input', () => {
   mixedRemainingDisplay.textContent = (
     effectiveTotal() - (parseLocaleNumber(mixedCashInput.value) || 0) - (parseLocaleNumber(mixedCardInput.value) || 0)
-  ).toFixed(2);
+  ).toFixed(orgMinorUnit);
 });
 cancelPaymentBtn.addEventListener('click', closePaymentModal);
 confirmPaymentBtn.addEventListener('click', confirmPayment);

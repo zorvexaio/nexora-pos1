@@ -6,7 +6,7 @@ const root = path.resolve(__dirname, '..');
 const tests = [
   'quantity-buffer-regression.js',
   'category-image-removal-regression.js',
-  'money-regression.js','sync-hardening-regression.js','v0.48.2-regression.js',
+  'money-regression.js','tax-inclusive-regression.js','tax-inclusive-ui-regression.js','migration-source-frozen-regression.js','cart-tax-ui-parity-regression.js','table-order-tax-regression.js','network-print-trim-regression.js','receipt-format-regression.js','sale-modification-regression.js','sync-hardening-regression.js','v0.48.2-regression.js',
   'payroll-lifecycle-regression.js','payroll-advances-regression.js','payroll-advance-repayments-regression.js',
   'payroll-termination-regression.js','v0.48.0-regression.js','release-metadata-regression.js',
   'update-safety-regression.js','windows-structure-regression.js','client-event-hardening-regression.js',

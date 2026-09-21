@@ -19,6 +19,7 @@ const plNetRevenue = document.getElementById('plNetRevenue');
 const plCost = document.getElementById('plCost');
 const plGrossProfit = document.getElementById('plGrossProfit');
 const plPayrollExpense = document.getElementById('plPayrollExpense');
+const plOperatingExpenses = document.getElementById('plOperatingExpenses');
 const plNetProfit = document.getElementById('plNetProfit');
 const plMargin = document.getElementById('plMargin');
 const debtAgingBody = document.getElementById('debtAgingBody');
@@ -41,7 +42,7 @@ const deliveryFeesTotal = document.getElementById('deliveryFeesTotal');
 const deliveryByPersonBody = document.getElementById('deliveryByPersonBody');
 const deliveryEmpty = document.getElementById('deliveryEmpty');
 
-const PAYMENT_LABELS = { cash: 'نقدي', card: 'بطاقة', mixed: 'مختلط', credit: 'آجل' };
+const paymentMethodLabel = (method) => ({ cash: t('common.cash'), card: t('common.card'), mixed: t('common.mixed'), credit: t('common.credit') }[method] || method);
 const STATUS_LABELS = { completed: 'مكتملة', refunded: 'مرتجعة', partially_refunded: 'مرتجعة جزئياً' };
 const STATUS_TONE = { completed: 'success', refunded: 'danger', partially_refunded: 'warning' };
 
@@ -162,7 +163,7 @@ async function openInvoiceDetail(saleId) {
         <div><span>الضريبة</span><b>${formatMoney(sale.tax_total)}</b></div>
         <div><span>الخصم</span><b>${formatMoney(sale.discount_total)}</b></div>
         <div class="strong"><span>الإجمالي</span><b>${formatMoney(sale.grand_total)}</b></div>
-        <div><span>طريقة الدفع</span><b id="invoiceCurrentMethod">${PAYMENT_LABELS[sale.payment_method] || escapeHtml(sale.payment_method)}</b></div>
+        <div><span>طريقة الدفع</span><b id="invoiceCurrentMethod">${paymentMethodLabel(sale.payment_method) || escapeHtml(sale.payment_method)}</b></div>
       </div>
       ${canCorrect ? `
       <div class="invoice-payment-correction no-print">
@@ -231,7 +232,7 @@ function wirePaymentCorrectionForm(sale) {
         return;
       }
     }
-    if (!confirm(`تأكيد تصحيح طريقة الدفع للفاتورة ${sale.invoice_number || sale.id} إلى "${PAYMENT_LABELS[newMethod] || newMethod}"؟ هذا الإجراء يُسجَّل بسجل التدقيق ولا يمكن التراجع عنه إلا بتصحيح آخر.`)) return;
+    if (!(await confirmDialog(tf('reports.confirmCorrectPaymentMethod', { invoice: sale.invoice_number || sale.id, method: paymentMethodLabel(newMethod) || newMethod }), { tone: 'warning' }))) return;
     submitBtn.disabled = true;
     try {
       const result = await window.api.sales.correctPaymentMethod(payload);
@@ -444,7 +445,7 @@ function renderInvoices(items) {
       <td>${escapeHtml(inv.invoice_number || inv.id)}</td>
       <td>${formatDateTime(inv.created_at)}</td>
       <td>${escapeHtml(inv.customer_name || '—')}</td>
-      <td>${PAYMENT_LABELS[inv.payment_method] || escapeHtml(inv.payment_method)}</td>
+      <td>${paymentMethodLabel(inv.payment_method) || escapeHtml(inv.payment_method)}</td>
       <td>${formatMoney(inv.grand_total)}</td>
       <td><span class="status-badge tone-${STATUS_TONE[inv.status] || 'slate'}">${STATUS_LABELS[inv.status] || escapeHtml(inv.status)}</span></td>
     `;
@@ -477,6 +478,7 @@ function renderProfitLoss(pl, prevPl) {
   plCost.textContent = formatMoney(pl.cost);
   plGrossProfit.textContent = formatMoney(pl.grossProfit);
   plPayrollExpense.textContent = formatMoney(pl.payrollExpense);
+  if (plOperatingExpenses) plOperatingExpenses.textContent = formatMoney(pl.operatingExpenses || 0);
   plNetProfit.textContent = formatMoney(pl.netProfit);
   plMargin.textContent = `${pl.marginPercent.toFixed(1)}%`;
   // البطاقة كانت مثبّتة دايماً على tone="success" (أخضر) بالـ HTML، حتى لو صافي
@@ -542,7 +544,7 @@ function renderSummary(summary, prevSummary) {
     const pct = (m.total / maxTotal) * 100;
     row.innerHTML = `
       <div class="breakdown-label">
-        <span>${PAYMENT_LABELS[m.payment_method] || escapeHtml(m.payment_method)}</span>
+        <span>${paymentMethodLabel(m.payment_method) || escapeHtml(m.payment_method)}</span>
         <span>${formatMoney(m.total)} (${formatInt(m.count)})</span>
       </div>
       <div class="breakdown-bar"><div class="breakdown-fill" style="width:${pct}%"></div></div>

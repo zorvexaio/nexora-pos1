@@ -12,7 +12,8 @@ const { startBeacon, startListener, getLocalIPv4Addresses } = require('./server/
 const { getOrCreateServerCert } = require('./server/lan-tls');
 const { pinnedRequest } = require('./server/pinned-request');
 const { captureWindowAndPrintNetwork } = require('./lib/network-print');
-const { assertPermission, permissionsForRole } = require('./core/permissions');
+const { assertPermission, permissionsForRole, hasPermission } = require('./core/permissions');
+const { planKitchenTicket } = require('./core/kitchen-plan');
 const { FiscalizationRegistry } = require('./fiscalization');
 const fiscalizationRegistry = new FiscalizationRegistry();
 const PACKAGE_CONFIG = JSON.parse(fs.readFileSync(path.join(__dirname, 'package.json'), 'utf8'));
@@ -68,22 +69,48 @@ function sendUpdateStatus(status, payload) {
   if (win) win.webContents.send('update:status', { status, ...payload });
 }
 
-autoUpdater.on('checking-for-update', () => sendUpdateStatus('checking'));
-autoUpdater.on('update-available', (info) => sendUpdateStatus('available', { version: info.version }));
-autoUpdater.on('update-not-available', () => sendUpdateStatus('not-available'));
+// يتتبّع ما إذا كان هناك تحديث اكتمل تنزيله فعلياً، حتى لا يستدعي update:installNow
+// دالة quitAndInstall() بلا أي تحديث مُنزَّل حقاً — سلوك quitAndInstall في هذه الحالة
+// غير موثوق (قد يُغلق التطبيق فقط بلا أي تثبيت). يُصفَّر عند بدء فحص جديد لأن أي تحديث
+// سبق تنزيله يصبح غير موثوق به إن بدأت دورة فحص/تنزيل جديدة فوقه.
+let downloadedUpdateInfo = null;
+
+autoUpdater.on('checking-for-update', () => { downloadedUpdateInfo = null; sendUpdateStatus('checking'); });
+autoUpdater.on('update-available', (info) => { downloadedUpdateInfo = null; sendUpdateStatus('available', { version: info.version }); });
+autoUpdater.on('update-not-available', () => { downloadedUpdateInfo = null; sendUpdateStatus('not-available'); });
 autoUpdater.on('download-progress', (p) => sendUpdateStatus('downloading', { percent: Math.round(p.percent) }));
-autoUpdater.on('update-downloaded', (info) => sendUpdateStatus('downloaded', { version: info.version }));
-autoUpdater.on('error', (err) => sendUpdateStatus('error', { message: err == null ? 'خطأ غير معروف' : err.message }));
+autoUpdater.on('update-downloaded', (info) => { downloadedUpdateInfo = info; sendUpdateStatus('downloaded', { version: info.version }); });
+autoUpdater.on('error', (err) => { downloadedUpdateInfo = null; sendUpdateStatus('error', { message: err == null ? mt('خطأ غير معروف', 'Unknown error', 'Bilinmeyen hata') : err.message }); });
 
 // لا تُفتح قاعدة البيانات قبل app.whenReady(): مفتاح SQLCipher محفوظ في مخزن
 // نظام التشغيل الآمن (safeStorage) ولا يصبح جاهزاً بصورة موثوقة قبل ذلك.
 let db;
 
-// يترجم أخطاء قيود قاعدة البيانات الشائعة عند حفظ منتج إلى رسالة عربية مفهومة للكاشير/المدير
+// نصوص العملية الرئيسية (نوافذ/قوائم/رسائل خطأ نظام التشغيل الأصلية عبر dialog/Menu) لا
+// تمر أبداً بنظام i18n الخاص بالـ renderer (ذاك يعمل فقط داخل صفحات الواجهة نفسها). هذه
+// دالة ترجمة صغيرة موازية تقرأ نفس إعداد app_language المحفوظ بقاعدة البيانات، حتى تظهر
+// نوافذ الترخيص/الاستعادة/الطباعة وقائمة قص-نسخ-لصق بلغة المستخدم المختارة فعلياً.
+function mt(ar, en, tr) {
+  let lang = 'ar';
+  try {
+    if (db && typeof db.getSetting === 'function') lang = db.getSetting('app_language', 'ar');
+  } catch (_) {
+    // قبل جهوزية قاعدة البيانات (مثلاً خطأ فتحها) نبقى على العربية الافتراضية
+  }
+  if (lang === 'en') return en;
+  if (lang === 'tr') return tr;
+  return ar;
+}
+
+// يترجم أخطاء قيود قاعدة البيانات الشائعة عند حفظ منتج إلى رسالة مفهومة للكاشير/المدير بلغته
 function friendlyProductError(err) {
   const message = err && err.message ? err.message : String(err);
   if (message.includes('idx_products_plu_code') || message.includes('plu_code')) {
-    return 'كود الصنف (PLU) هذا مستخدم بالفعل لمنتج آخر بيع بالوزن. اختر كوداً مختلفاً.';
+    return mt(
+      'كود الصنف (PLU) هذا مستخدم بالفعل لمنتج آخر بيع بالوزن. اختر كوداً مختلفاً.',
+      'This item code (PLU) is already used by another weighed product. Choose a different code.',
+      'Bu ürün kodu (PLU) tartılan başka bir üründe zaten kullanılıyor. Farklı bir kod seçin.'
+    );
   }
   return message;
 }
@@ -136,7 +163,7 @@ function createLicenseWindow() {
     width: 460,
     height: 560,
     resizable: false,
-    title: 'تفعيل الترخيص',
+    title: mt('تفعيل الترخيص', 'Activate license', 'Lisansı etkinleştir'),
     show: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -175,13 +202,21 @@ function enforceLicenseStatus() {
   if (!mainWindow && !loginWindow) return; // ما في جلسة شغّالة أصلاً (شاشة الترخيص مفتوحة أصلاً)
 
   const reasonMessage = result.reason === 'expired'
-    ? 'انتهت صلاحية ترخيص هذا الجهاز.'
+    ? mt('انتهت صلاحية ترخيص هذا الجهاز.', "This device's license has expired.", 'Bu cihazın lisansının süresi doldu.')
     : result.reason === 'clock_rollback_detected'
-      ? 'تم اكتشاف رجوع في ساعة الجهاز. اضبط التاريخ والوقت الصحيحين ثم أعد المحاولة.'
+      ? mt(
+          'تم اكتشاف رجوع في ساعة الجهاز. اضبط التاريخ والوقت الصحيحين ثم أعد المحاولة.',
+          'A clock rollback was detected on this device. Set the correct date and time, then try again.',
+          'Cihaz saatinde geri alma tespit edildi. Doğru tarih ve saati ayarlayıp tekrar deneyin.'
+        )
       : result.reason === 'revoked'
-        ? 'تم إبطال ترخيص هذا الجهاز. تواصل مع المورّد.'
-        : 'تعذّر التحقق من ترخيص هذا الجهاز. تواصل مع المورّد.';
-  dialog.showErrorBox('حالة الترخيص', reasonMessage);
+        ? mt("تم إبطال ترخيص هذا الجهاز. تواصل مع المورّد.", "This device's license has been revoked. Contact your supplier.", 'Bu cihazın lisansı iptal edildi. Tedarikçinizle iletişime geçin.')
+        : mt(
+            'تعذّر التحقق من ترخيص هذا الجهاز. تواصل مع المورّد.',
+            "Could not verify this device's license. Contact your supplier.",
+            'Bu cihazın lisansı doğrulanamadı. Tedarikçinizle iletişime geçin.'
+          );
+  dialog.showErrorBox(mt('حالة الترخيص', 'License status', 'Lisans durumu'), reasonMessage);
   if (syncTimer) clearInterval(syncTimer);
   if (rendererWatchdogTimer) clearInterval(rendererWatchdogTimer);
   if (mainWindow) { mainWindow.close(); mainWindow = null; }
@@ -240,9 +275,9 @@ const PUBLIC_IPC_CHANNELS = new Set([
 const _rawIpcHandle = ipcMain.handle.bind(ipcMain);
 ipcMain.handle = (channel, listener) => {
   return _rawIpcHandle(channel, (event, ...args) => {
-    if (!isTrustedRenderer(event.sender, event.senderFrame)) throw new Error('مصدر IPC غير موثوق.');
+    if (!isTrustedRenderer(event.sender, event.senderFrame)) throw new Error(mt('مصدر IPC غير موثوق.', 'Untrusted IPC source.', 'Güvenilmeyen IPC kaynağı.'));
     if (PUBLIC_IPC_CHANNELS.has(channel)) return listener(event, ...args);
-    if (!currentUser) throw new Error('يجب تسجيل الدخول أولاً.');
+    if (!currentUser) throw new Error(mt('يجب تسجيل الدخول أولاً.', 'You must sign in first.', 'Önce giriş yapmalısınız.'));
     return listener(event, ...args);
   });
 };
@@ -277,14 +312,14 @@ async function resolvePrintDevice(win, configuredName) {
   if (configuredName) {
     const match = printers.find((p) => p.name === configuredName || p.displayName === configuredName);
     if (match && isVirtualPdfPrinter(match.name || match.displayName)) {
-      return { blocked: true, reason: `الطابعة المحددة في الإعدادات (${configuredName}) هي طابعة PDF افتراضية وليست طابعة فعلية. الرجاء اختيار طابعة حقيقية من الإعدادات ← الطباعة التلقائية.` };
+      return { blocked: true, reason: mt(`الطابعة المحددة في الإعدادات (${configuredName}) هي طابعة PDF افتراضية وليست طابعة فعلية. الرجاء اختيار طابعة حقيقية من الإعدادات ← الطباعة التلقائية.`, `The printer configured in settings (${configuredName}) is a virtual PDF printer, not a real one. Please choose a real printer from Settings ← Automatic printing.`, `Ayarlarda yapılandırılan yazıcı (${configuredName}) sanal bir PDF yazıcısıdır, gerçek bir yazıcı değildir. Lütfen Ayarlar ← Otomatik yazdırma bölümünden gerçek bir yazıcı seçin.`) };
     }
     return { deviceName: configuredName };
   }
   const def = printers.find((p) => p.isDefault) || null;
-  if (!def) return { blocked: true, reason: 'لم يتم العثور على أي طابعة متصلة بالجهاز.' };
+  if (!def) return { blocked: true, reason: mt('لم يتم العثور على أي طابعة متصلة بالجهاز.', 'No printer connected to this device was found.', 'Bu cihaza bağlı bir yazıcı bulunamadı.') };
   if (isVirtualPdfPrinter(def.name || def.displayName)) {
-    return { blocked: true, reason: `طابعة ويندوز الافتراضية الحالية (${def.displayName || def.name}) هي طابعة PDF وهمية وليست طابعة فعلية. الرجاء اختيار طابعة حقيقية من الإعدادات ← الطباعة التلقائية.` };
+    return { blocked: true, reason: mt(`طابعة ويندوز الافتراضية الحالية (${def.displayName || def.name}) هي طابعة PDF وهمية وليست طابعة فعلية. الرجاء اختيار طابعة حقيقية من الإعدادات ← الطباعة التلقائية.`, `The current default Windows printer (${def.displayName || def.name}) is a virtual PDF printer, not a real one. Please choose a real printer from Settings ← Automatic printing.`, `Mevcut varsayılan Windows yazıcısı (${def.displayName || def.name}) sanal bir PDF yazıcısıdır, gerçek bir yazıcı değildir. Lütfen Ayarlar ← Otomatik yazdırma bölümünden gerçek bir yazıcı seçin.`) };
   }
   return { deviceName: def.name };
 }
@@ -292,13 +327,13 @@ async function resolvePrintDevice(win, configuredName) {
 // مسار الطباعة عبر الشبكة مباشرة (ESC/POS raw، بدون طابعة ويندوز مثبَّتة إطلاقاً):
 // نحمّل نفس صفحة الإيصال/تذكرة المطبخ في نافذة مخفية، ننتظر اكتمال رسمها،
 // نلتقطها كصورة، ونرسلها لعنوان IP الطابعة مباشرة عبر TCP.
-function printAutomaticallyOverNetwork(fileName, saleId, modePrefix, label) {
+function printAutomaticallyOverNetwork(fileName, saleId, modePrefix, label, printQuery = {}, feedLinesAfter = 2) {
   const ip = db.getSetting(`${modePrefix}_printer_ip`, '').trim();
   const port = db.getSetting(`${modePrefix}_printer_port`, '9100').trim() || '9100';
   const dotsWidth = Number(db.getSetting(`${modePrefix}_printer_dots_width`, '576')) || 576;
   return new Promise((resolve) => {
     if (!ip) {
-      const reason = 'لم يتم إدخال عنوان IP لطابعة الشبكة في الإعدادات.';
+      const reason = mt('لم يتم إدخال عنوان IP لطابعة الشبكة في الإعدادات.', "The network printer's IP address hasn't been entered in settings.", 'Ayarlarda ağ yazıcısının IP adresi girilmemiş.');
       db.logAudit({ userId: currentUser?.id, action: 'automatic_print_skipped_no_real_printer', entityType: 'sale', entityId: saleId, level: 'warning', details: { label, reason } });
       resolve({ success: false, blocked: true, reason });
       return;
@@ -312,7 +347,7 @@ function printAutomaticallyOverNetwork(fileName, saleId, modePrefix, label) {
       resolve(result);
     };
     win.webContents.once('did-fail-load', (_event, errorCode, errorDescription) => {
-      const reason = `تعذر تحميل مستند الطباعة (${errorCode}): ${errorDescription || 'unknown'}`;
+      const reason = mt('تعذر تحميل مستند الطباعة (', 'Could not load the print document (', 'Yazdırma belgesi yüklenemedi (') + `${errorCode}): ${errorDescription || 'unknown'}`;
       db.logAudit({ userId: currentUser?.id, action: 'automatic_print_failed', entityType: 'sale', entityId: saleId, level: 'error', details: { label, reason } });
       finish({ success: false, reason });
     });
@@ -321,13 +356,14 @@ function printAutomaticallyOverNetwork(fileName, saleId, modePrefix, label) {
       const printWhenReady = () => win.webContents.executeJavaScript(`document.body && document.body.dataset.printReady === '1'`).then(async (ready) => {
         if (!ready && attempts++ < 80) return setTimeout(printWhenReady, 50);
         if (!ready) {
-          const reason = 'انتهت مهلة تجهيز مستند الطباعة.';
+          const reason = mt('انتهت مهلة تجهيز مستند الطباعة.', 'Preparing the print document timed out.', 'Yazdırma belgesi hazırlanırken zaman aşımına uğradı.');
           db.logAudit({ userId: currentUser?.id, action: 'automatic_print_failed', entityType: 'sale', entityId: saleId, level: 'error', details: { label, reason } });
           finish({ success: false, reason });
           return;
         }
         try {
-          await captureWindowAndPrintNetwork(win, { ip, port, dotsWidth });
+          // تذكرة المطبخ: نقصّ الفراغ الأبيض أسفل الصورة قبل الإرسال (لا هدر ورق) مع feed أدنى قبل القص.
+          await captureWindowAndPrintNetwork(win, { ip, port, dotsWidth, feedLinesAfter, trimBottom: modePrefix === 'kitchen' });
           db.logAudit({ userId: currentUser?.id, action: 'automatic_printed', entityType: 'sale', entityId: saleId, details: { label, network: `${ip}:${port}` } });
           finish({ success: true });
         } catch (error) {
@@ -340,8 +376,8 @@ function printAutomaticallyOverNetwork(fileName, saleId, modePrefix, label) {
       });
       printWhenReady();
     });
-    win.loadFile(path.join(__dirname, 'renderer', fileName), { query: { saleId: String(saleId), auto: '1' } }).catch((error) => {
-      const reason = error?.message || 'تعذر فتح مستند الطباعة.';
+    win.loadFile(path.join(__dirname, 'renderer', fileName), { query: { saleId: String(saleId), auto: '1', ...printQuery } }).catch((error) => {
+      const reason = error?.message || mt('تعذر فتح مستند الطباعة.', 'Could not open the print document.', 'Yazdırma belgesi açılamadı.');
       db.logAudit({ userId: currentUser?.id, action: 'automatic_print_failed', entityType: 'sale', entityId: saleId, level: 'error', details: { label, reason } });
       finish({ success: false, reason });
     });
@@ -354,12 +390,12 @@ function printAutomaticallyOverNetwork(fileName, saleId, modePrefix, label) {
 // modePrefix: 'receipt' أو 'kitchen' — يحدد أي إعدادات وضع الشبكة نقرأ
 // (${modePrefix}_printer_mode / _ip / _port). القيمة الافتراضية للوضع هي
 // 'system' (طابعة ويندوز، السلوك الأصلي) حفاظاً على التوافق مع الإعدادات القديمة.
-function printAutomatically(fileName, saleId, enabledSetting, printerSettingName, label, enabledOverride = null, modePrefix = null) {
+function printAutomatically(fileName, saleId, enabledSetting, printerSettingName, label, enabledOverride = null, modePrefix = null, printQuery = {}, feedLinesAfter = 2) {
   if (enabledOverride === null ? !printerSetting(enabledSetting) : !enabledOverride) return Promise.resolve({ skipped: true });
   const deviceName = db.getSetting(printerSettingName, '').trim();
   const mode = modePrefix ? db.getSetting(`${modePrefix}_printer_mode`, 'system') : 'system';
   if (mode === 'network') {
-    return printAutomaticallyOverNetwork(fileName, saleId, modePrefix, label);
+    return printAutomaticallyOverNetwork(fileName, saleId, modePrefix, label, printQuery, feedLinesAfter);
   }
   return new Promise((resolve) => {
     const win = new BrowserWindow({ show: false, webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true } });
@@ -371,7 +407,7 @@ function printAutomatically(fileName, saleId, enabledSetting, printerSettingName
       resolve(result);
     };
     win.webContents.once('did-fail-load', (_event, errorCode, errorDescription) => {
-      const reason = `تعذر تحميل مستند الطباعة (${errorCode}): ${errorDescription || 'unknown'}`;
+      const reason = mt('تعذر تحميل مستند الطباعة (', 'Could not load the print document (', 'Yazdırma belgesi yüklenemedi (') + `${errorCode}): ${errorDescription || 'unknown'}`;
       db.logAudit({ userId: currentUser?.id, action: 'automatic_print_failed', entityType: 'sale', entityId: saleId, level: 'error', details: { label, reason } });
       finish({ success: false, reason });
     });
@@ -380,7 +416,7 @@ function printAutomatically(fileName, saleId, enabledSetting, printerSettingName
       const printWhenReady = () => win.webContents.executeJavaScript(`document.body && document.body.dataset.printReady === '1'`).then(async (ready) => {
         if (!ready && attempts++ < 80) return setTimeout(printWhenReady, 50);
         if (!ready) {
-          const reason = 'انتهت مهلة تجهيز مستند الطباعة.';
+          const reason = mt('انتهت مهلة تجهيز مستند الطباعة.', 'Preparing the print document timed out.', 'Yazdırma belgesi hazırlanırken zaman aşımına uğradı.');
           db.logAudit({ userId: currentUser?.id, action: 'automatic_print_failed', entityType: 'sale', entityId: saleId, level: 'error', details: { label, reason } });
           finish({ success: false, reason });
           return;
@@ -405,18 +441,38 @@ function printAutomatically(fileName, saleId, enabledSetting, printerSettingName
       });
       printWhenReady();
     });
-    win.loadFile(path.join(__dirname, 'renderer', fileName), { query: { saleId: String(saleId), auto: '1' } }).catch((error) => {
-      const reason = error?.message || 'تعذر فتح مستند الطباعة.';
+    win.loadFile(path.join(__dirname, 'renderer', fileName), { query: { saleId: String(saleId), auto: '1', ...printQuery } }).catch((error) => {
+      const reason = error?.message || mt('تعذر فتح مستند الطباعة.', 'Could not open the print document.', 'Yazdırma belgesi açılamadı.');
       db.logAudit({ userId: currentUser?.id, action: 'automatic_print_failed', entityType: 'sale', entityId: saleId, level: 'error', details: { label, reason } });
       finish({ success: false, reason });
     });
   });
 }
 
-function autoPrintReceipt(saleId) { return printAutomatically('receipt.html', saleId, 'receipt_auto_print', 'receipt_printer_name', 'receipt', null, 'receipt'); }
+function autoPrintReceipt(saleId) {
+  const width = db.getSetting('receipt_printer_paper_width', '80');
+  return printAutomatically('receipt.html', saleId, 'receipt_auto_print', 'receipt_printer_name', 'receipt', null, 'receipt', { paperWidth: width }, 2);
+}
 function autoSendKitchen(saleId) {
   const enabled = db.getSetting('kitchen_auto_print', '1') === '1';
-  return printAutomatically('kitchen-ticket.html', saleId, 'kitchen_auto_print', 'kitchen_printer_name', 'kitchen', enabled, 'kitchen');
+  const width = db.getSetting('kitchen_printer_paper_width', '80');
+  return printAutomatically('kitchen-ticket.html', saleId, 'kitchen_auto_print', 'kitchen_printer_name', 'kitchen', enabled, 'kitchen', { paperWidth: width }, 1);
+}
+// حفظ طلب طاولة: نرسل للمطبخ فقط ما تغيّر فعلاً (لا تذكرة مكررة عند كل حفظ)، ونسجّل أن الكميات وصلت
+// للمطبخ فقط بعد نجاح الطباعة، فإن فشلت الطابعة يُعاد إرسال نفس الفرق (مع أي تعديل جديد) في الحفظ التالي.
+async function sendKitchenForTableSave(saleId, saveResult) {
+  const plan = planKitchenTicket(saveResult);
+  if (plan.action === 'none') return { skipped: true, reason: 'no-changes' };
+  const outcome = plan.action === 'full' ? await autoSendKitchen(saleId) : await autoSendKitchenDelta(saleId, plan.items);
+  if (outcome && outcome.success === true) db.markKitchenSent(saleId);
+  return outcome;
+}
+function autoSendKitchenDelta(saleId, deltaItems) {
+  const enabled = db.getSetting('kitchen_auto_print', '1') === '1';
+  if (!enabled || !Array.isArray(deltaItems) || deltaItems.length === 0) return Promise.resolve({ skipped: true });
+  const width = db.getSetting('kitchen_printer_paper_width', '80');
+  const encoded = Buffer.from(JSON.stringify(deltaItems), 'utf8').toString('base64url');
+  return printAutomatically('kitchen-ticket.html', saleId, 'kitchen_auto_print', 'kitchen_printer_name', 'kitchen-delta', enabled, 'kitchen', { paperWidth: width, delta: '1', deltaItems: encoded }, 1);
 }
 
 // نسخ احتياطي تلقائي يومي: لأن الاعتماد على ضغط زر يدوي من صاحب المحل يعني
@@ -536,10 +592,10 @@ async function startLanMain() {
   // مفتاح مزامنة واحد ثابت لهذا الفرع يُنشأ مرة واحدة فقط ويُعاد استخدامه (لا يتغيّر مع كل اقتران)
   let secret = db.getSetting('lan_branch_secret', '');
   if (!secret) {
-    secret = lanServerHandle.registerBranchKey(branch.uuid, db.getSetting('lan_device_name', 'الجهاز الرئيسي'));
+    secret = lanServerHandle.registerBranchKey(branch.uuid, db.getSetting('lan_device_name', mt('الجهاز الرئيسي', 'Main device', 'Ana cihaz')));
     db.setSetting('lan_branch_secret', secret);
   } else {
-    lanServerHandle.registerBranchKey(branch.uuid, db.getSetting('lan_device_name', 'الجهاز الرئيسي'), secret);
+    lanServerHandle.registerBranchKey(branch.uuid, db.getSetting('lan_device_name', mt('الجهاز الرئيسي', 'Main device', 'Ana cihaz')), secret);
     // نُعيد تثبيت نفس المفتاح في قاعدة مزامنة LAN إذا أُعيد إنشاء قاعدة الخادم،
     // مع الحفاظ على السر المحفوظ في pos.db — لا نُولّد مفتاحاً جديداً ونترك السر القديم معطلاً.
   }
@@ -578,7 +634,7 @@ function createLoginWindow() {
     width: 420,
     height: 520,
     resizable: false,
-    title: 'تسجيل الدخول',
+    title: mt('تسجيل الدخول', 'Sign in', 'Giriş yap'),
     show: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -672,15 +728,15 @@ app.on('web-contents-created', (_event, webContents) => {
   webContents.on('context-menu', (_e, params) => {
     const items = [];
     if (params.isEditable) {
-      items.push({ label: 'قص', enabled: params.editFlags.canCut, click: () => webContents.cut() });
-      items.push({ label: 'نسخ', enabled: params.editFlags.canCopy, click: () => webContents.copy() });
-      items.push({ label: 'لصق', enabled: params.editFlags.canPaste, click: () => webContents.paste() });
+      items.push({ label: mt('قص', 'Cut', 'Kes'), enabled: params.editFlags.canCut, click: () => webContents.cut() });
+      items.push({ label: mt('نسخ', 'Copy', 'Kopyala'), enabled: params.editFlags.canCopy, click: () => webContents.copy() });
+      items.push({ label: mt('لصق', 'Paste', 'Yapıştır'), enabled: params.editFlags.canPaste, click: () => webContents.paste() });
       if (params.editFlags.canSelectAll) {
         items.push({ type: 'separator' });
-        items.push({ label: 'تحديد الكل', click: () => webContents.selectAll() });
+        items.push({ label: mt('تحديد الكل', 'Select All', 'Tümünü seç'), click: () => webContents.selectAll() });
       }
     } else if (params.selectionText) {
-      items.push({ label: 'نسخ', click: () => webContents.copy() });
+      items.push({ label: mt('نسخ', 'Copy', 'Kopyala'), click: () => webContents.copy() });
     }
     if (!items.length) return;
     Menu.buildFromTemplate(items).popup({ window: BrowserWindow.fromWebContents(webContents) || undefined });
@@ -725,20 +781,32 @@ app.whenReady().then(() => {
     if (err && err.name === 'DatabaseKeyMismatchError') {
       const d = err.details || {};
       dialog.showErrorBox(
-        'تعذّر فتح قاعدة البيانات',
-        'لا يمكن فتح pos.db بالمفتاح الحالي. لم يتم حذف أو تعديل أي ملف.\n\n' +
-        `pos.db موجود: ${d.dbExists} (${d.dbSizeBytes} bytes)\n` +
-        `pos.db.key موجود: ${d.keyFileExists}\n` +
-        `نسخة احتياطية قديمة موجودة: ${d.preEncryptionBackupExists}\n\n` +
-        'الأسباب الشائعة: تم نسخ pos.db من جهاز/حساب مستخدم آخر دون نسخ pos.db.key معه ' +
-        '(المفتاح مرتبط بحساب ويندوز الحالي عبر safeStorage)، أو تم حذف/استبدال pos.db.key، ' +
-        'أو الملف تالف.\n\n' +
-        `المسار: ${d.dbPath}`
+        mt('تعذّر فتح قاعدة البيانات', 'Could not open the database', 'Veritabanı açılamadı'),
+        mt(
+          'لا يمكن فتح pos.db بالمفتاح الحالي. لم يتم حذف أو تعديل أي ملف.\n\n',
+          'pos.db cannot be opened with the current key. No file has been deleted or modified.\n\n',
+          'pos.db mevcut anahtarla açılamıyor. Hiçbir dosya silinmedi veya değiştirilmedi.\n\n'
+        ) +
+        mt(`pos.db موجود: ${d.dbExists} (${d.dbSizeBytes} bytes)\n`, `pos.db exists: ${d.dbExists} (${d.dbSizeBytes} bytes)\n`, `pos.db var: ${d.dbExists} (${d.dbSizeBytes} bytes)\n`) +
+        mt(`pos.db.key موجود: ${d.keyFileExists}\n`, `pos.db.key exists: ${d.keyFileExists}\n`, `pos.db.key var: ${d.keyFileExists}\n`) +
+        mt(`نسخة احتياطية قديمة موجودة: ${d.preEncryptionBackupExists}\n\n`, `An old backup exists: ${d.preEncryptionBackupExists}\n\n`, `Eski bir yedek var: ${d.preEncryptionBackupExists}\n\n`) +
+        mt(
+          'الأسباب الشائعة: تم نسخ pos.db من جهاز/حساب مستخدم آخر دون نسخ pos.db.key معه ',
+          'Common causes: pos.db was copied from another device/user account without also copying pos.db.key ',
+          'Yaygın nedenler: pos.db, pos.db.key dosyası birlikte kopyalanmadan başka bir cihazdan/kullanıcı hesabından kopyalandı '
+        ) +
+        mt(
+          '(المفتاح مرتبط بحساب ويندوز الحالي عبر safeStorage)، أو تم حذف/استبدال pos.db.key، ',
+          '(the key is tied to the current Windows account via safeStorage), or pos.db.key was deleted/replaced, ',
+          '(anahtar, safeStorage üzerinden mevcut Windows hesabına bağlıdır), veya pos.db.key silindi/değiştirildi, '
+        ) +
+        mt('أو الملف تالف.\n\n', 'or the file is corrupted.\n\n', 'veya dosya bozuk.\n\n') +
+        mt(`المسار: ${d.dbPath}`, `Path: ${d.dbPath}`, `Yol: ${d.dbPath}`)
       );
     } else {
       dialog.showErrorBox(
-        'خطأ أثناء تشغيل التطبيق',
-        `تعذّر تجهيز قاعدة البيانات:\n${err && err.message ? err.message : err}`
+        mt('خطأ أثناء تشغيل التطبيق', 'Error while starting the app', 'Uygulama başlatılırken hata'),
+        mt('تعذّر تجهيز قاعدة البيانات:\n', 'Could not prepare the database:\n', 'Veritabanı hazırlanamadı:\n') + (err && err.message ? err.message : err)
       );
     }
     app.quit();
@@ -806,8 +874,8 @@ app.whenReady().then(() => {
 // أي renderer معدَّل أو نداء IPC مباشر كان راح يلتف على الحماية لو الفحص فقط بالواجهة.
 ipcMain.handle('update:check', async () => {
   requireAdmin();
-  if (!app.isPackaged) return { ok: false, message: 'التحقق من التحديثات غير متاح أثناء التطوير.' };
-  if (!isUpdateProviderConfigured()) return { ok: false, message: 'خدمة التحديث التلقائي غير مُهيأة بعد لهذا الإصدار.' };
+  if (!app.isPackaged) return { ok: false, message: mt('التحقق من التحديثات غير متاح أثناء التطوير.', "Checking for updates isn't available during development.", 'Geliştirme sırasında güncelleme kontrolü kullanılamaz.') };
+  if (!isUpdateProviderConfigured()) return { ok: false, message: mt('خدمة التحديث التلقائي غير مُهيأة بعد لهذا الإصدار.', "The auto-update service isn't configured yet for this build.", 'Bu sürüm için otomatik güncelleme servisi henüz yapılandırılmadı.') };
   try {
     await autoUpdater.checkForUpdates();
     return { ok: true };
@@ -817,8 +885,8 @@ ipcMain.handle('update:check', async () => {
 });
 ipcMain.handle('update:download', async () => {
   requireAdmin();
-  if (!app.isPackaged) return { ok: false, message: 'تنزيل التحديثات غير متاح أثناء التطوير.' };
-  if (!isUpdateProviderConfigured()) return { ok: false, message: 'خدمة التحديث التلقائي غير مُهيأة بعد لهذا الإصدار.' };
+  if (!app.isPackaged) return { ok: false, message: mt('تنزيل التحديثات غير متاح أثناء التطوير.', "Downloading updates isn't available during development.", 'Geliştirme sırasında güncelleme indirme kullanılamaz.') };
+  if (!isUpdateProviderConfigured()) return { ok: false, message: mt('خدمة التحديث التلقائي غير مُهيأة بعد لهذا الإصدار.', "The auto-update service isn't configured yet for this build.", 'Bu sürüm için otomatik güncelleme servisi henüz yapılandırılmadı.') };
   try {
     await autoUpdater.downloadUpdate();
     return { ok: true };
@@ -828,7 +896,11 @@ ipcMain.handle('update:download', async () => {
 });
 ipcMain.handle('update:installNow', () => {
   requireAdmin();
-  if (!isUpdateProviderConfigured()) throw new Error('خدمة التحديث التلقائي غير مُهيأة بعد لهذا الإصدار.');
+  if (!isUpdateProviderConfigured()) throw new Error(mt('خدمة التحديث التلقائي غير مُهيأة بعد لهذا الإصدار.', "The auto-update service isn't configured yet for this build.", 'Bu sürüm için otomatik güncelleme servisi henüz yapılandırılmadı.'));
+  // لا نستدعي quitAndInstall() إلا إذا كان هناك تحديث اكتمل تنزيله فعلياً ('update-downloaded'
+  // أُطلق بالفعل) — قبل هذا التغيير كان يكفي أن يكون المستخدم أدمن فقط، بصرف النظر عن
+  // وجود تنزيل حقيقي من عدمه، وسلوك quitAndInstall بلا تحديث مُنزَّل غير موثوق.
+  if (!downloadedUpdateInfo) throw new Error(mt('لا يوجد تحديث مُنزَّل جاهز للتثبيت. نزّل التحديث أولاً.', 'No downloaded update is ready to install yet. Download the update first.', 'Yüklemeye hazır indirilmiş bir güncelleme yok. Önce güncellemeyi indirin.'));
   const snapshot = db.createUpgradeSnapshot(`app-update-from-v${app.getVersion()}`);
   db.logAudit({
     userId: currentUser?.id,
@@ -845,7 +917,7 @@ ipcMain.handle('update:getAutoCheckEnabled', () => db.getSetting('update_auto_ch
 ipcMain.handle('update:setAutoCheckEnabled', (_event, enabled) => {
   requireAdmin();
   if (enabled && !isUpdateProviderConfigured()) {
-    return { success: false, message: 'لا يمكن تفعيل التحقق التلقائي قبل إعداد مزود تحديث إنتاجي.' };
+    return { success: false, message: mt('لا يمكن تفعيل التحقق التلقائي قبل إعداد مزود تحديث إنتاجي.', "Automatic checking can't be enabled before a production update provider is configured.", 'Bir üretim güncelleme sağlayıcısı yapılandırılmadan otomatik kontrol etkinleştirilemez.') };
   }
   try {
     return db.setSetting('update_auto_check_on_boot', enabled ? '1' : '0');
@@ -902,17 +974,17 @@ setInterval(() => { const now = Date.now(); for (const [k,v] of passwordAttempts
 ipcMain.handle('auth:bootstrapInfo', () => db.getBootstrapAdminInfo());
 ipcMain.handle('auth:login', (event, creds) => {
   const licenseError = requireLicenseForAuth();
-  if (licenseError) return { success: false, message: licenseError.message || 'الترخيص غير صالح.' };
-  if (isPasswordRateLimited(event)) return { success: false, message: 'محاولات كثيرة خاطئة. حاول بعد دقيقة.' };
+  if (licenseError) return { success: false, message: licenseError.message || mt('الترخيص غير صالح.', 'Invalid license.', 'Geçersiz lisans.') };
+  if (isPasswordRateLimited(event)) return { success: false, message: mt('محاولات كثيرة خاطئة. حاول بعد دقيقة.', 'Too many failed attempts. Try again in a minute.', 'Çok fazla başarısız deneme. Bir dakika sonra tekrar deneyin.') };
   const result = db.authenticate(creds.username, creds.password);
-  if (result?.rateLimited) return { success: false, message: 'محاولات كثيرة خاطئة. حاول بعد 15 دقيقة.' };
+  if (result?.rateLimited) return { success: false, message: mt('محاولات كثيرة خاطئة. حاول بعد 15 دقيقة.', 'Too many failed attempts. Try again in 15 minutes.', 'Çok fazla başarısız deneme. 15 dakika sonra tekrar deneyin.') };
   if (!result) {
     notePasswordFailure(event);
     db.logAudit({ action: 'login_failed', entityType: 'auth', level: 'warning', details: { username: String(creds?.username || '').slice(0, 80) } });
-    return { success: false, message: 'اسم المستخدم أو كلمة المرور غير صحيحة' };
+    return { success: false, message: mt('اسم المستخدم أو كلمة المرور غير صحيحة', 'Incorrect username or password', 'Kullanıcı adı veya şifre yanlış') };
   }
   if (result.blocked) {
-    return { success: false, message: 'هذا الحساب معطّل. راجع المدير العام.' };
+    return { success: false, message: mt('هذا الحساب معطّل. راجع المدير العام.', 'This account is disabled. Contact the general manager.', 'Bu hesap devre dışı. Genel müdürle görüşün.') };
   }
 
   resetPasswordAttempts(event);
@@ -935,14 +1007,14 @@ ipcMain.handle('auth:login', (event, creds) => {
 const pinAttempts = { count: 0, lockedUntil: 0 };
 ipcMain.handle('auth:loginWithPin', (event, pin) => {
   const licenseError = requireLicenseForAuth();
-  if (licenseError) return { success: false, message: licenseError.message || 'الترخيص غير صالح.' };
+  if (licenseError) return { success: false, message: licenseError.message || mt('الترخيص غير صالح.', 'Invalid license.', 'Geçersiz lisans.') };
   if (Date.now() < pinAttempts.lockedUntil) {
     const secondsLeft = Math.ceil((pinAttempts.lockedUntil - Date.now()) / 1000);
-    return { success: false, message: `محاولات كثيرة خاطئة. حاول بعد ${secondsLeft} ثانية.` };
+    return { success: false, message: mt('محاولات كثيرة خاطئة. حاول بعد ', 'Too many failed attempts. Try again in ', 'Çok fazla başarısız deneme. ') + secondsLeft + mt(' ثانية.', ' seconds.', ' saniye sonra tekrar deneyin.') };
   }
 
   const result = db.authenticateByPin(pin);
-  if (result?.rateLimited) return { success: false, message: 'محاولات PIN كثيرة خاطئة. حاول بعد 15 دقيقة.' };
+  if (result?.rateLimited) return { success: false, message: mt('محاولات PIN كثيرة خاطئة. حاول بعد 15 دقيقة.', 'Too many failed PIN attempts. Try again in 15 minutes.', 'Çok fazla başarısız PIN denemesi. 15 dakika sonra tekrar deneyin.') };
   if (!result) {
     pinAttempts.count += 1;
     if (pinAttempts.count >= 5) {
@@ -950,7 +1022,7 @@ ipcMain.handle('auth:loginWithPin', (event, pin) => {
       pinAttempts.count = 0;
     }
     db.logAudit({ action: 'login_failed', entityType: 'auth', level: 'warning', details: { method: 'pin' } });
-    return { success: false, message: 'رقم PIN غير صحيح' };
+    return { success: false, message: mt('رقم PIN غير صحيح', 'Incorrect PIN', 'PIN yanlış') };
   }
 
   pinAttempts.count = 0;
@@ -975,10 +1047,19 @@ ipcMain.handle('auth:logout', (event) => {
   return { success: true };
 });
 
-ipcMain.handle('auth:currentUser', () => currentUser);
+ipcMain.handle('auth:currentUser', () => {
+  // العلامة قد يغيّرها المدير العام أثناء جلسة الكاشير: نحدّثها من القاعدة ليظهر/يختفي زر التعديل فوراً.
+  if (currentUser) {
+    try {
+      const fresh = db.getUser(currentUser.id);
+      if (fresh) currentUser = { ...currentUser, can_modify_sales: fresh.can_modify_sales, is_active: fresh.is_active };
+    } catch (_) { /* قبل جاهزية القاعدة */ }
+  }
+  return currentUser;
+});
 ipcMain.handle('auth:permissions', () => { requireAccountReady(); return permissionsForRole(currentUser.role); });
 ipcMain.handle('auth:changeOwnPassword', (_event, payload) => {
-  if (!currentUser) throw new Error('يجب تسجيل الدخول أولاً.');
+  if (!currentUser) throw new Error(mt('يجب تسجيل الدخول أولاً.', 'You must sign in first.', 'Önce giriş yapmalısınız.'));
   const result = db.changeOwnPassword(currentUser.id, payload.currentPassword, payload.newPassword);
   currentUser = { ...currentUser, must_change_password: 0 };
   return result;
@@ -986,13 +1067,13 @@ ipcMain.handle('auth:changeOwnPassword', (_event, payload) => {
 
 // إدارة المستخدمين: يتحقق من صلاحية admin هنا في العملية الرئيسية أيضاً (وليس فقط بإخفاء الروابط بالواجهة)
 function requireAccountReady() {
-  if (!currentUser) throw new Error('يجب تسجيل الدخول أولاً.');
+  if (!currentUser) throw new Error(mt('يجب تسجيل الدخول أولاً.', 'You must sign in first.', 'Önce giriş yapmalısınız.'));
   const licenseState = license.verifyLicense(app.getPath('userData'));
   if (!licenseState.valid) {
-    throw new Error(licenseState.message || 'الترخيص غير صالح أو منتهي.');
+    throw new Error(licenseState.message || mt('الترخيص غير صالح أو منتهي.', 'The license is invalid or expired.', 'Lisans geçersiz veya süresi dolmuş.'));
   }
   if (currentUser && currentUser.must_change_password) {
-    throw new Error('يجب تغيير كلمة المرور الافتراضية قبل استخدام النظام.');
+    throw new Error(mt('يجب تغيير كلمة المرور الافتراضية قبل استخدام النظام.', 'You must change the default password before using the system.', 'Sistemi kullanmadan önce varsayılan şifreyi değiştirmelisiniz.'));
   }
 }
 function requireLicenseForAuth() {
@@ -1002,12 +1083,28 @@ function requireLicenseForAuth() {
 }
 function requirePermission(permission) {
   requireAccountReady();
-  if (!currentUser) throw new Error('يجب تسجيل الدخول أولاً.');
+  if (!currentUser) throw new Error(mt('يجب تسجيل الدخول أولاً.', 'You must sign in first.', 'Önce giriş yapmalısınız.'));
   try { assertPermission(currentUser.role, permission); }
-  catch (_) { throw new Error(`لا تملك الصلاحية المطلوبة: ${permission}`); }
+  catch (_) { throw new Error(mt('لا تملك الصلاحية المطلوبة: ', 'You do not have the required permission: ', 'Gerekli izne sahip değilsiniz: ') + permission); }
   return true;
 }
 function requireAdmin() { return requirePermission('users.manage'); }
+// تعديل فاتورة مكتملة (أصناف/دفع): المدير/الأدمن بحكم الدور، أو كاشير فعّل له المدير العام العلامة من شاشة المستخدمين.
+// تُقرأ الصلاحية من قاعدة البيانات في كل استدعاء (لا من الجلسة) فيسري سحبها فوراً.
+function requireSalesModify() {
+  requireAccountReady();
+  if (!currentUser) throw new Error(mt('يجب تسجيل الدخول أولاً.', 'You must sign in first.', 'Önce giriş yapmalısınız.'));
+  if (!db.userCanModifySales(currentUser.id)) {
+    throw new Error(mt('لا تملك صلاحية تعديل الفواتير. اطلب من المدير العام تفعيلها لك.', 'You are not allowed to modify invoices. Ask the administrator to enable it for you.', 'Faturaları düzenleme izniniz yok. Yöneticiden sizin için etkinleştirmesini isteyin.'));
+  }
+  return true;
+}
+// كل تعديل ينفَّذ بتفويض (مستخدم ليس مديراً) يُسجَّل في التدقيق باسمه مع من فوّضه وسبب التفويض.
+function auditDelegatedModification(action, saleId, details = {}) {
+  if (hasPermission(currentUser.role, 'sales.modify')) return;
+  const row = db.listUsers().find((u) => u.id === currentUser.id);
+  db.logAudit({ userId: currentUser.id, action, entityType: 'sale', entityId: saleId, level: 'warning', details: { ...details, delegatedBy: row?.modify_sales_granted_by_name || null, delegationReason: row?.modify_sales_reason || null } });
+}
 ipcMain.handle('users:list', () => {
   requireAdmin();
   return db.listUsers();
@@ -1037,6 +1134,12 @@ ipcMain.handle('users:clearPin', (_event, userId) => {
   db.logAudit({ userId: currentUser.id, action: 'user_pin_cleared', entityType: 'user', entityId: userId });
   return db.clearUserPin(userId);
 });
+ipcMain.handle('users:setSalesModify', (_event, { userId, enabled, reason }) => {
+  requireAdmin();
+  const result = db.setUserSalesModify(userId, !!enabled, currentUser.id, reason);
+  db.logAudit({ userId: currentUser.id, action: enabled ? 'user_sales_modify_granted' : 'user_sales_modify_revoked', entityType: 'user', entityId: userId, level: 'warning', details: enabled ? { reason: String(reason || '').trim() } : null });
+  return result;
+});
 ipcMain.handle('users:setShiftType', (_event, { userId, shiftType }) => {
   requireAdmin();
   const result = db.setUserShiftType(userId, shiftType);
@@ -1048,9 +1151,9 @@ function requireManagerOrAdmin() { return requirePermission('management.access')
 
 /* ---------------- جلسة الصندوق الاختيارية ---------------- */
 ipcMain.handle('shift:current', () => { requireAccountReady(); return db.getOpenShift(); });
-ipcMain.handle('shift:open', (_event, openingAmount) => { requireAccountReady(); if (!(Number(openingAmount) >= 0)) throw new Error('مبلغ الافتتاح غير صالح.'); return db.openShift(Number(openingAmount), currentUser.id); });
+ipcMain.handle('shift:open', (_event, openingAmount) => { requireAccountReady(); if (!(Number(openingAmount) >= 0)) throw new Error(mt('مبلغ الافتتاح غير صالح.', 'Invalid opening amount.', 'Geçersiz açılış tutarı.')); return db.openShift(Number(openingAmount), currentUser.id); });
 ipcMain.handle('shift:summary', (_event, shiftId) => { requireAccountReady(); return db.getShiftSummary(shiftId, db.getCurrentBranch().id, currentUser.id, currentUser.role); });
-ipcMain.handle('shift:close', (_event, { shiftId, actualCash, notes }) => { requireAccountReady(); if (!(Number(actualCash) >= 0)) throw new Error('الكاش الفعلي غير صالح.'); return db.closeShift(shiftId, Number(actualCash), currentUser.id, notes); });
+ipcMain.handle('shift:close', (_event, { shiftId, actualCash, notes }) => { requireAccountReady(); if (!(Number(actualCash) >= 0)) throw new Error(mt('الكاش الفعلي غير صالح.', 'Invalid actual cash amount.', 'Geçersiz gerçek nakit tutarı.')); return db.closeShift(shiftId, Number(actualCash), currentUser.id, notes); });
 ipcMain.handle('shift:list', (_event, filters) => { requireManagerOrAdmin(); return db.listShifts(filters); });
 
 /* ---------------- الموظفون والرواتب ---------------- */
@@ -1067,7 +1170,7 @@ ipcMain.handle('payroll:deleteEmployee', (_event, { employeeId }) => { requireAd
 ipcMain.handle('payroll:settings', (_event, payload) => { requireAdmin(); return payload && payload.save ? db.savePayrollSettings(payload) : db.getPayrollSettings(); });
 ipcMain.handle('payroll:month', (_event, monthKey) => { requireAdmin(); return db.getPayrollV2Month(monthKey); });
 ipcMain.handle('payroll:report', (_event, monthKey) => { requireAdmin(); return db.getPayrollV2Report(monthKey); });
-ipcMain.handle('payroll:exportReport', async (_event, monthKey) => { requireAdmin(); const report=db.getPayrollV2Report(monthKey); const choice=await dialog.showSaveDialog(mainWindow,{title:'تصدير مسير الرواتب',defaultPath:`payroll-${report.monthKey}.xlsx`,filters:[{name:'Excel',extensions:['xlsx']}]}); if(choice.canceled||!choice.filePath)return{success:false,canceled:true}; exportPayrollWorkbook(choice.filePath,report); return{success:true,path:choice.filePath}; });
+ipcMain.handle('payroll:exportReport', async (_event, monthKey) => { requireAdmin(); const report=db.getPayrollV2Report(monthKey); const choice=await dialog.showSaveDialog(mainWindow,{title:mt('تصدير مسير الرواتب','Export payroll register','Bordro dökümünü dışa aktar'),defaultPath:`payroll-${report.monthKey}.xlsx`,filters:[{name:'Excel',extensions:['xlsx']}]}); if(choice.canceled||!choice.filePath)return{success:false,canceled:true}; exportPayrollWorkbook(choice.filePath,report); return{success:true,path:choice.filePath}; });
 
 ipcMain.handle('payroll:employee', (_event, { monthId, employeeId }) => { requireAdmin(); return db.getPayrollV2Employee(monthId, employeeId); });
 ipcMain.handle('payroll:addTransaction', (_event, payload) => {
@@ -1107,10 +1210,32 @@ ipcMain.handle('payroll:voidFinalSettlement', (_event, { settlementId, reason } 
 function buildPayrollSlipHtml(state, month, profile={}) {
   const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const e=state.employee||{}; const p=(state.payments||[]).slice(-1)[0]||{};
-  return `<!doctype html><html dir="rtl"><head><meta charset="utf-8"><title>قسيمة راتب</title><style>body{font-family:Arial,sans-serif;padding:36px;color:#111}h1{margin:0}h2{margin:6px 0 20px}.meta{color:#666;margin-bottom:18px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.cell{border:1px solid #ddd;padding:9px}table{width:100%;border-collapse:collapse;margin-top:20px}th,td{border:1px solid #ddd;padding:10px;text-align:right}.total{font-weight:700;font-size:18px}</style></head><body><h1>${esc(profile.business_name||'Nexora POS')}</h1><h2>قسيمة راتب</h2><div class="meta">الفترة: ${esc(month.month_key)} · تاريخ الصرف: ${esc(p.payment_date||'—')}</div><div class="grid"><div class="cell"><b>العامل</b><br>${esc(e.full_name)}</div><div class="cell"><b>الوظيفة</b><br>${esc(e.job_title)}</div><div class="cell"><b>الهوية / الإقامة</b><br>${esc(e.national_id||'—')}</div><div class="cell"><b>IBAN</b><br>${esc(e.iban||'—')}</div></div><table><tr><th>البيان</th><th>القيمة</th></tr><tr><td>الأساسي</td><td>${esc(e.base_amount||0)}</td></tr><tr><td>خصم الغياب</td><td>${esc(e.absence_deduction||0)}</td></tr><tr><td>الخصومات</td><td>${esc(e.deduction_total||0)}</td></tr><tr><td>المكافآت</td><td>${esc(e.bonus_total||0)}</td></tr><tr><td>الإضافي</td><td>${esc(e.overtime_total||0)}</td></tr><tr><td>السلف</td><td>${esc(e.advance_total||0)}</td></tr><tr><td>الدين المرحّل</td><td>${esc(e.debt_carry||0)}</td></tr><tr class="total"><td>صافي الراتب</td><td>${esc(e.net_salary||0)}</td></tr><tr><td>المدفوع في هذه الدفعة</td><td>${esc(p.amount||0)}</td></tr><tr><td>طريقة الدفع</td><td>${esc(p.method||'—')}</td></tr></table></body></html>`;
+  const dir = mt('rtl','ltr','ltr');
+  const align = mt('right','left','left');
+  const t = {
+    title: mt('قسيمة راتب','Payslip','Maaş bordrosu'),
+    period: mt('الفترة','Period','Dönem'),
+    paymentDate: mt('تاريخ الصرف','Payment date','Ödeme tarihi'),
+    employee: mt('العامل','Employee','Çalışan'),
+    jobTitle: mt('الوظيفة','Job title','Görev'),
+    nationalId: mt('الهوية / الإقامة','National ID / Residency','Kimlik / İkamet'),
+    statement: mt('البيان','Item','Kalem'),
+    value: mt('القيمة','Value','Değer'),
+    base: mt('الأساسي','Base salary','Temel maaş'),
+    absence: mt('خصم الغياب','Absence deduction','Devamsızlık kesintisi'),
+    deductions: mt('الخصومات','Deductions','Kesintiler'),
+    bonuses: mt('المكافآت','Bonuses','Primler'),
+    overtime: mt('الإضافي','Overtime','Fazla mesai'),
+    advances: mt('السلف','Advances','Avanslar'),
+    debtCarry: mt('الدين المرحّل','Carried-over debt','Devreden borç'),
+    net: mt('صافي الراتب','Net salary','Net maaş'),
+    paidThis: mt('المدفوع في هذه الدفعة','Paid in this payment','Bu ödemede ödenen'),
+    method: mt('طريقة الدفع','Payment method','Ödeme yöntemi'),
+  };
+  return `<!doctype html><html dir="${dir}"><head><meta charset="utf-8"><title>${t.title}</title><style>body{font-family:Arial,sans-serif;padding:36px;color:#111}h1{margin:0}h2{margin:6px 0 20px}.meta{color:#666;margin-bottom:18px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.cell{border:1px solid #ddd;padding:9px}table{width:100%;border-collapse:collapse;margin-top:20px}th,td{border:1px solid #ddd;padding:10px;text-align:${align}}.total{font-weight:700;font-size:18px}</style></head><body><h1>${esc(profile.business_name||'Nexora POS')}</h1><h2>${t.title}</h2><div class="meta">${t.period}: ${esc(month.month_key)} · ${t.paymentDate}: ${esc(p.payment_date||'—')}</div><div class="grid"><div class="cell"><b>${t.employee}</b><br>${esc(e.full_name)}</div><div class="cell"><b>${t.jobTitle}</b><br>${esc(e.job_title)}</div><div class="cell"><b>${t.nationalId}</b><br>${esc(e.national_id||'—')}</div><div class="cell"><b>IBAN</b><br>${esc(e.iban||'—')}</div></div><table><tr><th>${t.statement}</th><th>${t.value}</th></tr><tr><td>${t.base}</td><td>${esc(e.base_amount||0)}</td></tr><tr><td>${t.absence}</td><td>${esc(e.absence_deduction||0)}</td></tr><tr><td>${t.deductions}</td><td>${esc(e.deduction_total||0)}</td></tr><tr><td>${t.bonuses}</td><td>${esc(e.bonus_total||0)}</td></tr><tr><td>${t.overtime}</td><td>${esc(e.overtime_total||0)}</td></tr><tr><td>${t.advances}</td><td>${esc(e.advance_total||0)}</td></tr><tr><td>${t.debtCarry}</td><td>${esc(e.debt_carry||0)}</td></tr><tr class="total"><td>${t.net}</td><td>${esc(e.net_salary||0)}</td></tr><tr><td>${t.paidThis}</td><td>${esc(p.amount||0)}</td></tr><tr><td>${t.method}</td><td>${esc(p.method||'—')}</td></tr></table></body></html>`;
 }
 ipcMain.handle('payroll:printSlip', async (_event,{monthId,employeeId}={})=>{requireAdmin();const state=db.getPayrollV2Employee(Number(monthId),Number(employeeId));const month=db.getPayrollV2Month(state.employee?.month_key||String(new Date().toISOString()).slice(0,7));const html=buildPayrollSlipHtml(state,month,db.getGlobalProfile()||{});const win=new BrowserWindow({show:false,webPreferences:{contextIsolation:true,nodeIntegration:false,sandbox:true}});try{await win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);return await new Promise(resolve=>win.webContents.print({silent:false,printBackground:true},(success,failureReason)=>resolve({success,reason:failureReason||null})));}finally{win.destroy();}});
-ipcMain.handle('payroll:exportSlipPdf', async (_event,{monthId,employeeId}={})=>{requireAdmin();const state=db.getPayrollV2Employee(Number(monthId),Number(employeeId));const month=db.getPayrollV2Month(state.employee?.month_key||String(new Date().toISOString()).slice(0,7));const html=buildPayrollSlipHtml(state,month,db.getGlobalProfile()||{});const choice=await dialog.showSaveDialog(mainWindow,{title:'حفظ قسيمة الراتب PDF',defaultPath:`payslip-${employeeId}-${month.month_key}.pdf`,filters:[{name:'PDF',extensions:['pdf']}]});if(choice.canceled||!choice.filePath)return{success:false,canceled:true};const win=new BrowserWindow({show:false,webPreferences:{contextIsolation:true,nodeIntegration:false,sandbox:true}});try{await win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);const pdf=await win.webContents.printToPDF({printBackground:true,pageSize:'A4'});fs.writeFileSync(choice.filePath,pdf);return{success:true,path:choice.filePath};}finally{win.destroy();}});
+ipcMain.handle('payroll:exportSlipPdf', async (_event,{monthId,employeeId}={})=>{requireAdmin();const state=db.getPayrollV2Employee(Number(monthId),Number(employeeId));const month=db.getPayrollV2Month(state.employee?.month_key||String(new Date().toISOString()).slice(0,7));const html=buildPayrollSlipHtml(state,month,db.getGlobalProfile()||{});const choice=await dialog.showSaveDialog(mainWindow,{title:mt('حفظ قسيمة الراتب PDF','Save payslip PDF','Maaş bordrosu PDF olarak kaydet'),defaultPath:`payslip-${employeeId}-${month.month_key}.pdf`,filters:[{name:'PDF',extensions:['pdf']}]});if(choice.canceled||!choice.filePath)return{success:false,canceled:true};const win=new BrowserWindow({show:false,webPreferences:{contextIsolation:true,nodeIntegration:false,sandbox:true}});try{await win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);const pdf=await win.webContents.printToPDF({printBackground:true,pageSize:'A4'});fs.writeFileSync(choice.filePath,pdf);return{success:true,path:choice.filePath};}finally{win.destroy();}});
 
 ipcMain.handle('payroll:accrueMonth', (_event, { monthId } = {}) => {
   // ترحيل استحقاق صريح: يعترف بكامل مصروف رواتب الشهر بقائمة الدخل فوراً (مدين 6100)
@@ -1155,13 +1280,13 @@ ipcMain.handle('returns:get', (_event, id) => { requireManagerOrAdmin(); return 
 
 /* ---------------- اللغة (تعدد اللغات) ---------------- */
 ipcMain.handle('language:get', () => { return db.getSetting('app_language', 'ar'); });
-ipcMain.handle('language:set', (_event, lang) => { requireAdmin(); if (!['ar','en','tr'].includes(String(lang))) throw new Error('اللغة غير مدعومة.'); return db.setSetting('app_language', lang); });
+ipcMain.handle('language:set', (_event, lang) => { requireAdmin(); if (!['ar','en','tr'].includes(String(lang))) throw new Error(mt('اللغة غير مدعومة.', 'Unsupported language.', 'Desteklenmeyen dil.')); return db.setSetting('app_language', lang); });
 
 /* ---------------- السمة ---------------- */
 ipcMain.handle('theme:get', () => { return db.getSetting('app_theme', 'light'); });
 ipcMain.handle('theme:set', (_event, theme) => {
   requireAccountReady();
-  if (!['light', 'dark'].includes(theme)) throw new Error('السمة غير صالحة');
+  if (!['light', 'dark'].includes(theme)) throw new Error(mt('السمة غير صالحة', 'Invalid theme', 'Geçersiz tema'));
   return db.setSetting('app_theme', theme);
 });
 
@@ -1186,9 +1311,9 @@ ipcMain.handle('branding:setReceiptFooterMessage', (_event, message) => {
 ipcMain.handle('branding:setLogo', async () => {
   requireAdmin();
   const result = await dialog.showOpenDialog(mainWindow, {
-    title: 'اختر شعار المتجر',
+    title: mt('اختر شعار المتجر', 'Choose store logo', 'Mağaza logosunu seç'),
     properties: ['openFile'],
-    filters: [{ name: 'صور', extensions: ['png', 'jpg', 'jpeg', 'webp'] }],
+    filters: [{ name: mt('صور', 'Images', 'Görseller'), extensions: ['png', 'jpg', 'jpeg', 'webp'] }],
   });
   if (result.canceled || result.filePaths.length === 0) return { success: false, canceled: true };
 
@@ -1196,7 +1321,7 @@ ipcMain.handle('branding:setLogo', async () => {
   const stat = fs.statSync(sourcePath);
   const MAX_LOGO_BYTES = 10 * 1024 * 1024;
   if (!stat.isFile() || stat.size <= 0 || stat.size > MAX_LOGO_BYTES) {
-    throw new Error('شعار المتجر غير صالح أو أكبر من 10 ميغابايت.');
+    throw new Error(mt('شعار المتجر غير صالح أو أكبر من 10 ميغابايت.', 'The store logo is invalid or larger than 10 MB.', "Mağaza logosu geçersiz veya 10 MB'dan büyük."));
   }
   const bytes = fs.readFileSync(sourcePath);
   const ext = path.extname(sourcePath).toLowerCase();
@@ -1206,7 +1331,7 @@ ipcMain.handle('branding:setLogo', async () => {
     '.jpeg': bytes.subarray(0, 3).equals(Buffer.from([0xff,0xd8,0xff])),
     '.webp': bytes.subarray(0, 4).toString('ascii') === 'RIFF' && bytes.subarray(8, 12).toString('ascii') === 'WEBP',
   };
-  if (!signatures[ext]) throw new Error('نوع شعار المتجر لا يطابق محتوى الملف.');
+  if (!signatures[ext]) throw new Error(mt('نوع شعار المتجر لا يطابق محتوى الملف.', "The store logo's file type doesn't match its content.", 'Mağaza logosu dosya türü, dosya içeriğiyle eşleşmiyor.'));
   const destPath = path.join(getImagesDir(), `store-logo${ext}`);
   fs.writeFileSync(destPath, bytes, { mode: 0o600 });
   db.setSetting('branding_logo_path', destPath);
@@ -1220,14 +1345,14 @@ ipcMain.handle('weighing:getPrefix', () => { requireAccountReady(); return db.ge
 ipcMain.handle('weighing:setPrefix', (_event, prefix) => {
   requireManagerOrAdmin();
   const clean = String(prefix || '20').trim();
-  if (!/^\d{2}$/.test(clean)) throw new Error('بادئة باركود الميزان يجب أن تكون رقمين بالضبط (مثال: 20).');
+  if (!/^\d{2}$/.test(clean)) throw new Error(mt('بادئة باركود الميزان يجب أن تكون رقمين بالضبط (مثال: 20).', 'The scale barcode prefix must be exactly two digits (e.g. 20).', 'Tartı barkodu ön eki tam olarak iki basamak olmalıdır (örnek: 20).'));
   db.setSetting('weighted_barcode_prefix', clean);
   return { success: true };
 });
 ipcMain.handle('discount:setMaxCashierPercent', (_event, percent) => {
   requireManagerOrAdmin();
   const value = Number(percent);
-  if (!Number.isFinite(value) || value < 0 || value > 100) throw new Error('نسبة الخصم القصوى يجب أن تكون بين 0 و100.');
+  if (!Number.isFinite(value) || value < 0 || value > 100) throw new Error(mt('نسبة الخصم القصوى يجب أن تكون بين 0 و100.', 'The maximum discount percentage must be between 0 and 100.', 'Maksimum indirim oranı 0 ile 100 arasında olmalıdır.'));
   return db.setSetting('max_cashier_discount_percent', String(Math.round(value * 100) / 100));
 });
 /* ---------------- التوصيل (تسعير أوتوماتيكي حسب المسافة) ---------------- */
@@ -1241,8 +1366,8 @@ ipcMain.handle('delivery:getPricing', () => { requireAccountReady(); return {
 ipcMain.handle('delivery:setPricing', (_event, { defaultFee, pricePerKm }) => {
   requireManagerOrAdmin();
   const fee = Number(defaultFee), perKm = Number(pricePerKm);
-  if (!Number.isFinite(fee) || fee < 0) throw new Error('السعر الثابت الافتراضي للتوصيل غير صالح.');
-  if (!Number.isFinite(perKm) || perKm < 0) throw new Error('سعر الكيلومتر غير صالح.');
+  if (!Number.isFinite(fee) || fee < 0) throw new Error(mt('السعر الثابت الافتراضي للتوصيل غير صالح.', 'The default flat delivery fee is invalid.', 'Varsayılan sabit teslimat ücreti geçersiz.'));
+  if (!Number.isFinite(perKm) || perKm < 0) throw new Error(mt('سعر الكيلومتر غير صالح.', 'The per-kilometer price is invalid.', 'Kilometre başına fiyat geçersiz.'));
   db.setSetting('delivery_default_fee', String(Math.round(fee * 100) / 100));
   db.setSetting('delivery_price_per_km', String(Math.round(perKm * 100) / 100));
   return { success: true };
@@ -1251,7 +1376,7 @@ ipcMain.handle('delivery:setPricing', (_event, { defaultFee, pricePerKm }) => {
 ipcMain.handle('discount:approve', (_event, { username, password }) => { requireAccountReady();
   const result = db.authenticate(username, password);
   if (!result || result.blocked || !['admin', 'manager'].includes(result.role)) {
-    return { approved: false, message: 'بيانات غير صحيحة أو لا تملك صلاحية مدير' };
+    return { approved: false, message: mt('بيانات غير صحيحة أو لا تملك صلاحية مدير', "Incorrect credentials, or this account doesn't have manager permission", 'Bilgiler yanlış veya bu hesapta yönetici izni yok') };
   }
   const grantId = crypto.randomUUID();
   approvalGrants.set(grantId, { approverId: result.id, approverName: result.full_name, userId: currentUser?.id || null, expiresAt: Date.now() + 2 * 60_000 });
@@ -1262,7 +1387,7 @@ const managerPinAttempts = { count: 0, lockedUntil: 0 };
 ipcMain.handle('discount:approveWithPin', (_event, pin) => { requireAccountReady();
   if (Date.now() < managerPinAttempts.lockedUntil) {
     const secondsLeft = Math.ceil((managerPinAttempts.lockedUntil - Date.now()) / 1000);
-    return { approved: false, message: `محاولات كثيرة خاطئة. حاول بعد ${secondsLeft} ثانية.` };
+    return { approved: false, message: mt('محاولات كثيرة خاطئة. حاول بعد ', 'Too many failed attempts. Try again in ', 'Çok fazla başarısız deneme. ') + secondsLeft + mt(' ثانية.', ' seconds.', ' saniye sonra tekrar deneyin.') };
   }
   const result = db.authenticateManagerByPin(pin);
   if (!result) {
@@ -1271,7 +1396,7 @@ ipcMain.handle('discount:approveWithPin', (_event, pin) => { requireAccountReady
       managerPinAttempts.lockedUntil = Date.now() + 60_000;
       managerPinAttempts.count = 0;
     }
-    return { approved: false, message: 'رقم PIN غير صحيح أو لا يخص مديراً' };
+    return { approved: false, message: mt('رقم PIN غير صحيح أو لا يخص مديراً', "Incorrect PIN, or it doesn't belong to a manager", 'PIN yanlış veya bir yöneticiye ait değil') };
   }
   managerPinAttempts.count = 0;
   const grantId = crypto.randomUUID();
@@ -1290,7 +1415,7 @@ ipcMain.handle('reports:balances', () => { requireManagerOrAdmin(); return db.ge
 ipcMain.handle('reports:exportExcel', async (_event, range) => {
   requireManagerOrAdmin();
   const result = await dialog.showSaveDialog(mainWindow, {
-    title: 'تصدير تقرير Excel',
+    title: mt('تصدير تقرير Excel', 'Export Excel report', 'Excel raporu dışa aktar'),
     defaultPath: `sales-report-${new Date().toISOString().slice(0, 10)}.xlsx`,
     filters: [{ name: 'Excel', extensions: ['xlsx'] }],
   });
@@ -1302,7 +1427,7 @@ ipcMain.handle('reports:exportExcel', async (_event, range) => {
 ipcMain.handle('reports:exportPdf', async (_event, range) => {
   requireManagerOrAdmin();
   const result = await dialog.showSaveDialog(mainWindow, {
-    title: 'تصدير تقرير PDF',
+    title: mt('تصدير تقرير PDF', 'Export PDF report', 'PDF raporu dışa aktar'),
     defaultPath: `sales-report-${new Date().toISOString().slice(0, 10)}.pdf`,
     filters: [{ name: 'PDF', extensions: ['pdf'] }],
   });
@@ -1348,7 +1473,7 @@ ipcMain.handle('lan:getStatus', () => { requireAccountReady();
 
 ipcMain.handle('lan:setRole', async (_event, { role, deviceName }) => {
   requireAdmin();
-  if (!['none', 'main', 'terminal'].includes(role)) throw new Error('دور غير معروف');
+  if (!['none', 'main', 'terminal'].includes(role)) throw new Error(mt('دور غير معروف', 'Unknown role', 'Bilinmeyen rol'));
 
   db.setSetting('lan_role', role);
   if (deviceName) db.setSetting('lan_device_name', deviceName);
@@ -1367,7 +1492,7 @@ ipcMain.handle('lan:setRole', async (_event, { role, deviceName }) => {
 // يولّد رمز اقتران قصير الأمد (5 دقائق) يظهر على شاشة الجهاز الرئيسي، ليكتبه المستخدم على الجهاز الطرفية
 ipcMain.handle('lan:startPairingCode', async () => {
   requireAdmin();
-  if (db.getSetting('lan_role', 'none') !== 'main') throw new Error('فعّل وضع "جهاز رئيسي" أولاً');
+  if (db.getSetting('lan_role', 'none') !== 'main') throw new Error(mt('فعّل وضع "جهاز رئيسي" أولاً', 'Enable "Main device" mode first', 'Önce "Ana cihaz" modunu etkinleştirin'));
   await startLanMain();
   currentPairingCode = crypto.randomInt(10000000, 100000000).toString();
   pairingCodeExpiresAt = Date.now() + 5 * 60 * 1000;
@@ -1392,11 +1517,11 @@ ipcMain.handle('lan:pairWithDevice', async (_event, { address, port, code }) => 
       pinnedFingerprint: null,
     });
   } catch (err) {
-    throw new Error('تعذّر الاتصال بالجهاز الرئيسي: ' + err.message);
+    throw new Error(mt('تعذّر الاتصال بالجهاز الرئيسي: ', 'Could not connect to the main device: ', 'Ana cihaza bağlanılamadı: ') + err.message);
   }
   const result = response.json || {};
-  if (!(response.status >= 200 && response.status < 300)) throw new Error(result.message || 'تعذّر الاقتران');
-  if (!response.fingerprint256) throw new Error('تعذّر قراءة شهادة الجهاز الرئيسي أثناء الاقتران');
+  if (!(response.status >= 200 && response.status < 300)) throw new Error(result.message || mt('تعذّر الاقتران', 'Pairing failed', 'Eşleştirme başarısız'));
+  if (!response.fingerprint256) throw new Error(mt('تعذّر قراءة شهادة الجهاز الرئيسي أثناء الاقتران', "Could not read the main device's certificate during pairing", 'Eşleştirme sırasında ana cihazın sertifikası okunamadı'));
 
   // تبنّي هوية الفرع المشترك حتى تندمج التقارير والمخزون تحت نفس المحل
   db.adoptSharedBranch({ uuid: result.branchUuid, name: result.branchName, businessType: result.businessType });
@@ -1435,9 +1560,9 @@ ipcMain.handle('backup:autoStatus', () => {
 ipcMain.handle('backup:create', async () => {
   requireAdmin();
   const result = await dialog.showSaveDialog(mainWindow, {
-    title: 'حفظ نسخة احتياطية',
+    title: mt('حفظ نسخة احتياطية', 'Save backup', 'Yedek kaydet'),
     defaultPath: `pos-backup-${new Date().toISOString().slice(0, 10)}.db`,
-    filters: [{ name: 'قاعدة بيانات', extensions: ['db'] }],
+    filters: [{ name: mt('قاعدة بيانات', 'Database', 'Veritabanı'), extensions: ['db'] }],
   });
   if (result.canceled || !result.filePath) return { success: false, canceled: true };
   await db.backupTo(result.filePath);
@@ -1448,8 +1573,8 @@ ipcMain.handle('backup:create', async () => {
 ipcMain.handle('backup:createPortable', async (_event, passphrase) => {
   requirePermission('backup.manage');
   const secret = String(passphrase || '');
-  if (secret.length < 12) throw new Error('كلمة مرور النسخة المحمولة يجب ألا تقل عن 12 محرفاً.');
-  const result = await dialog.showSaveDialog(mainWindow, { title: 'حفظ النسخة المحمولة المشفّرة', defaultPath: `nexora-portable-backup-${new Date().toISOString().slice(0,10)}.nxbak`, filters: [{ name: 'Nexora Portable Backup', extensions: ['nxbak'] }] });
+  if (secret.length < 12) throw new Error(mt('كلمة مرور النسخة المحمولة يجب ألا تقل عن 12 محرفاً.', 'The portable backup password must be at least 12 characters.', 'Taşınabilir yedek şifresi en az 12 karakter olmalıdır.'));
+  const result = await dialog.showSaveDialog(mainWindow, { title: mt('حفظ النسخة المحمولة المشفّرة', 'Save encrypted portable backup', 'Şifreli taşınabilir yedeği kaydet'), defaultPath: `nexora-portable-backup-${new Date().toISOString().slice(0,10)}.nxbak`, filters: [{ name: 'Nexora Portable Backup', extensions: ['nxbak'] }] });
   if (result.canceled || !result.filePath) return { success: false, canceled: true };
   const backup = await db.createPortableBackup(result.filePath, secret);
   db.logAudit({ userId: currentUser.id, action: 'portable_backup_created', entityType: 'backup', entityId: result.filePath });
@@ -1459,10 +1584,10 @@ ipcMain.handle('backup:createPortable', async (_event, passphrase) => {
 ipcMain.handle('backup:restorePortable', async (_event, passphrase) => {
   requirePermission('backup.manage');
   const secret = String(passphrase || '');
-  if (secret.length < 12) throw new Error('كلمة مرور النسخة المحمولة غير صالحة.');
-  const result = await dialog.showOpenDialog(mainWindow, { title: 'استعادة نسخة Nexora المحمولة', properties: ['openFile'], filters: [{ name: 'Nexora Portable Backup', extensions: ['nxbak'] }] });
+  if (secret.length < 12) throw new Error(mt('كلمة مرور النسخة المحمولة غير صالحة.', 'Invalid portable backup password.', 'Geçersiz taşınabilir yedek şifresi.'));
+  const result = await dialog.showOpenDialog(mainWindow, { title: mt('استعادة نسخة Nexora المحمولة', 'Restore Nexora portable backup', 'Nexora taşınabilir yedeğini geri yükle'), properties: ['openFile'], filters: [{ name: 'Nexora Portable Backup', extensions: ['nxbak'] }] });
   if (result.canceled || result.filePaths.length === 0) return { success: false, canceled: true };
-  const confirmed = await dialog.showMessageBox(mainWindow, { type: 'warning', buttons: ['إلغاء', 'استعادة'], defaultId: 0, cancelId: 0, message: 'ستُستبدل قاعدة البيانات الحالية. هل تريد المتابعة؟' });
+  const confirmed = await dialog.showMessageBox(mainWindow, { type: 'warning', buttons: [mt('إلغاء', 'Cancel', 'İptal'), mt('استعادة', 'Restore', 'Geri yükle')], defaultId: 0, cancelId: 0, message: mt('ستُستبدل قاعدة البيانات الحالية. هل تريد المتابعة؟', 'This will replace the current database. Continue?', 'Bu, mevcut veritabanının yerini alacak. Devam edilsin mi?') });
   if (confirmed.response !== 1) return { success: false, canceled: true };
   const currentDb = db.getDbPath();
   const safetyPath = `${currentDb}.pre-portable-restore-${Date.now()}.db`;
@@ -1473,10 +1598,24 @@ ipcMain.handle('backup:restorePortable', async (_event, passphrase) => {
     const restored = db.restorePortableBackup(result.filePaths[0], secret);
     if (!restored.valid) throw new Error(restored.message);
   } catch (error) {
-    try { fs.copyFileSync(safetyPath, currentDb); } catch (_) {}
-    throw new Error(`فشلت استعادة النسخة المحمولة: ${error.message}`);
+    // كان اتصال قاعدة البيانات يبقى مغلقاً هنا بلا أي محاولة لإعادة فتحه أو إعادة تشغيل
+    // التطبيق — يعني أي عملية لاحقة بنفس الجلسة كانت ستفشل فوراً رغم أن الملف على القرص
+    // أُعيد لنسخة الأمان بنجاح. لا يوجد بهذا المشروع أي سابقة لإعادة فتح الاتصال (db.init())
+    // أكثر من مرة بنفس العملية، فالمسار الأكثر أماناً هو نفس ما يفعله مسار النجاح تماماً:
+    // استرجاع الملف، ثم إعادة تشغيل التطبيق بعملية جديدة نظيفة.
+    let rolledBack = false;
+    try { fs.copyFileSync(safetyPath, currentDb); rolledBack = true; } catch (_) {}
+    const baseMessage = mt('فشلت استعادة النسخة المحمولة: ', 'Restoring the portable backup failed: ', 'Taşınabilir yedek geri yüklenemedi: ') + error.message;
+    if (rolledBack) {
+      await dialog.showMessageBox(mainWindow, { type: 'error', message: baseMessage + '\n\n' + mt('أُعيدت قاعدة بياناتك الأصلية بأمان. سيعاد تشغيل التطبيق الآن.', 'Your original database was safely restored. The app will now restart.', 'Orijinal veritabanınız güvenli bir şekilde geri yüklendi. Uygulama şimdi yeniden başlatılacak.') });
+      app.relaunch(); app.exit(0);
+      return { success: false, message: baseMessage };
+    }
+    // فشل حتى استرجاع نسخة الأمان — أسوأ سيناريو ممكن، لازم يعرف المستخدم فوراً وبوضوح تام
+    await dialog.showMessageBox(mainWindow, { type: 'error', message: baseMessage + '\n\n' + mt(`تعذّر أيضاً استرجاع النسخة الأصلية تلقائياً. نسخة الأمان محفوظة يدوياً هنا: ${safetyPath}\nأعد تشغيل التطبيق يدوياً ولا تستخدمه قبل استعادة هذا الملف بنفسك.`, `Automatically restoring the original copy also failed. A manual safety copy is saved at: ${safetyPath}\nRestart the app manually and do not use it until you restore this file yourself.`, `Orijinal kopyayı otomatik olarak geri yükleme de başarısız oldu. Manuel bir güvenlik kopyası şu konuma kaydedildi: ${safetyPath}\nUygulamayı manuel olarak yeniden başlatın ve bu dosyayı kendiniz geri yüklemeden kullanmayın.`) });
+    throw new Error(baseMessage);
   }
-  await dialog.showMessageBox(mainWindow, { type: 'info', message: 'تم التحقق من النسخة المحمولة بنجاح. سيعاد تشغيل التطبيق الآن.' });
+  await dialog.showMessageBox(mainWindow, { type: 'info', message: mt('تم التحقق من النسخة المحمولة بنجاح. سيعاد تشغيل التطبيق الآن.', 'The portable backup was verified successfully. The app will now restart.', 'Taşınabilir yedek başarıyla doğrulandı. Uygulama şimdi yeniden başlatılacak.') });
   app.relaunch(); app.exit(0);
   return { success: true, safetyPath };
 });
@@ -1484,18 +1623,18 @@ ipcMain.handle('backup:restorePortable', async (_event, passphrase) => {
 ipcMain.handle('backup:restore', async () => {
   requireAdmin();
   const result = await dialog.showOpenDialog(mainWindow, {
-    title: 'اختر ملف نسخة احتياطية للاستعادة',
+    title: mt('اختر ملف نسخة احتياطية للاستعادة', 'Choose a backup file to restore', 'Geri yüklenecek yedek dosyasını seç'),
     properties: ['openFile'],
-    filters: [{ name: 'قاعدة بيانات', extensions: ['db'] }],
+    filters: [{ name: mt('قاعدة بيانات', 'Database', 'Veritabanı'), extensions: ['db'] }],
   });
   if (result.canceled || result.filePaths.length === 0) return { success: false, canceled: true };
 
   const confirmed = await dialog.showMessageBox(mainWindow, {
     type: 'warning',
-    buttons: ['إلغاء', 'استعادة (سيُستبدل كل شيء)'],
+    buttons: [mt('إلغاء', 'Cancel', 'İptal'), mt('استعادة (سيُستبدل كل شيء)', 'Restore (everything will be replaced)', 'Geri yükle (her şeyin yerini alacak)')],
     defaultId: 0,
     cancelId: 0,
-    message: 'استعادة نسخة احتياطية ستستبدل كل بيانات التطبيق الحالية بالكامل. هل تريد المتابعة؟',
+    message: mt('استعادة نسخة احتياطية ستستبدل كل بيانات التطبيق الحالية بالكامل. هل تريد المتابعة؟', "Restoring a backup will completely replace all of the app's current data. Continue?", 'Bir yedeği geri yüklemek, uygulamanın mevcut tüm verilerini tamamen değiştirecektir. Devam edilsin mi?'),
   });
   if (confirmed.response !== 1) return { success: false, canceled: true };
 
@@ -1514,12 +1653,23 @@ ipcMain.handle('backup:restore', async () => {
     const restoredValidation = db.validateBackupFile(dbPath);
     if (!restoredValidation.valid) throw new Error(restoredValidation.message);
   } catch (error) {
-    try { fs.copyFileSync(safetyPath, dbPath); } catch (_) {}
-    throw new Error(`فشلت استعادة النسخة الاحتياطية وتمت محاولة إبقاء النسخة الحالية: ${error.message}`);
+    // نفس إصلاح backup:restorePortable أعلاه: لا نترك اتصال قاعدة البيانات مغلقاً بصمت.
+    // نتحقق فعلياً من نجاح استرجاع نسخة الأمان، ثم نعيد تشغيل التطبيق بعملية نظيفة بدل
+    // ترك الاتصال معلّقاً بلا أي طريقة لاستخدام التطبيق مجدداً دون إعادة تشغيل يدوية.
+    let rolledBack = false;
+    try { fs.copyFileSync(safetyPath, dbPath); rolledBack = true; } catch (_) {}
+    const baseMessage = mt('فشلت استعادة النسخة الاحتياطية وتمت محاولة إبقاء النسخة الحالية: ', 'Restoring the backup failed, and an attempt was made to keep the current version: ', 'Yedek geri yüklenemedi ve mevcut sürüm korunmaya çalışıldı: ') + error.message;
+    if (rolledBack) {
+      await dialog.showMessageBox(mainWindow, { type: 'error', message: baseMessage + '\n\n' + mt('أُعيدت قاعدة بياناتك الأصلية بأمان. سيعاد تشغيل التطبيق الآن.', 'Your original database was safely restored. The app will now restart.', 'Orijinal veritabanınız güvenli bir şekilde geri yüklendi. Uygulama şimdi yeniden başlatılacak.') });
+      app.relaunch(); app.exit(0);
+      return { success: false, message: baseMessage };
+    }
+    await dialog.showMessageBox(mainWindow, { type: 'error', message: baseMessage + '\n\n' + mt(`تعذّر أيضاً استرجاع النسخة الأصلية تلقائياً. نسخة الأمان محفوظة يدوياً هنا: ${safetyPath}\nأعد تشغيل التطبيق يدوياً ولا تستخدمه قبل استعادة هذا الملف بنفسك.`, `Automatically restoring the original copy also failed. A manual safety copy is saved at: ${safetyPath}\nRestart the app manually and do not use it until you restore this file yourself.`, `Orijinal kopyayı otomatik olarak geri yükleme de başarısız oldu. Manuel bir güvenlik kopyası şu konuma kaydedildi: ${safetyPath}\nUygulamayı manuel olarak yeniden başlatın ve bu dosyayı kendiniz geri yüklemeden kullanmayın.`) });
+    throw new Error(baseMessage);
   }
   await dialog.showMessageBox(mainWindow, {
     type: 'info',
-    message: 'تم التحقق من النسخة المستعادة بنجاح. سيتم إغلاق التطبيق الآن — أعد فتحه لتحميل البيانات المستعادة.',
+    message: mt('تم التحقق من النسخة المستعادة بنجاح. سيتم إغلاق التطبيق الآن — أعد فتحه لتحميل البيانات المستعادة.', 'The restored copy was verified successfully. The app will now close — reopen it to load the restored data.', 'Geri yüklenen kopya başarıyla doğrulandı. Uygulama şimdi kapatılacak — geri yüklenen verileri yüklemek için yeniden açın.'),
   });
   app.relaunch();
   app.exit(0);
@@ -1560,7 +1710,7 @@ ipcMain.handle('products:variantParents', (_event, excludeId) => { requireAccoun
 ipcMain.handle('products:importCsv', async () => {
   requireManagerOrAdmin();
   const result = await dialog.showOpenDialog(mainWindow, {
-    title: 'اختر ملف CSV للمنتجات',
+    title: mt('اختر ملف CSV للمنتجات', 'Choose a products CSV file', 'Ürünler için CSV dosyası seç'),
     properties: ['openFile'],
     filters: [{ name: 'CSV', extensions: ['csv'] }],
   });
@@ -1569,7 +1719,7 @@ ipcMain.handle('products:importCsv', async () => {
   const csvText = fs.readFileSync(result.filePaths[0], 'utf8');
   const rows = db.parseProductsCsv(csvText);
   if (rows.length === 0) {
-    return { created: 0, updated: 0, errors: [{ row: 0, message: 'الملف فارغ أو بصيغة غير صحيحة' }] };
+    return { created: 0, updated: 0, errors: [{ row: 0, message: mt('الملف فارغ أو بصيغة غير صحيحة', 'The file is empty or has an invalid format', 'Dosya boş veya biçimi geçersiz') }] };
   }
   return db.bulkImportProducts(rows);
 });
@@ -1577,8 +1727,8 @@ ipcMain.handle('products:importCsv', async () => {
 // يُنشئ ملف CSV نموذجي فارغ (Template) ليعرف صاحب المحل الأعمدة المطلوبة بالضبط
 ipcMain.handle('products:downloadCsvTemplate', async () => { requireAccountReady();
   const result = await dialog.showSaveDialog(mainWindow, {
-    title: 'حفظ نموذج استيراد المنتجات',
-    defaultPath: 'نموذج-استيراد-المنتجات.csv',
+    title: mt('حفظ نموذج استيراد المنتجات', 'Save products import template', 'Ürün içe aktarma şablonunu kaydet'),
+    defaultPath: mt('نموذج-استيراد-المنتجات.csv', 'products-import-template.csv', 'urun-ice-aktarma-sablonu.csv'),
     filters: [{ name: 'CSV', extensions: ['csv'] }],
   });
   if (result.canceled || !result.filePath) return null;
@@ -1586,8 +1736,8 @@ ipcMain.handle('products:downloadCsvTemplate', async () => { requireAccountReady
   const template =
     '\uFEFF' + // BOM حتى يفتح إكسل الملف بترميز عربي صحيح
     'name,barcode,category,price,cost,quantity,minQuantity,unit\n' +
-    'كولا 330 مل,6221031000012,مشروبات,2.5,1.5,100,10,piece\n' +
-    'قميص قطن أزرق,,أزياء,120,80,15,2,piece\n';
+    mt('كولا 330 مل,6221031000012,مشروبات,2.5,1.5,100,10,piece\n', 'Cola 330 ml,6221031000012,Beverages,2.5,1.5,100,10,piece\n', 'Kola 330 ml,6221031000012,İçecekler,2.5,1.5,100,10,piece\n') +
+    mt('قميص قطن أزرق,,أزياء,120,80,15,2,piece\n', 'Blue cotton shirt,,Fashion,120,80,15,2,piece\n', 'Mavi pamuklu gömlek,,Moda,120,80,15,2,piece\n');
   fs.writeFileSync(result.filePath, template, 'utf8');
   return { path: result.filePath };
 });
@@ -1662,6 +1812,20 @@ ipcMain.handle('suppliers:payDebt', (_event, payload) => {
 ipcMain.handle('purchases:list', () => { requireManagerOrAdmin(); return db.listPurchaseOrders(); });
 ipcMain.handle('purchases:get', (_event, id) => { requireManagerOrAdmin(); return db.getPurchaseOrder(id); });
 ipcMain.handle('purchases:create', (_event, purchase) => { requireManagerOrAdmin(); const shift = db.getOpenShift(); return db.createPurchaseOrder({ ...purchase, userId: currentUser.id, shiftId: shift?.id || null }); });
+// مصروفات تشغيلية بلا بضاعة (إيجار، كهرباء...): لا مخزون إطلاقاً. نفس صلاحية قسم الموردين (مدير/أدمن).
+ipcMain.handle('expenses:categories', (_event, includeInactive) => { requireManagerOrAdmin(); return db.listExpenseCategories(!!includeInactive); });
+ipcMain.handle('expenses:saveCategory', (_event, payload) => {
+  requireManagerOrAdmin();
+  const result = db.saveExpenseCategory(payload);
+  db.logAudit({ userId: currentUser.id, action: 'expense_category_saved', entityType: 'expense_category', entityId: result.id, details: { name: String(payload?.name || '').slice(0, 80) } });
+  return result;
+});
+ipcMain.handle('expenses:create', (_event, payload) => {
+  requireManagerOrAdmin();
+  const shift = db.getOpenShift();
+  return db.createExpenseInvoice({ ...payload, userId: currentUser.id, shiftId: shift?.id || null });
+});
+ipcMain.handle('expenses:summary', (_event, range) => { requireManagerOrAdmin(); return db.getOperatingExpensesSummary(range || {}); });
 ipcMain.handle('purchases:receive', (_event, id) => { requireManagerOrAdmin(); const shift = db.getOpenShift(); return db.receivePurchaseOrder(id, { userId: currentUser.id, shiftId: shift?.id || null }); });
 
 /* ---------------- طاولات المطعم والطلبات المفتوحة ---------------- */
@@ -1680,7 +1844,7 @@ ipcMain.handle('tables:setCustomer', (_event, { saleId, customerId }) => { requi
 ipcMain.handle('tables:setItems', (_event, { saleId, items }) => {
   requireAccountReady();
   const before = db.getSale(saleId, db.getCurrentBranch().id);
-  if (!before || before.status !== 'open') throw new Error('الطلب المفتوح غير موجود.');
+  if (!before || before.status !== 'open') throw new Error(mt('الطلب المفتوح غير موجود.', 'The open order was not found.', 'Açık sipariş bulunamadı.'));
   if (currentUser.role === 'cashier') {
     // نجمع الكمية حسب المنتج عبر كل الأسطر (قد يتكرر نفس المنتج بأكثر من سطر الآن
     // بسبب الملاحظات المختلفة — مثلاً "شاورما" عادية وسطر آخر "شاورما بدون ثوم")
@@ -1695,14 +1859,14 @@ ipcMain.handle('tables:setItems', (_event, { saleId, items }) => {
     const oldQuantities = sumByProduct(before.items);
     const newQuantities = sumByProduct(items || []);
     for (const [productId, quantity] of oldQuantities) {
-      if ((newQuantities.get(productId) || 0) < quantity) throw new Error('الكاشير لا يملك صلاحية تخفيض أو حذف الكميات. اطلب المدير.');
+      if ((newQuantities.get(productId) || 0) < quantity) throw new Error(mt('الكاشير لا يملك صلاحية تخفيض أو حذف الكميات. اطلب المدير.', "The cashier isn't permitted to reduce or remove quantities. Ask a manager.", 'Kasiyerin miktarları azaltma veya silme yetkisi yok. Bir yöneticiden isteyin.'));
     }
   }
   const result = db.setOpenSaleItems(saleId, items);
   db.logAudit({ userId: currentUser.id, action: 'table_order_updated', entityType: 'sale', entityId: saleId, details: { itemCount: (items || []).length } });
   // نرفق نتيجة الطباعة بالرد بدل تجاهلها (void) حتى تقدر الواجهة تنبّه المستخدم
   // فوراً لو الطابعة فشلت، بدل فشل صامت ما حد يعرف سببه إلا من سجل التدقيق.
-  return autoSendKitchen(saleId).then((kitchen) => ({ ...result, printOutcome: { kitchen } }));
+  return sendKitchenForTableSave(saleId, result).then((kitchen) => ({ ...result, printOutcome: { kitchen } }));
 });
 ipcMain.handle('tables:merge', (_event, { sourceTableId, targetTableId }) => {
   requireManagerOrAdmin();
@@ -1741,8 +1905,8 @@ ipcMain.handle('tables:release', (_event, tableId) => {
 ipcMain.handle('tables:acknowledgeBill', (_event, saleId) => { requireAccountReady(); return db.acknowledgeBillRequest(saleId); });
 
 // فتح نافذة تذكرة مطبخ قابلة للطباعة (بدون أسعار — فقط الأصناف والكميات والملاحظات)
-ipcMain.handle('kitchen:open', (_event, saleId) => { requireAccountReady(); if (!db.getSale(saleId, db.getCurrentBranch().id)) throw new Error('الطلب غير موجود.'); return autoSendKitchen(saleId); });
-ipcMain.handle('kitchen:print', () => { requireAccountReady(); throw new Error('الطباعة أصبحت تلقائية من إعدادات الطابعات.'); });
+ipcMain.handle('kitchen:open', (_event, saleId) => { requireAccountReady(); if (!db.getSale(saleId, db.getCurrentBranch().id)) throw new Error(mt('الطلب غير موجود.', 'The order was not found.', 'Sipariş bulunamadı.')); return autoSendKitchen(saleId); });
+ipcMain.handle('kitchen:print', () => { requireAccountReady(); throw new Error(mt('الطباعة أصبحت تلقائية من إعدادات الطابعات.', 'Printing is now automatic from the printer settings.', 'Yazdırma artık yazıcı ayarlarından otomatik olarak yapılıyor.')); });
 
 /* ---------------- برنامج الولاء (استبدال النقاط) ---------------- */
 // إعدادات معدّلات المنح/الاستبدال: إدارية فقط (نفس نمط payroll:settings تماماً) — لأنها
@@ -1824,9 +1988,19 @@ ipcMain.handle('sales:knownDeliveryPersons', () => { requireAccountReady(); retu
 ipcMain.handle('sales:get', (_event, id) => { requireAccountReady(); return db.getSale(id, db.getCurrentBranch().id); });
 // تصحيح طريقة الدفع على فاتورة محفوظة — للمدير/الأدمن فقط، ويُسجَّل كاملاً بسجل التدقيق.
 ipcMain.handle('sales:correctPaymentMethod', (_event, payload) => {
-  requireManagerOrAdmin();
+  requireSalesModify();
   const result = db.correctSalePaymentMethod({ ...payload, actorUserId: currentUser.id });
+  auditDelegatedModification('sale_payment_correction_by_delegated_user', payload?.saleId, { newMethod: payload?.newMethod, reason: String(payload?.reason || '').slice(0, 200) });
   return result;
+});
+// تعديل بنود فاتورة مكتملة — مدير/أدمن فقط، والعملية ذرّية في قاعدة البيانات.
+ipcMain.handle('sales:modifyItems', async (_event, payload) => {
+  requireSalesModify();
+  const discountGrant = payload?.discountApprovalGrantId ? consumeApprovalGrant(payload.discountApprovalGrantId) : null;
+  const result = db.modifyCompletedSaleItems({ ...payload, actorUserId: currentUser.id, discountApprovedBy: discountGrant?.approverId || null });
+  auditDelegatedModification('sale_items_modification_by_delegated_user', payload?.saleId, { reason: String(payload?.reason || '').slice(0, 200) });
+  const printOutcome = result.kitchenDeltaItems?.length ? await autoSendKitchenDelta(payload.saleId, result.kitchenDeltaItems) : { skipped: true };
+  return { ...result, printOutcome: { kitchenDelta: printOutcome } };
 });
 
 // المحاسبة: تقارير مالية (مدير/أدمن) + إقفال فترات (أدمن فقط لأنه إجراء حساس يمنع أي قيد لاحق بتاريخها)
@@ -1911,9 +2085,9 @@ ipcMain.handle('fiscalization:providers', () => { requireManagerOrAdmin(); retur
 ipcMain.handle('fiscalization:issue', async (_event, payload = {}) => {
   requireManagerOrAdmin();
   const saleId = Number(payload.saleId);
-  if (!Number.isInteger(saleId) || saleId <= 0) throw new Error('معرّف الفاتورة غير صالح.');
+  if (!Number.isInteger(saleId) || saleId <= 0) throw new Error(mt('معرّف الفاتورة غير صالح.', 'Invalid invoice ID.', 'Geçersiz fatura kimliği.'));
   const sale = db.getSale(saleId, db.getCurrentBranch().id);
-  if (!sale) throw new Error('الفاتورة غير موجودة في الفرع الحالي.');
+  if (!sale) throw new Error(mt('الفاتورة غير موجودة في الفرع الحالي.', 'The invoice was not found in the current branch.', 'Fatura mevcut şubede bulunamadı.'));
   const provider = String(payload.provider || db.getGlobalProfile()?.fiscalization_provider || 'generic').toLowerCase();
   const result = await fiscalizationRegistry.get(provider).issueInvoice(sale);
   return db.saveFiscalDocument({ saleId, provider, status: result.accepted ? 'submitted' : 'pending', externalId: result.externalId || null, externalNumber: result.externalNumber || null, requestPayload: sale, responsePayload: result, issuedAt: result.accepted ? new Date().toISOString() : null });
@@ -1956,7 +2130,7 @@ ipcMain.handle('currency:get', () => { requireAccountReady(); return ({
 });
 ipcMain.handle('currency:set', (_event, config) => {
   requireAdmin();
-  if (!(Number(config.rate) > 0)) throw new Error('سعر الصرف يجب أن يكون أكبر من صفر.');
+  if (!(Number(config.rate) > 0)) throw new Error(mt('سعر الصرف يجب أن يكون أكبر من صفر.', 'The exchange rate must be greater than zero.', 'Döviz kuru sıfırdan büyük olmalıdır.'));
   db.setSetting('currency_base', String(config.base || 'USD').trim().toUpperCase());
   db.setSetting('currency_secondary', String(config.secondary || '').trim().toUpperCase());
   db.setSetting('currency_show_secondary_on_receipt', config.showSecondaryOnReceipt ? '1' : '0');
@@ -1972,11 +2146,11 @@ ipcMain.handle('printing:getConfig', () => { requireAccountReady(); return ({
   kitchenPrinterMode: db.getSetting('kitchen_printer_mode', 'system'),
   kitchenPrinterIp: db.getSetting('kitchen_printer_ip', ''),
   kitchenPrinterPort: db.getSetting('kitchen_printer_port', '9100'),
-  kitchenPrinterDotsWidth: db.getSetting('kitchen_printer_dots_width', '576'),
+  kitchenPrinterDotsWidth: db.getSetting('kitchen_printer_dots_width', '576'), kitchenPrinterPaperWidth: db.getSetting('kitchen_printer_paper_width', '80'),
   receiptPrinterMode: db.getSetting('receipt_printer_mode', 'system'),
   receiptPrinterIp: db.getSetting('receipt_printer_ip', ''),
   receiptPrinterPort: db.getSetting('receipt_printer_port', '9100'),
-  receiptPrinterDotsWidth: db.getSetting('receipt_printer_dots_width', '576'),
+  receiptPrinterDotsWidth: db.getSetting('receipt_printer_dots_width', '576'), receiptPrinterPaperWidth: db.getSetting('receipt_printer_paper_width', '80'),
 });
 });
 ipcMain.handle('printing:listPrinters', async () => {
@@ -2005,11 +2179,15 @@ ipcMain.handle('printing:saveConfig', (_event, config) => {
   db.setSetting('kitchen_printer_mode', kitchenMode);
   db.setSetting('kitchen_printer_ip', String(config.kitchenPrinterIp || '').trim());
   db.setSetting('kitchen_printer_port', String(config.kitchenPrinterPort || '9100').trim() || '9100');
-  db.setSetting('kitchen_printer_dots_width', String(Number(config.kitchenPrinterDotsWidth) || 576));
+  const kitchenPaperWidth = ['58','80'].includes(String(config.kitchenPrinterPaperWidth)) ? String(config.kitchenPrinterPaperWidth) : '80';
+  const receiptPaperWidth = ['58','80'].includes(String(config.receiptPrinterPaperWidth)) ? String(config.receiptPrinterPaperWidth) : '80';
+  db.setSetting('kitchen_printer_dots_width', String(Number(config.kitchenPrinterDotsWidth) || (kitchenPaperWidth === '58' ? 384 : 576)));
+  db.setSetting('kitchen_printer_paper_width', kitchenPaperWidth);
   db.setSetting('receipt_printer_mode', receiptMode);
   db.setSetting('receipt_printer_ip', String(config.receiptPrinterIp || '').trim());
   db.setSetting('receipt_printer_port', String(config.receiptPrinterPort || '9100').trim() || '9100');
-  db.setSetting('receipt_printer_dots_width', String(Number(config.receiptPrinterDotsWidth) || 576));
+  db.setSetting('receipt_printer_dots_width', String(Number(config.receiptPrinterDotsWidth) || (receiptPaperWidth === '58' ? 384 : 576)));
+  db.setSetting('receipt_printer_paper_width', receiptPaperWidth);
   db.logAudit({ userId: currentUser.id, action: 'printing_config_updated', entityType: 'settings' });
   return { success: true };
 });
@@ -2017,15 +2195,15 @@ ipcMain.handle('printing:saveConfig', (_event, config) => {
 // قبل ما يعتمد عليها المستخدم في البيع الفعلي.
 ipcMain.handle('printing:testNetworkPrinter', async (_event, { ip, port, dotsWidth }) => {
   requireManagerOrAdmin();
-  if (!ip || !String(ip).trim()) throw new Error('من فضلك أدخل عنوان IP الطابعة أولاً.');
+  if (!ip || !String(ip).trim()) throw new Error(mt('من فضلك أدخل عنوان IP الطابعة أولاً.', "Please enter the printer's IP address first.", 'Lütfen önce yazıcının IP adresini girin.'));
   const win = new BrowserWindow({ show: false, width: 320, height: 260, webPreferences: { sandbox: true } });
   try {
     await win.loadURL('data:text/html,' + encodeURIComponent(`
-      <html dir="rtl"><body style="margin:0;padding:16px;font-family:sans-serif;text-align:center;width:288px;box-sizing:border-box;">
-        <div style="font-size:18px;font-weight:800;">اختبار الطباعة</div>
+      <html dir="${mt('rtl','ltr','ltr')}"><body style="margin:0;padding:16px;font-family:sans-serif;text-align:center;width:288px;box-sizing:border-box;">
+        <div style="font-size:18px;font-weight:800;">${mt('اختبار الطباعة','Print test','Yazdırma testi')}</div>
         <div style="font-size:13px;margin-top:6px;">Nexora POS</div>
         <div style="border-top:1px dashed #000;margin:10px 0;"></div>
-        <div style="font-size:12px;">لو وصلك هذا السطر مطبوعاً، فالاتصال بالطابعة الشبكية يعمل بنجاح ✓</div>
+        <div style="font-size:12px;">${mt('لو وصلك هذا السطر مطبوعاً، فالاتصال بالطابعة الشبكية يعمل بنجاح ✓','If this line printed, the connection to the network printer is working ✓','Bu satır yazdırıldıysa, ağ yazıcısıyla bağlantı çalışıyor ✓')}</div>
       </body></html>
     `));
     await captureWindowAndPrintNetwork(win, { ip: String(ip).trim(), port: port || '9100', dotsWidth: Number(dotsWidth) || 576 });
@@ -2088,14 +2266,14 @@ ipcMain.handle('audit:clientEvent', (_event, payload = {}) => {
 ipcMain.handle('audit:list', () => { requireAdmin(); return db.listAuditLogs(); });
 
 // فتح نافذة فاتورة قابلة للطباعة (نافذة منفصلة صغيرة بحجم إيصال)
-ipcMain.handle('receipt:open', (_event, saleId) => { requireAccountReady(); if (!db.getSale(saleId, db.getCurrentBranch().id)) throw new Error('الفاتورة غير موجودة في الفرع الحالي.'); return autoPrintReceipt(saleId); });
+ipcMain.handle('receipt:open', (_event, saleId) => { requireAccountReady(); if (!db.getSale(saleId, db.getCurrentBranch().id)) throw new Error(mt('الفاتورة غير موجودة في الفرع الحالي.', 'The invoice was not found in the current branch.', 'Fatura mevcut şubede bulunamadı.')); return autoPrintReceipt(saleId); });
 
 // طلب طباعة يصل من داخل نافذة الفاتورة نفسها
-ipcMain.handle('receipt:print', () => { requireAccountReady(); throw new Error('الطباعة أصبحت تلقائية من إعدادات الطابعات.'); });
+ipcMain.handle('receipt:print', () => { requireAccountReady(); throw new Error(mt('الطباعة أصبحت تلقائية من إعدادات الطابعات.', 'Printing is now automatic from the printer settings.', 'Yazdırma artık yazıcı ayarlarından otomatik olarak yapılıyor.')); });
 
 ipcMain.handle('receipt:qr', async (_event, saleId) => { requireAccountReady();
   const sale = db.getSale(saleId, db.getCurrentBranch().id);
-  if (!sale) throw new Error('الفاتورة غير موجودة');
+  if (!sale) throw new Error(mt('الفاتورة غير موجودة', 'The invoice was not found', 'Fatura bulunamadı'));
   const QRCode = require('qrcode');
   // صيغة مستقرة ومقروءة دون كشف أي أسرار: يمكن ربطها لاحقاً بنظام الفوترة/التحقق المركزي.
   const payload = JSON.stringify({
@@ -2112,9 +2290,9 @@ ipcMain.handle('receipt:qr', async (_event, saleId) => { requireAccountReady();
 ipcMain.handle('dialog:selectImage', async () => {
   requireManagerOrAdmin();
   const result = await dialog.showOpenDialog(mainWindow, {
-    title: 'اختر صورة المنتج',
+    title: mt('اختر صورة المنتج', 'Choose product image', 'Ürün görselini seç'),
     properties: ['openFile'],
-    filters: [{ name: 'صور', extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif'] }],
+    filters: [{ name: mt('صور', 'Images', 'Görseller'), extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif'] }],
   });
   if (result.canceled || result.filePaths.length === 0) return null;
 
@@ -2122,7 +2300,7 @@ ipcMain.handle('dialog:selectImage', async () => {
   const stat = fs.statSync(sourcePath);
   const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
   if (!stat.isFile() || stat.size <= 0 || stat.size > MAX_IMAGE_BYTES) {
-    throw new Error('صورة المنتج غير صالحة أو أكبر من 10 ميغابايت.');
+    throw new Error(mt('صورة المنتج غير صالحة أو أكبر من 10 ميغابايت.', 'The product image is invalid or larger than 10 MB.', "Ürün görseli geçersiz veya 10 MB'dan büyük."));
   }
   const bytes = fs.readFileSync(sourcePath);
   const ext = path.extname(sourcePath).toLowerCase();
@@ -2133,7 +2311,7 @@ ipcMain.handle('dialog:selectImage', async () => {
     '.gif': bytes.subarray(0, 6).toString('ascii') === 'GIF87a' || bytes.subarray(0, 6).toString('ascii') === 'GIF89a',
     '.webp': bytes.subarray(0, 4).toString('ascii') === 'RIFF' && bytes.subarray(8, 12).toString('ascii') === 'WEBP',
   };
-  if (!signatures[ext]) throw new Error('نوع صورة المنتج لا يطابق محتوى الملف.');
+  if (!signatures[ext]) throw new Error(mt('نوع صورة المنتج لا يطابق محتوى الملف.', "The product image's file type doesn't match its content.", 'Ürün görseli dosya türü, dosya içeriğiyle eşleşmiyor.'));
   const destName = `${crypto.randomUUID()}${ext}`;
   const destPath = path.join(getImagesDir(), destName);
   fs.writeFileSync(destPath, bytes, { mode: 0o600 });

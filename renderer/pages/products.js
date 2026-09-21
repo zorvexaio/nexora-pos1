@@ -246,9 +246,9 @@ async function saveProduct(e) {
     }
 
     if (fieldIsWeighted.checked && !fieldPluCode.value.trim()) {
-      alert(t('products.weightPluHint','أدخل كود الصنف (PLU) لمنتج البيع بالوزن — هو نفس الكود الذي تُدخله بميزان المحل لهذا الصنف.'));
+      showToast(t('products.weightPluHint','أدخل كود الصنف (PLU) لمنتج البيع بالوزن — هو نفس الكود الذي تُدخله بميزان المحل لهذا الصنف.'), 'error');
       saveBtn.disabled = false;
-      saveBtn.textContent = 'حفظ';
+      saveBtn.textContent = t('common.save', 'حفظ');
       return;
     }
 
@@ -285,15 +285,15 @@ async function saveProduct(e) {
     closeModal();
     await loadProducts();
   } catch (err) {
-    alert(ts('حدث خطأ أثناء الحفظ: ') + err.message);
+    showToast(ts('حدث خطأ أثناء الحفظ: ') + err.message, 'error');
   } finally {
     saveBtn.disabled = false;
-    saveBtn.textContent = 'حفظ';
+    saveBtn.textContent = t('common.save', 'حفظ');
   }
 }
 
 async function deleteProduct(id, name) {
-  if (!confirm(`${t('products.confirmDeletePrefix', 'هل تريد حذف')} "${name}"${t('products.confirmDeleteSuffix', '؟ (سيتم إخفاؤه فقط، وتبقى فواتيره السابقة كما هي)')}`)) return;
+  if (!(await confirmDialog(`${t('products.confirmDeletePrefix', 'هل تريد حذف')} "${name}"${t('products.confirmDeleteSuffix', '؟ (سيتم إخفاؤه فقط، وتبقى فواتيره السابقة كما هي)')}`, { tone: 'danger', confirmLabel: t('common.delete','حذف') }))) return;
   await window.api.products.delete(id);
   await loadProducts();
 }
@@ -301,7 +301,7 @@ async function deleteProduct(id, name) {
 async function downloadCsvTemplate() {
   const result = await window.api.products.downloadCsvTemplate();
   if (result && result.path) {
-    alert(`${t('products.formSaved','تم حفظ النموذج')}: ${result.path}`);
+    await infoDialog(`${t('products.formSaved','تم حفظ النموذج')}: ${result.path}`);
   }
 }
 

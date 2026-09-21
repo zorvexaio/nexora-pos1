@@ -9,6 +9,8 @@ let pendingRemoveLineId = null; // السطر المطلوب حذفه من ال�
 let currentUser = null;
 let activeBundles = []; // الحزم الفعّالة، تُجلب مرة واحدة وتُطابَق مع السلة محلياً بكل تغيير
 let currencyConfig = { base: 'USD', secondary: '', rate: 1 };
+let organizationTaxMode = 'exclusive';
+let organizationMinorUnit = 2;
 let currentBranchType = 'general';
 let productSearchRequestSeq = 0;
 let customerSearchRequestSeq = 0;
@@ -196,6 +198,7 @@ async function init() {
   branchNameEl.textContent = branch ? branch.name : '';
   currentBranchType = branch ? branch.business_type || 'general' : 'general';
   currencyConfig = await window.api.currency.get();
+  try { const gp = await window.api.global.get(); organizationTaxMode = gp?.tax_mode || 'exclusive'; const mu = Number(gp?.currency_minor_unit); organizationMinorUnit = Number.isInteger(mu) && mu >= 0 && mu <= 3 ? mu : 2; } catch { organizationTaxMode = 'exclusive'; organizationMinorUnit = 2; }
   await showSetupIfRequired();
 
   maxCashierDiscountPercent = await window.api.discount.maxCashierPercent();
@@ -295,7 +298,7 @@ async function showSetupIfRequired() {
   document.querySelectorAll('[data-business-type]').forEach((button) => button.addEventListener('click', async () => {
     button.disabled = true;
     try { await window.api.setup.complete(button.dataset.businessType); window.location.reload(); }
-    catch (error) { alert(t('pos.setupSaveError') + error.message); button.disabled = false; }
+    catch (error) { showToast(t('pos.setupSaveError') + error.message, 'error'); button.disabled = false; }
   }));
 }
 
@@ -765,7 +768,8 @@ function addBundleToCart(bundle) {
         productId: item.product_id,
         name: item.product_name,
         price: product ? product.price : item.price,
-        taxRate: product ? (product.tax_rate || 0) : 0,
+        taxRate: product ? ((product.tax_profile_rate ?? product.tax_rate ?? 0)) : 0,
+        taxInclusive: product ? (product.tax_profile_rate != null ? Number(product.tax_profile_inclusive) === 1 : organizationTaxMode === 'inclusive') : organizationTaxMode === 'inclusive',
         quantity: item.quantity,
         notes: '',
       });
@@ -860,7 +864,8 @@ function addToCart(product) {
       productId: product.id,
       name: product.name,
       price: product.price,
-      taxRate: product.tax_rate || 0,
+      taxRate: (product.tax_profile_rate ?? product.tax_rate ?? 0),
+      taxInclusive: product.tax_profile_rate != null ? Number(product.tax_profile_inclusive) === 1 : organizationTaxMode === 'inclusive',
       quantity: qty,
       notes: '',
     });
@@ -886,7 +891,8 @@ function addWeightedToCart(product, weightKg) {
       productId: product.id,
       name: product.name,
       price: product.price,
-      taxRate: product.tax_rate || 0,
+      taxRate: (product.tax_profile_rate ?? product.tax_rate ?? 0),
+      taxInclusive: product.tax_profile_rate != null ? Number(product.tax_profile_inclusive) === 1 : organizationTaxMode === 'inclusive',
       quantity: weightKg,
       isWeighted: true,
       notes: '',
@@ -1114,8 +1120,7 @@ function renderCart() {
     cartItemsEl.appendChild(fragment);
   }
 
-  const subtotal = cart.reduce((s, i) => s + i.price * i.quantity, 0);
-  const tax = cart.reduce((s, i) => s + i.price * i.quantity * (i.taxRate / 100), 0);
+  const { subtotal, tax } = sumCartTax(cart, organizationMinorUnit);
   const discount = computeDiscountAmount(subtotal);
   const bundleResult = computeBundleDiscount();
   const bundleDiscount = bundleResult.totalDiscount;
@@ -1353,8 +1358,7 @@ clearCustomerBtn.addEventListener('click', () => {
 
 function checkout() {
   if (cart.length === 0) return;
-  const subtotal = cart.reduce((s, i) => s + i.price * i.quantity, 0);
-  const taxTotal = cart.reduce((s, i) => s + i.price * i.quantity * (i.taxRate / 100), 0);
+  const { subtotal, tax: taxTotal } = sumCartTax(cart, organizationMinorUnit);
   const discountTotal = computeDiscountAmount(subtotal);
   const bundleResult = computeBundleDiscount();
   const bundleDiscountTotal = bundleResult.totalDiscount;
@@ -1595,6 +1599,7 @@ async function confirmPayment() {
       quantity: i.quantity,
       unitPrice: i.price,
       taxRate: i.taxRate,
+      taxInclusive: !!i.taxInclusive,
       lineTotal: i.price * i.quantity,
       notes: i.notes || null,
     })),

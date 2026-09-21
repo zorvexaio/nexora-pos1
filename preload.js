@@ -24,6 +24,7 @@ contextBridge.exposeInMainWorld('api', {
     delete: (userId) => ipcRenderer.invoke('users:delete', userId),
     setPin: (userId, pin) => ipcRenderer.invoke('users:setPin', { userId, pin }),
     clearPin: (userId) => ipcRenderer.invoke('users:clearPin', userId),
+    setSalesModify: (userId, enabled, reason) => ipcRenderer.invoke('users:setSalesModify', { userId, enabled, reason }),
     setShiftType: (userId, shiftType) => ipcRenderer.invoke('users:setShiftType', { userId, shiftType }),
   },
   products: {
@@ -77,6 +78,12 @@ contextBridge.exposeInMainWorld('api', {
     create: (purchase) => ipcRenderer.invoke('purchases:create', purchase),
     receive: (id) => ipcRenderer.invoke('purchases:receive', id),
   },
+  expenses: {
+    categories: (includeInactive) => ipcRenderer.invoke('expenses:categories', includeInactive),
+    saveCategory: (payload) => ipcRenderer.invoke('expenses:saveCategory', payload),
+    create: (payload) => ipcRenderer.invoke('expenses:create', payload),
+    summary: (range) => ipcRenderer.invoke('expenses:summary', range),
+  },
   tables: {
     list: () => ipcRenderer.invoke('tables:list'),
     create: (table) => ipcRenderer.invoke('tables:create', table),
@@ -100,6 +107,7 @@ contextBridge.exposeInMainWorld('api', {
     list: (filters) => ipcRenderer.invoke('sales:list', filters),
     get: (id) => ipcRenderer.invoke('sales:get', id),
     correctPaymentMethod: (payload) => ipcRenderer.invoke('sales:correctPaymentMethod', payload),
+    modifyItems: (payload) => ipcRenderer.invoke('sales:modifyItems', payload),
     knownDeliveryPersons: () => ipcRenderer.invoke('sales:knownDeliveryPersons'),
   },
   accounting: {

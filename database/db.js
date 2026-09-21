@@ -516,7 +516,7 @@ function addColumnIfMissing(table, columnDef) {
 }
 
 function backfillMinorColumn(table, sourceColumn, targetColumn, minorUnit = null) {
-  const unit = minorUnit == null ? Number(getGlobalProfile()?.currency_minor_unit || 2) : Number(minorUnit);
+  const unit = minorUnit == null ? Number(getGlobalProfile()?.currency_minor_unit ?? 2) : Number(minorUnit);
   const rows = db.prepare(`SELECT rowid AS __rowid__, ${sourceColumn} AS value FROM ${table}`).all();
   const update = db.prepare(`UPDATE ${table} SET ${targetColumn}=? WHERE rowid=?`);
   for (const row of rows) update.run(money.toMinor(Number(row.value || 0), unit), row.__rowid__);
@@ -1131,6 +1131,13 @@ function runMigrations() {
   tryAddColumn('sales', `inventory_committed INTEGER NOT NULL DEFAULT 0`);
   tryAddColumn('sale_items', `tax_profile_id INTEGER REFERENCES tax_profiles(id)`);
   tryAddColumn('sale_items', `tax_inclusive INTEGER NOT NULL DEFAULT 0`);
+  // كمية كل بند التي وصلت فعلاً للمطبخ (لمنع تكرار تذكرة المطبخ عند كل حفظ للطلب)
+  tryAddColumn('sale_items', `kitchen_sent_qty REAL NOT NULL DEFAULT 0`);
+  // تفويض تعديل الفواتير للكاشير: علامة من المدير العام مع السبب ومن منحها ومتى.
+  tryAddColumn('users', `can_modify_sales INTEGER NOT NULL DEFAULT 0`);
+  tryAddColumn('users', `modify_sales_granted_by INTEGER`);
+  tryAddColumn('users', `modify_sales_granted_at TEXT`);
+  tryAddColumn('users', `modify_sales_reason TEXT`);
   // ترقية بيانات العملاء: رصيد متجر مستقل عن الدين، وسجل كشف حساب قابل للمزامنة event-by-event.
   tryAddColumn('customers', `store_credit_balance REAL NOT NULL DEFAULT 0`);
   tryAddColumn('customer_ledger', `uuid TEXT`);
@@ -1266,6 +1273,12 @@ function runMigrations() {
   tryAddColumn('purchase_orders', `synced INTEGER NOT NULL DEFAULT 0`);
   tryAddColumn('purchase_orders', `updated_at TEXT NOT NULL DEFAULT (datetime('now'))`);
   tryAddColumn('purchase_orders', `payment_method TEXT NOT NULL DEFAULT 'credit'`);
+  // فواتير المصروفات التشغيلية (بلا بضاعة): نفس جدول فواتير الموردين مع نوع الفاتورة وفئة المصروف.
+  tryAddColumn('purchase_orders', `invoice_type TEXT NOT NULL DEFAULT 'goods'`);
+  tryAddColumn('purchase_orders', `expense_category_id INTEGER`);
+  tryAddColumn('purchase_orders', `expense_category_name TEXT`);
+  tryAddColumn('purchase_orders', `invoice_date TEXT`);
+  tryAddColumn('purchase_orders', `reference_number TEXT`);
   tryAddColumn('returns', `synced INTEGER NOT NULL DEFAULT 0`);
   tryAddColumn('returns', `client_request_id TEXT`);
   db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_returns_branch_client_request ON returns(branch_id, client_request_id) WHERE client_request_id IS NOT NULL AND client_request_id <> ''`);
@@ -1532,7 +1545,9 @@ function listUsers() {
   return db
     .prepare(
       `SELECT id, uuid, full_name, username, role, branch_id, is_active, monthly_salary, created_at, shift_type,
-              (pin_hash IS NOT NULL) AS has_pin
+              (pin_hash IS NOT NULL) AS has_pin,
+              can_modify_sales, modify_sales_reason, modify_sales_granted_at,
+              (SELECT g.full_name FROM users g WHERE g.id = users.modify_sales_granted_by) AS modify_sales_granted_by_name
        FROM users WHERE branch_id = ? AND is_payroll_only = 0 ORDER BY id`
     )
     .all(branch.id);
@@ -1548,6 +1563,30 @@ function setUserShiftType(userId, shiftType) {
   const result = db.prepare('UPDATE users SET shift_type=? WHERE id=? AND branch_id=?').run(value, Number(userId), branch.id);
   if (!result.changes) return { success: false, message: 'المستخدم غير موجود في الفرع الحالي.' };
   return { success: true, shiftType: value };
+}
+
+// تفويض/سحب صلاحية تعديل الفواتير من مستخدم (كاشير). السبب إلزامي عند التفعيل ويُحفظ مع اسم من منحها ووقتها.
+function setUserSalesModify(userId, enabled, grantedBy, reason) {
+  const branch = getCurrentBranch();
+  const target = db.prepare('SELECT id, role, is_active FROM users WHERE id = ? AND branch_id = ?').get(Number(userId), branch.id);
+  if (!target) throw new Error('المستخدم غير موجود.');
+  if (['admin', 'manager'].includes(target.role)) throw new Error('المدير يملك صلاحية تعديل الفواتير بحكم دوره ولا تحتاج تفويضاً.');
+  if (enabled) {
+    const why = String(reason || '').trim();
+    if (why.length < 3) throw new Error('اكتب سبب منح صلاحية تعديل الفواتير (3 أحرف على الأقل).');
+    if (why.length > 300) throw new Error('سبب المنح طويل جداً (300 حرف كحد أقصى).');
+    db.prepare("UPDATE users SET can_modify_sales=1, modify_sales_granted_by=?, modify_sales_granted_at=datetime('now'), modify_sales_reason=? WHERE id=?").run(grantedBy || null, why, target.id);
+    return { success: true, enabled: true };
+  }
+  db.prepare('UPDATE users SET can_modify_sales=0, modify_sales_granted_by=NULL, modify_sales_granted_at=NULL, modify_sales_reason=NULL WHERE id=?').run(target.id);
+  return { success: true, enabled: false };
+}
+// هل يحق لهذا المستخدم تعديل الفواتير؟ الدور (مدير/أدمن) أو تفويض نشط. تُقرأ من القاعدة (لا من الجلسة) فيسري السحب فوراً.
+function userCanModifySales(userId) {
+  const branch = getCurrentBranch();
+  const row = db.prepare('SELECT role, is_active, can_modify_sales FROM users WHERE id = ? AND branch_id = ?').get(Number(userId), branch.id);
+  if (!row || !row.is_active) return false;
+  return ['admin', 'manager'].includes(row.role) || Number(row.can_modify_sales) === 1;
 }
 
 function getUser(id) {
@@ -1913,11 +1952,14 @@ function listProducts(filters = {}) {
 
   let sql = `
     SELECT p.*, COALESCE(i.quantity, 0) AS stock,
+           tp.rate AS tax_profile_rate,
+           tp.is_inclusive AS tax_profile_inclusive,
            (SELECT COUNT(*) FROM products v WHERE v.parent_product_id = p.id AND v.is_active = 1) AS variant_count
     FROM products p
     LEFT JOIN inventory i ON i.product_id = p.id AND i.branch_id = ?
+    LEFT JOIN tax_profiles tp ON tp.id = p.tax_profile_id AND tp.branch_id = ? AND tp.is_active = 1
     WHERE p.is_active = 1`;
-  const params = [branch.id];
+  const params = [branch.id, branch.id];
 
   if (search) {
     // Exact identifiers first (barcode/SKU), then bounded name search.
@@ -1941,13 +1983,17 @@ function listProductVariants(parentId) {
   const branch = getCurrentBranch();
   return db
     .prepare(
-      `SELECT p.*, COALESCE(i.quantity, 0) AS stock
+      `SELECT p.*, COALESCE(i.quantity, 0) AS stock,
+              tp.rate AS tax_profile_rate,
+              tp.is_inclusive AS tax_profile_inclusive,
+              tp.code AS tax_profile_code
        FROM products p
        LEFT JOIN inventory i ON i.product_id = p.id AND i.branch_id = ?
+       LEFT JOIN tax_profiles tp ON tp.id = p.tax_profile_id AND tp.branch_id = ? AND tp.is_active = 1
        WHERE p.parent_product_id = ? AND p.is_active = 1
        ORDER BY p.variant_size, p.variant_color`
     )
-    .all(branch.id, parentId);
+    .all(branch.id, branch.id, parentId);
 }
 
 // قائمة المنتجات القابلة لتكون "أساسية" يُربَط بها متغيرات (تستثني نفسها ومنتجاتها الفرعية عند التعديل)
@@ -1979,12 +2025,16 @@ function getProductByPlu(pluCode) {
   const branch = getCurrentBranch();
   return db
     .prepare(
-      `SELECT p.*, COALESCE(i.quantity, 0) AS stock, i.min_quantity
+      `SELECT p.*, COALESCE(i.quantity, 0) AS stock, i.min_quantity,
+              tp.rate AS tax_profile_rate,
+              tp.is_inclusive AS tax_profile_inclusive,
+              tp.code AS tax_profile_code
        FROM products p
        LEFT JOIN inventory i ON i.product_id = p.id AND i.branch_id = ?
+       LEFT JOIN tax_profiles tp ON tp.id = p.tax_profile_id AND tp.branch_id = ? AND tp.is_active = 1
        WHERE p.plu_code = ? AND p.is_weighted = 1 AND p.is_active = 1`
     )
-    .get(branch.id, pluCode);
+    .get(branch.id, branch.id, pluCode);
 }
 
 // نقطة الدخول الوحيدة من الواجهة عند مسح أي باركود بشاشة الكاشير: يحاول فك الباركود كباركود
@@ -1996,9 +2046,13 @@ function resolveGs1Barcode(barcode) {
   const branch = getCurrentBranch();
   const gtin14 = parsed.gtin;
   const gtin13 = gtin14.slice(1);
-  const product = db.prepare(`SELECT p.*, COALESCE(i.quantity,0) AS stock, i.min_quantity
+  const product = db.prepare(`SELECT p.*, COALESCE(i.quantity,0) AS stock, i.min_quantity,
+      tp.rate AS tax_profile_rate,
+      tp.is_inclusive AS tax_profile_inclusive,
+      tp.code AS tax_profile_code
     FROM products p LEFT JOIN inventory i ON i.product_id=p.id AND i.branch_id=?
-    WHERE p.is_active=1 AND (p.barcode=? OR p.barcode=?) LIMIT 1`).get(branch.id, gtin14, gtin13);
+    LEFT JOIN tax_profiles tp ON tp.id=p.tax_profile_id AND tp.branch_id=? AND tp.is_active=1
+    WHERE p.is_active=1 AND (p.barcode=? OR p.barcode=?) LIMIT 1`).get(branch.id, branch.id, gtin14, gtin13);
   return product ? { product, ...parsed } : { product: null, ...parsed };
 }
 
@@ -2335,13 +2389,15 @@ function nextInvoiceNumber() {
   throw new Error('تعذّر توليد رقم فاتورة فريد على هذا الجهاز.');
 }
 
-function calculateBundleDiscountFromDatabase(items, bundleIds, branchId) {
+// يحسب خصم العروض ويُرجع أيضاً تفاصيل كل عرض طُبِّق (للطباعة والـ Snapshot).
+function resolveBundlesFromDatabase(items, bundleIds, branchId) {
+  const empty = { total: 0, applied: [] };
   const ids = [...new Set((Array.isArray(bundleIds) ? bundleIds : []).map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0))];
-  if (!ids.length || !Array.isArray(items) || items.length === 0) return 0;
+  if (!ids.length || !Array.isArray(items) || items.length === 0) return empty;
 
   const placeholders = ids.map(() => '?').join(',');
   const bundles = db.prepare(`SELECT * FROM bundles WHERE branch_id = ? AND is_active = 1 AND id IN (${placeholders}) ORDER BY id`).all(branchId, ...ids);
-  const itemRows = db.prepare(`SELECT bi.bundle_id, bi.product_id, bi.quantity, p.price
+  const itemRows = db.prepare(`SELECT bi.bundle_id, bi.product_id, bi.quantity, p.price, p.name AS product_name, p.uuid AS product_uuid
     FROM bundle_items bi JOIN products p ON p.id = bi.product_id
     WHERE bi.bundle_id IN (${placeholders}) ORDER BY bi.bundle_id, bi.id`).all(...ids);
   const byBundle = new Map();
@@ -2353,6 +2409,7 @@ function calculateBundleDiscountFromDatabase(items, bundleIds, branchId) {
   for (const item of items) remaining.set(Number(item.productId), Number(item.quantity));
 
   let totalDiscount = 0;
+  const applied = [];
   for (const bundle of bundles) {
     const bundleItems = byBundle.get(bundle.id) || [];
     if (!bundleItems.length) continue;
@@ -2375,38 +2432,86 @@ function calculateBundleDiscountFromDatabase(items, bundleIds, branchId) {
       remaining.set(item.product_id, (remaining.get(item.product_id) || 0) - item.quantity * maxApplications);
     }
     totalDiscount += discountPerApp * maxApplications;
+    applied.push({
+      bundleId: bundle.id,
+      bundleUuid: bundle.uuid,
+      name: bundle.name,
+      applications: maxApplications,
+      discount: discountPerApp * maxApplications,
+      items: bundleItems.map((i) => ({ product_id: i.product_id, product_uuid: i.product_uuid, product_name: i.product_name, quantity: Number(i.quantity) })),
+    });
   }
-  return Math.min(totalDiscount, Math.max(0, items.reduce((sum, item) => sum + Number(item.unitPrice || 0) * Number(item.quantity || 0), 0)));
+  const cap = Math.max(0, items.reduce((sum, item) => sum + Number(item.unitPrice || 0) * Number(item.quantity || 0), 0));
+  return { total: Math.min(totalDiscount, cap), applied };
 }
 
-function validatePaymentAmounts(total, paymentMethod, cashAmount, cardAmount, changeDue) {
-  const t = Number(total);
-  const cash = Number(cashAmount) || 0;
-  const card = Number(cardAmount) || 0;
-  const change = Number(changeDue) || 0;
-  if (!Number.isFinite(t) || t < 0) throw new Error('إجمالي الفاتورة غير صالح.');
-  if (!['cash', 'card', 'mixed', 'credit', 'store_credit'].includes(paymentMethod)) throw new Error('طريقة الدفع غير صالحة.');
-  if ([cash, card, change].some((n) => !Number.isFinite(n) || n < 0)) throw new Error('بيانات الدفع غير صالحة.');
+function calculateBundleDiscountFromDatabase(items, bundleIds, branchId) {
+  return resolveBundlesFromDatabase(items, bundleIds, branchId).total;
+}
 
-  if (paymentMethod === 'store_credit') {
-    if (cash > 0.01 || card > 0.01 || change > 0.01) throw new Error('رصيد المتجر لا يقبل نقداً أو بطاقة في نفس العملية.');
-    return;
+// Snapshot للعروض المطبَّقة على الفاتورة (يُستبدل كاملاً عند تعديل بنود الفاتورة).
+function saveSaleBundleSnapshot(saleId, applied, minorUnit) {
+  db.prepare('DELETE FROM sale_bundles WHERE sale_id = ?').run(saleId);
+  const ins = db.prepare(`INSERT INTO sale_bundles (uuid, sale_id, bundle_id, bundle_uuid, bundle_name, applications, discount, discount_minor, items_json)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+  for (const b of applied || []) {
+    const discountMinor = money.toMinor(Number(b.discount || 0).toFixed(minorUnit + 6), minorUnit);
+    ins.run(uuid(), saleId, b.bundleId || null, b.bundleUuid || null, String(b.name || ''), Number(b.applications || 1), money.fromMinor(discountMinor, minorUnit), discountMinor, JSON.stringify(b.items || []));
   }
-  if (paymentMethod === 'credit') {
-    if (cash > 0.01 || card > 0.01 || change > 0.01) throw new Error('البيع الآجل لا يقبل دفعة نقدية أو بطاقة في نفس العملية.');
-    return;
-  }
-  if (paymentMethod === 'cash') {
-    if (cash + 0.01 < t) throw new Error('المبلغ النقدي غير كافٍ لتغطية إجمالي الفاتورة.');
-    const expectedChange = Math.round((cash - t) * 100) / 100;
-    if (Math.abs(change - expectedChange) > 0.01) throw new Error('الباقي النقدي غير مطابق للمبلغ المستلم.');
-    return;
-  }
-  if (paymentMethod === 'card') {
-    if (Math.abs(card - t) > 0.01 || cash > 0.01 || change > 0.01) throw new Error('مبلغ البطاقة غير متطابق مع إجمالي الفاتورة.');
-    return;
-  }
-  if (Math.abs(cash + card - t) > 0.01 || change > 0.01) throw new Error('مبالغ الدفع المختلط غير متطابقة مع إجمالي الفاتورة.');
+}
+
+function getSaleBundles(saleId) {
+  return db.prepare('SELECT * FROM sale_bundles WHERE sale_id = ? ORDER BY id').all(saleId).map((row) => {
+    let parsed = [];
+    try { parsed = JSON.parse(row.items_json || '[]'); } catch (_) { parsed = []; }
+    const apps = Math.max(1, Number(row.applications || 1));
+    return {
+      id: row.id,
+      name: row.bundle_name,
+      applications: apps,
+      discount: Number(row.discount || 0),
+      items: (Array.isArray(parsed) ? parsed : []).map((i) => {
+        const local = i.product_uuid ? db.prepare('SELECT id FROM products WHERE uuid = ?').get(i.product_uuid) : null;
+        return { product_id: local?.id ?? i.product_id ?? null, product_name: String(i.product_name || ''), quantity: Number(i.quantity || 0) * apps };
+      }),
+    };
+  });
+}
+
+// يوزّع مبلغاً صحيحاً (وحدات صغرى) على عناصر بحسب أوزانها بطريقة "أكبر باقٍ" (Largest Remainder)
+// بحيث يساوي مجموع الحصص المبلغ تماماً، بلا كسور ولا انجراف. entries = [[key, weightMinor], ...]
+function allocateByWeight(totalMinor, entries) {
+  const out = new Map(entries.map(([key]) => [key, 0]));
+  const sumWeight = entries.reduce((n, [, w]) => n + Math.max(0, Number(w) || 0), 0);
+  if (!(totalMinor > 0) || !(sumWeight > 0)) return out;
+  let assigned = 0;
+  const remainders = [];
+  entries.forEach(([key, w0], index) => {
+    const w = Math.max(0, Number(w0) || 0);
+    const raw = totalMinor * w;
+    const base = Math.floor(raw / sumWeight);
+    out.set(key, base);
+    assigned += base;
+    remainders.push({ key, index, r: raw - base * sumWeight });
+  });
+  let left = totalMinor - assigned;
+  remainders.sort((a, b) => b.r - a.r || a.index - b.index);
+  for (let i = 0; left > 0 && i < remainders.length; i++, left--) out.set(remainders[i].key, out.get(remainders[i].key) + 1);
+  return out;
+}
+
+// كان هذا المتحقق القديم يعمل بالفاصلة العشرية مع تسامح 0.01 (وهو 10 وحدات صغرى في عملة بثلاث خانات).
+// صار غلافاً رقيقاً فوق validatePaymentAmountsMinor: كل مسارات الدفع تتحقق الآن بالوحدة الصغرى وبدقة تامة.
+function validatePaymentAmounts(total, paymentMethod, cashAmount, cardAmount, changeDue) {
+  const unit = Number(getGlobalProfile()?.currency_minor_unit ?? 2);
+  const t = Number(total);
+  if (!Number.isFinite(t) || t < 0) throw new Error('إجمالي الفاتورة غير صالح.');
+  const toMinorChecked = (value) => {
+    const n = Number(value) || 0;
+    if (!Number.isFinite(n) || n < 0) throw new Error('بيانات الدفع غير صالحة.');
+    return money.toMinor(n.toFixed(unit + 6), unit);
+  };
+  return validatePaymentAmountsMinor(money.toMinor(t.toFixed(unit + 6), unit), paymentMethod, toMinorChecked(cashAmount), toMinorChecked(cardAmount), toMinorChecked(changeDue));
 }
 
 function validatePaymentAmountsMinor(totalMinor, paymentMethod, cashMinor, cardMinor, changeMinor) {
@@ -2438,31 +2543,50 @@ function validatePaymentAmountsMinor(totalMinor, paymentMethod, cashMinor, cardM
 }
 
 function postSaleAccountingInTransaction(sale, saleId, branchId) {
+  // Normalize DB rows (snake_case) and internal accounting DTOs (camelCase) to one
+  // canonical shape. This is critical for correction flows, which intentionally read
+  // the current sale directly from SQLite inside the same transaction.
+  const canonicalSale = {
+    ...sale,
+    paymentMethod: sale.paymentMethod ?? sale.payment_method ?? 'cash',
+    invoiceNumber: sale.invoiceNumber ?? sale.invoice_number ?? String(saleId),
+    userId: sale.userId ?? sale.user_id ?? null,
+    subtotalMinor: Number(sale.subtotalMinor ?? sale.subtotal_minor ?? 0),
+    taxTotalMinor: Number(sale.taxTotalMinor ?? sale.tax_total_minor ?? 0),
+    discountTotalMinor: Number(sale.discountTotalMinor ?? sale.discount_total_minor ?? 0),
+    bundleDiscountTotalMinor: Number(sale.bundleDiscountTotalMinor ?? sale.bundle_discount_total_minor ?? 0),
+    loyaltyRedeemedValueMinor: Number(sale.loyaltyRedeemedValueMinor ?? sale.loyalty_redeemed_value_minor ?? 0),
+    deliveryFeeMinor: Number(sale.deliveryFeeMinor ?? sale.delivery_fee_minor ?? 0),
+    grandTotalMinor: Number(sale.grandTotalMinor ?? sale.grand_total_minor ?? 0),
+    cashAmountMinor: Number(sale.cashAmountMinor ?? sale.cash_amount_minor ?? 0),
+    cardAmountMinor: Number(sale.cardAmountMinor ?? sale.card_amount_minor ?? 0),
+    items: Array.isArray(sale.items) ? sale.items : [],
+  };
   const accountRows = db.prepare('SELECT id,code FROM accounting_accounts WHERE branch_id=? AND is_active=1 AND code IN (?,?,?,?,?,?,?,?,?)').all(branchId, '1000','1100','1200','1300','2100','2200','4000','4100','5000');
   const byCode = new Map(accountRows.map((row) => [String(row.code), Number(row.id)]));
   const requireAccount = (code) => { const id = byCode.get(code); if (!id) throw new Error(`الحساب المحاسبي ${code} غير موجود.`); return id; };
-  const revenueMinor = Math.max(0, Number(sale.subtotalMinor || 0) - Number(sale.discountTotalMinor || 0) - Number(sale.bundleDiscountTotalMinor || 0) - Number(sale.loyaltyRedeemedValueMinor || 0));
-  const taxMinor = Math.max(0, Number(sale.taxTotalMinor || 0));
-  const deliveryMinor = Math.max(0, Number(sale.deliveryFeeMinor || 0));
-  const costMinor = sale.items.reduce((sum, item) => sum + money.multiplyMinorQuantity(Number(item.costAtSaleMinor || 0), Number(item.quantity || 0)), 0);
+  const revenueMinor = Math.max(0, Number(canonicalSale.subtotalMinor || 0) - Number(canonicalSale.discountTotalMinor || 0) - Number(canonicalSale.bundleDiscountTotalMinor || 0) - Number(canonicalSale.loyaltyRedeemedValueMinor || 0));
+  const taxMinor = Math.max(0, Number(canonicalSale.taxTotalMinor || 0));
+  const deliveryMinor = Math.max(0, Number(canonicalSale.deliveryFeeMinor || 0));
+  const costMinor = canonicalSale.items.reduce((sum, item) => sum + money.multiplyMinorQuantity(Number(item.costAtSaleMinor || 0), Number(item.quantity || 0)), 0);
   const lines = [];
-  const totalDebit = Number(sale.grandTotalMinor || 0);
-  if (sale.paymentMethod === 'mixed') {
-    if (Number(sale.cashAmountMinor || 0) > 0) lines.push({ accountId: requireAccount('1000'), debitMinor: Number(sale.cashAmountMinor), creditMinor: 0, memo: `Cash settlement ${sale.invoiceNumber}` });
-    if (Number(sale.cardAmountMinor || 0) > 0) lines.push({ accountId: requireAccount('1100'), debitMinor: Number(sale.cardAmountMinor), creditMinor: 0, memo: `Card settlement ${sale.invoiceNumber}` });
+  const totalDebit = Number(canonicalSale.grandTotalMinor || 0);
+  if (canonicalSale.paymentMethod === 'mixed') {
+    if (Number(canonicalSale.cashAmountMinor || 0) > 0) lines.push({ accountId: requireAccount('1000'), debitMinor: Number(canonicalSale.cashAmountMinor), creditMinor: 0, memo: `Cash settlement ${canonicalSale.invoiceNumber}` });
+    if (Number(canonicalSale.cardAmountMinor || 0) > 0) lines.push({ accountId: requireAccount('1100'), debitMinor: Number(canonicalSale.cardAmountMinor), creditMinor: 0, memo: `Card settlement ${canonicalSale.invoiceNumber}` });
   } else {
     let settlementAccountCode = '1000';
-    if (sale.paymentMethod === 'card') settlementAccountCode = '1100';
-    else if (sale.paymentMethod === 'credit') settlementAccountCode = '1200';
-    else if (sale.paymentMethod === 'store_credit') settlementAccountCode = '2200';
-    if (totalDebit > 0) lines.push({ accountId: requireAccount(settlementAccountCode), debitMinor: totalDebit, creditMinor: 0, memo: `Settlement ${sale.invoiceNumber}` });
+    if (canonicalSale.paymentMethod === 'card') settlementAccountCode = '1100';
+    else if (canonicalSale.paymentMethod === 'credit') settlementAccountCode = '1200';
+    else if (canonicalSale.paymentMethod === 'store_credit') settlementAccountCode = '2200';
+    if (totalDebit > 0) lines.push({ accountId: requireAccount(settlementAccountCode), debitMinor: totalDebit, creditMinor: 0, memo: `Settlement ${canonicalSale.invoiceNumber}` });
   }
-  if (revenueMinor > 0) lines.push({ accountId: requireAccount('4000'), debitMinor: 0, creditMinor: revenueMinor, memo: `Sales revenue ${sale.invoiceNumber}` });
-  if (deliveryMinor > 0) lines.push({ accountId: requireAccount('4100'), debitMinor: 0, creditMinor: deliveryMinor, memo: `Delivery revenue ${sale.invoiceNumber}` });
-  if (taxMinor > 0) lines.push({ accountId: requireAccount('2100'), debitMinor: 0, creditMinor: taxMinor, memo: `Tax payable ${sale.invoiceNumber}` });
+  if (revenueMinor > 0) lines.push({ accountId: requireAccount('4000'), debitMinor: 0, creditMinor: revenueMinor, memo: `Sales revenue ${canonicalSale.invoiceNumber}` });
+  if (deliveryMinor > 0) lines.push({ accountId: requireAccount('4100'), debitMinor: 0, creditMinor: deliveryMinor, memo: `Delivery revenue ${canonicalSale.invoiceNumber}` });
+  if (taxMinor > 0) lines.push({ accountId: requireAccount('2100'), debitMinor: 0, creditMinor: taxMinor, memo: `Tax payable ${canonicalSale.invoiceNumber}` });
   if (costMinor > 0) {
-    lines.push({ accountId: requireAccount('5000'), debitMinor: costMinor, creditMinor: 0, memo: `COGS ${sale.invoiceNumber}` });
-    lines.push({ accountId: requireAccount('1300'), debitMinor: 0, creditMinor: costMinor, memo: `Inventory ${sale.invoiceNumber}` });
+    lines.push({ accountId: requireAccount('5000'), debitMinor: costMinor, creditMinor: 0, memo: `COGS ${canonicalSale.invoiceNumber}` });
+    lines.push({ accountId: requireAccount('1300'), debitMinor: 0, creditMinor: costMinor, memo: `Inventory ${canonicalSale.invoiceNumber}` });
   }
   // Revenue/tax settlement plus COGS/inventory form one balanced journal only when both sides match.
   // The settlement debit is the gross sale total; the revenue side is net of discounts plus tax and delivery.
@@ -2470,8 +2594,8 @@ function postSaleAccountingInTransaction(sale, saleId, branchId) {
   const operatingLines = lines;
   const operatingDebit = operatingLines.reduce((n, l) => n + Number(l.debitMinor || 0), 0);
   const operatingCredit = operatingLines.reduce((n, l) => n + Number(l.creditMinor || 0), 0);
-  if (operatingDebit !== operatingCredit) throw new Error(`القيد المحاسبي غير متوازن للفواتير ${sale.invoiceNumber}.`);
-  const entry = insertPostedJournalEntry({ branchId, memo: `Sale ${sale.invoiceNumber}`, referenceType: 'sale', referenceId: saleId, lines: operatingLines, createdBy: sale.userId || null });
+  if (operatingDebit !== operatingCredit) throw new Error(`القيد المحاسبي غير متوازن للفواتير ${canonicalSale.invoiceNumber}.`);
+  const entry = insertPostedJournalEntry({ branchId, memo: `Sale ${canonicalSale.invoiceNumber}`, referenceType: 'sale', referenceId: saleId, lines: operatingLines, createdBy: canonicalSale.userId || null });
   return entry;
 }
 
@@ -2504,7 +2628,8 @@ const createSaleTx = db.transaction((sale) => {
 
   const { priced, subtotal, taxTotal, subtotalMinor, taxTotalMinor, minorUnit } = priceItemsFromDatabase(sale.items, branch.id);
   assertCreditSaleAllowed(sale);
-  const bundleDiscountTotal = calculateBundleDiscountFromDatabase(priced, sale.bundleIds, branch.id);
+  const bundleResolved = resolveBundlesFromDatabase(priced, sale.bundleIds, branch.id);
+  const bundleDiscountTotal = bundleResolved.total;
   const { discountTotal, discountType, discountValue, discountApprovedBy } = assertDiscountAllowed(subtotal, sale.discountType, sale.discountValue, sale.discountApprovedBy);
   const discountTotalMinor = money.toMinor(discountTotal, minorUnit);
   const bundleDiscountTotalMinor = money.toMinor(bundleDiscountTotal, minorUnit);
@@ -2625,6 +2750,7 @@ const createSaleTx = db.transaction((sale) => {
   });
 
   const saleId = saleInfo.lastInsertRowid;
+  saveSaleBundleSnapshot(saleId, bundleResolved.applied, minorUnit);
 
   const insertItem = db.prepare(
     `INSERT INTO sale_items (uuid, sale_id, product_id, quantity, unit_price, unit_price_minor, tax_rate, tax_profile_id, tax_inclusive, discount, line_total, line_total_minor, notes, cost_at_sale, cost_at_sale_minor)
@@ -2735,17 +2861,31 @@ function listKnownDeliveryPersons() {
 
 function listSales(filters = {}) {
   const branch = getCurrentBranch();
-  let sql = `SELECT * FROM sales WHERE branch_id = ?`;
+  // LEFT JOIN للعميل: كانت قائمة الفواتير لا تعرض اسم العميل لأن sales لا تحمل الاسم.
+  let sql = `SELECT s.*, c.name AS customer_name FROM sales s LEFT JOIN customers c ON c.id = s.customer_id WHERE s.branch_id = ?`;
   const params = [branch.id];
   if (filters.from) {
-    sql += ` AND created_at >= ?`;
+    sql += ` AND s.created_at >= ?`;
     params.push(filters.from);
   }
   if (filters.to) {
-    sql += ` AND created_at <= ?`;
+    sql += ` AND s.created_at <= ?`;
     params.push(filters.to);
   }
-  sql += ' ORDER BY created_at DESC LIMIT 200';
+  // قائمة المرتجعات/التعديل: الفواتير المكتملة والمرتجعة جزئياً فقط (لا طلبات مفتوحة ولا ملغاة ولا مرتجعة بالكامل).
+  const allowedStatuses = ['open', 'completed', 'partially_refunded', 'refunded', 'voided', 'cancelled', 'draft'];
+  const statuses = Array.isArray(filters.statuses) ? filters.statuses.filter((x) => allowedStatuses.includes(String(x))) : [];
+  if (statuses.length) {
+    sql += ` AND s.status IN (${statuses.map(() => '?').join(',')})`;
+    params.push(...statuses);
+  }
+  const search = String(filters.search || '').trim();
+  if (search) {
+    const like = `%${search.replace(/[%_]/g, (ch) => `\\${ch}`)}%`;
+    sql += ` AND (s.invoice_number LIKE ? ESCAPE '\\' OR COALESCE(c.name,'') LIKE ? ESCAPE '\\' OR s.created_at LIKE ? ESCAPE '\\')`;
+    params.push(like, like, like);
+  }
+  sql += ' ORDER BY s.created_at DESC LIMIT 200';
   return db.prepare(sql).all(...params);
 }
 
@@ -2774,7 +2914,7 @@ function getSale(id, branchId = null) {
 
   const branch = db.prepare('SELECT * FROM branches WHERE id = ?').get(sale.branch_id);
 
-  return { ...sale, items, branch };
+  return { ...sale, items, bundles: getSaleBundles(id), branch };
 }
 
 /* ---------------- تحويلات المخزون بين الفروع ---------------- */
@@ -3053,7 +3193,7 @@ function getCashMovementsSummary(range = {}) {
 // ترجع "الوضع المالي الآن" بمعزل عن أي فترة تاريخية ليُعرض بقسم منفصل وواضح أعلى صفحة التقارير.
 function getBalancesSnapshot() {
   const branch = getCurrentBranch();
-  const unit = Number(getGlobalProfile()?.currency_minor_unit || 2);
+  const unit = Number(getGlobalProfile()?.currency_minor_unit ?? 2);
 
   const openShift = getOpenShift();
   const expectedCash = openShift ? computeExpectedCash(openShift) : null;
@@ -3239,6 +3379,7 @@ function getProfitLoss(range = {}) {
     WHERE s.branch_id=? AND s.status IN ('completed','partially_refunded') AND s.created_at BETWEEN ? AND ?
     ORDER BY s.id, si.id`).all(branch.id, from, to);
 
+  const plUnit = Number(getGlobalProfile()?.currency_minor_unit ?? 2);
   const salesMap = new Map();
   for (const row of itemRows) {
     if (!salesMap.has(row.sale_id)) salesMap.set(row.sale_id, []);
@@ -3246,7 +3387,9 @@ function getProfitLoss(range = {}) {
     const gross = Math.max(0, Number(row.line_total || 0));
     const rate = Math.max(0, Number(row.tax_rate || 0));
     const inclusive = Number(row.tax_inclusive) === 1;
-    const net = inclusive ? gross / (1 + rate / 100) : gross;
+    // نفس تقريب الفاتورة/القيد المحاسبي (لكل سطر بالوحدة الصغرى) حتى لا يختلف تقرير الأرباح عن دفتر الأستاذ.
+    const grossMinorPl = money.toMinor(gross, plUnit);
+    const net = inclusive ? money.fromMinor(Math.max(0, grossMinorPl - money.taxMinor(grossMinorPl, rate, true)), plUnit) : gross;
     rows.push({ ...row, gross, net, qty: Number(row.quantity || 0), cost: Math.max(0, Number(row.cost_at_sale || 0)) });
   }
 
@@ -3275,16 +3418,26 @@ function getProfitLoss(range = {}) {
   const returnRows = db.prepare(`
     SELECT ri.sale_item_id, ri.quantity, r.total_refunded, r.created_at,
            si.sale_id, si.product_id, si.quantity AS sold_quantity, si.line_total, si.tax_rate, si.tax_inclusive, si.cost_at_sale,
-           s.subtotal, s.tax_total, s.discount_total, s.bundle_discount_total,
-           (SELECT COALESCE(SUM(CASE WHEN COALESCE(s2.tax_inclusive,0)=1
-                                      THEN s2.line_total/(1+s2.tax_rate/100)
-                                      ELSE s2.line_total END),0)
-            FROM sale_items s2 WHERE s2.sale_id=s.id) AS sale_net_before_discount
+           s.subtotal, s.tax_total, s.discount_total, s.bundle_discount_total
     FROM return_items ri
     JOIN returns r ON r.id=ri.return_id
     JOIN sale_items si ON si.id=ri.sale_item_id
     JOIN sales s ON s.id=si.sale_id
     WHERE r.branch_id=? AND r.created_at BETWEEN ? AND ?`).all(branch.id, from, to);
+
+  // صافي الفاتورة قبل الخصم يُحسب هنا بنفس تقريب الوحدة الصغرى لكل سطر (بدل قسمة عشرية داخل SQL)
+  // حتى يتطابق توزيع الخصم على المرتجعات مع توزيعه على المبيعات أعلاه.
+  const saleNetBeforeDiscount = new Map();
+  const returnSaleIds = [...new Set(returnRows.map((r) => Number(r.sale_id)))];
+  if (returnSaleIds.length) {
+    const lineRows = db.prepare(`SELECT sale_id, line_total, tax_rate, tax_inclusive FROM sale_items WHERE sale_id IN (${returnSaleIds.map(() => '?').join(',')})`).all(...returnSaleIds);
+    for (const li of lineRows) {
+      const grossMinorLine = money.toMinor(Math.max(0, Number(li.line_total || 0)), plUnit);
+      const rateLine = Math.max(0, Number(li.tax_rate || 0));
+      const netMinorLine = Number(li.tax_inclusive) === 1 ? Math.max(0, grossMinorLine - money.taxMinor(grossMinorLine, rateLine, true)) : grossMinorLine;
+      saleNetBeforeDiscount.set(Number(li.sale_id), (saleNetBeforeDiscount.get(Number(li.sale_id)) || 0) + money.fromMinor(netMinorLine, plUnit));
+    }
+  }
 
   let returnsRevenue = 0;
   let returnsCost = 0;
@@ -3293,8 +3446,9 @@ function getProfitLoss(range = {}) {
     const soldQty = Number(row.sold_quantity || 0);
     const itemGross = Math.max(0, Number(row.line_total || 0));
     const rate = Math.max(0, Number(row.tax_rate || 0));
-    const itemNet = Number(row.tax_inclusive) === 1 ? itemGross / (1 + rate / 100) : itemGross;
-    const saleNet = Math.max(0, Number(row.sale_net_before_discount || 0));
+    const itemGrossMinorPl = money.toMinor(itemGross, plUnit);
+    const itemNet = Number(row.tax_inclusive) === 1 ? money.fromMinor(Math.max(0, itemGrossMinorPl - money.taxMinor(itemGrossMinorPl, rate, true)), plUnit) : itemGross;
+    const saleNet = Math.max(0, Number(saleNetBeforeDiscount.get(Number(row.sale_id)) || 0));
     const discountPool = Math.max(0, Math.min(saleNet, Number(row.discount_total || 0) + Number(row.bundle_discount_total || 0)));
     const allocated = saleNet > 0 ? discountPool * (itemNet / saleNet) : 0;
     const unitNetAfterDiscount = soldQty > 0 ? Math.max(0, itemNet - allocated) / soldQty : 0;
@@ -3330,7 +3484,9 @@ function getProfitLoss(range = {}) {
   const fromLocal = range.from ? String(range.from).slice(0, 10) : todayLocal;
   const toLocal = range.to ? String(range.to).slice(0, 10) : todayLocal;
   const payrollExpense = getPayrollExpenseForRange(fromLocal, toLocal);
-  const netProfit = grossProfit - payrollExpense;
+  // مصروفات تشغيلية (إيجار، كهرباء...) منفصلة عن تكلفة البضاعة وعن الرواتب.
+  const operatingExpenses = getOperatingExpensesSummary({ from: fromLocal, to: toLocal }).total;
+  const netProfit = grossProfit - payrollExpense - operatingExpenses;
 
   return {
     from,
@@ -3343,6 +3499,7 @@ function getProfitLoss(range = {}) {
     returnsCost,
     grossProfit,
     payrollExpense,
+    operatingExpenses,
     netProfit,
     marginPercent,
     byProduct,
@@ -3549,7 +3706,7 @@ const receiveCustomerPaymentTx = db.transaction((payload) => {
       .run(uuid(), branch.id, shiftId, 'cash_in', applied, 'تسديد دين عميل', `customer:${payload.customerId}`, payload.userId || null);
     cashMovementRecorded = true;
   }
-  const unit = Number(getGlobalProfile()?.currency_minor_unit || 2);
+  const unit = Number(getGlobalProfile()?.currency_minor_unit ?? 2);
   const appliedMinor = money.toMinor(applied, unit);
   insertPostedJournalEntry({
     branchId: branch.id, memo: `تسديد دين عميل #${payload.customerId}`, referenceType: 'customer_payment', referenceId: payload.customerId,
@@ -3628,6 +3785,7 @@ function receivePurchaseOrderCore(purchaseOrderId, branchId, context = {}) {
   // استلامها من هون، لأن الاستلام يُحرّك مخزون هذا الجهاز ورصيد المورد المشترك، وفرع تاني
   // هو المسؤول الوحيد عن قرار استلام فاتورته هو.
   if (po.branch_id !== branchId) throw new Error('لا يمكن استلام فاتورة شراء تخص فرعاً آخر. راجع الفرع الذي أنشأها.');
+  if (po.invoice_type === 'expense') throw new Error('فاتورة المصروف لا تُستلم كبضاعة.');
   if (po.status !== 'draft') throw new Error('لا يمكن استلام فاتورة تم التعامل معها سابقاً.');
   const items = db.prepare('SELECT * FROM purchase_order_items WHERE purchase_order_id = ?').all(purchaseOrderId);
   const upsertInventory = db.prepare(`INSERT INTO inventory (branch_id, product_id, quantity, unit_cost, min_quantity, updated_at, synced) VALUES (?, ?, ?, ?, 0, datetime('now'), 0)
@@ -3682,7 +3840,7 @@ function receivePurchaseOrderCore(purchaseOrderId, branchId, context = {}) {
   // (لأنها لا تدخل حساب المخزون أصلاً)، ودائن حساب التسوية (نقد/بطاقة) بالمدفوع فوراً
   // ودائن ذمم دائنة (موردون) بالباقي الآجل.
   if (Number(po.total) > 0) {
-    const unit = Number(getGlobalProfile()?.currency_minor_unit || 2);
+    const unit = Number(getGlobalProfile()?.currency_minor_unit ?? 2);
     const totalMinor = money.toMinor(Number(po.total), unit);
     const paidMinor = money.toMinor(paidAmount, unit);
     const inventoryMinor = money.toMinor(Math.min(trackedPurchaseValue, Number(po.total)), unit);
@@ -3731,7 +3889,7 @@ const paySupplierDebtTx = db.transaction((payload) => {
       .run(uuid(), branch.id, shiftId, 'cash_out', applied, 'دفعة لمورد', `supplier:${payload.supplierId}`, payload.userId || null);
     cashMovementRecorded = true;
   }
-  const unit = Number(getGlobalProfile()?.currency_minor_unit || 2);
+  const unit = Number(getGlobalProfile()?.currency_minor_unit ?? 2);
   const appliedMinor = money.toMinor(applied, unit);
   insertPostedJournalEntry({
     branchId: branch.id, memo: `دفعة لمورد #${payload.supplierId}`, referenceType: 'supplier_payment', referenceId: payload.supplierId,
@@ -3743,6 +3901,150 @@ const paySupplierDebtTx = db.transaction((payload) => {
   return { success: true, applied, balanceAfter, cashMovementRecorded };
 });
 function paySupplierDebt(payload) { return paySupplierDebtTx(payload); }
+/* ---------------- مصروفات تشغيلية (بلا بضاعة) ---------------- */
+// فئات جاهزة لكل فرع. لكل فئة حساب مصروف خاص (6200..6290) حتى تظهر منفصلة عن تكلفة البضاعة (COGS 5000) والمخزون.
+const DEFAULT_EXPENSE_CATEGORIES = Object.freeze([
+  ['6200', 'إيجار المحل'], ['6210', 'كهرباء'], ['6220', 'ماء'], ['6230', 'إنترنت / هاتف'], ['6240', 'صيانة'],
+  ['6250', 'نظافة'], ['6260', 'نقل وتوصيل'], ['6270', 'رسوم حكومية / رخص'], ['6280', 'تسويق وإعلان'], ['6290', 'أخرى'],
+]);
+function ensureExpenseCategories(branchId) {
+  const has = db.prepare('SELECT 1 FROM expense_categories WHERE branch_id=? LIMIT 1').get(branchId);
+  if (has) return;
+  const currency = String(getGlobalProfile()?.currency_code || 'USD').toUpperCase();
+  const insertAccount = db.prepare('INSERT OR IGNORE INTO accounting_accounts(uuid,branch_id,code,name,account_type,currency_code) VALUES(?,?,?,?,?,?)');
+  const insertCategory = db.prepare('INSERT OR IGNORE INTO expense_categories(uuid,branch_id,name,account_code,synced) VALUES(?,?,?,?,0)');
+  for (const [code, name] of DEFAULT_EXPENSE_CATEGORIES) {
+    insertAccount.run(uuid(), branchId, code, name, 'expense', currency);
+    insertCategory.run(uuid(), branchId, name, code);
+  }
+}
+function listExpenseCategories(includeInactive = false) {
+  const branch = getCurrentBranch();
+  ensureExpenseCategories(branch.id);
+  return db.prepare(`SELECT id, uuid, name, account_code, is_active FROM expense_categories WHERE branch_id=? ${includeInactive ? '' : 'AND is_active=1'} ORDER BY account_code, name`).all(branch.id);
+}
+// إضافة فئة جديدة (أو تعديل اسم/تفعيل فئة). الفئة الجديدة تأخذ حساب مصروف جديداً من المدى 6300..6899.
+const saveExpenseCategoryTx = db.transaction((payload) => {
+  const branch = getCurrentBranch();
+  ensureExpenseCategories(branch.id);
+  const name = String(payload?.name || '').trim();
+  if (!name || name.length > 80) throw new Error('اسم فئة المصروف مطلوب (حتى 80 حرفاً).');
+  const currency = String(getGlobalProfile()?.currency_code || 'USD').toUpperCase();
+  const id = Number(payload?.id || 0);
+  if (id) {
+    const row = db.prepare('SELECT id, account_code FROM expense_categories WHERE id=? AND branch_id=?').get(id, branch.id);
+    if (!row) throw new Error('فئة المصروف غير موجودة.');
+    const clash = db.prepare('SELECT id FROM expense_categories WHERE branch_id=? AND name=? AND id<>?').get(branch.id, name, id);
+    if (clash) throw new Error('اسم الفئة مستخدم مسبقاً.');
+    db.prepare("UPDATE expense_categories SET name=?, is_active=?, updated_at=datetime('now'), synced=0 WHERE id=?").run(name, payload.isActive === false ? 0 : 1, id);
+    db.prepare("UPDATE accounting_accounts SET name=? WHERE branch_id=? AND code=? AND account_type='expense'").run(name, branch.id, row.account_code);
+    return { success: true, id };
+  }
+  if (db.prepare('SELECT 1 FROM expense_categories WHERE branch_id=? AND name=?').get(branch.id, name)) throw new Error('اسم الفئة مستخدم مسبقاً.');
+  const last = db.prepare("SELECT MAX(CAST(code AS INTEGER)) AS c FROM accounting_accounts WHERE branch_id=? AND CAST(code AS INTEGER) BETWEEN 6300 AND 6899").get(branch.id)?.c;
+  const code = String(last ? Number(last) + 10 : 6300);
+  if (Number(code) > 6899) throw new Error('تجاوزت الحد الأقصى لفئات المصروف.');
+  db.prepare('INSERT INTO accounting_accounts(uuid,branch_id,code,name,account_type,currency_code) VALUES(?,?,?,?,?,?)').run(uuid(), branch.id, code, name, 'expense', currency);
+  const info = db.prepare('INSERT INTO expense_categories(uuid,branch_id,name,account_code,synced) VALUES(?,?,?,?,0)').run(uuid(), branch.id, name, code);
+  return { success: true, id: info.lastInsertRowid, accountCode: code };
+});
+function saveExpenseCategory(payload) { return saveExpenseCategoryTx(payload); }
+
+// فاتورة مصروف تشغيلي: لا بنود ولا مخزون إطلاقاً. تدخل رصيد المورد والذمم والصندوق والقيود كأي فاتورة مورد،
+// لكن القيد مدين حساب مصروف الفئة (وليس المخزون 1300 ولا COGS 5000).
+const createExpenseInvoiceTx = db.transaction((payload = {}) => {
+  const branch = getCurrentBranch();
+  ensureExpenseCategories(branch.id);
+  const unit = Number(getGlobalProfile()?.currency_minor_unit ?? 2);
+  const toMinorStrict = (value, label) => {
+    const n = Number(value);
+    if (!Number.isFinite(n) || n < 0) throw new Error(`${label} غير صالح.`);
+    return money.toMinor(n.toFixed(unit + 6), unit);
+  };
+  const supplier = db.prepare('SELECT id, balance FROM suppliers WHERE id=? AND branch_id=?').get(Number(payload.supplierId), branch.id);
+  if (!supplier) throw new Error('اختر مورداً صالحاً.');
+  const category = db.prepare('SELECT * FROM expense_categories WHERE id=? AND branch_id=? AND is_active=1').get(Number(payload.categoryId), branch.id);
+  if (!category) throw new Error('اختر فئة مصروف صالحة.');
+  const totalMinor = toMinorStrict(payload.amount, 'مبلغ المصروف');
+  if (!(totalMinor > 0)) throw new Error('مبلغ المصروف يجب أن يكون أكبر من صفر.');
+  const paymentMethod = String(payload.paymentMethod || 'credit').trim();
+  if (!['cash', 'card', 'credit'].includes(paymentMethod)) throw new Error('طريقة الدفع غير صالحة.');
+  let paidMinor = 0;
+  if (paymentMethod !== 'credit') {
+    paidMinor = payload.paidAmount == null || payload.paidAmount === '' ? totalMinor : toMinorStrict(payload.paidAmount, 'المبلغ المدفوع');
+    if (paidMinor > totalMinor) throw new Error('المبلغ المدفوع أكبر من مبلغ المصروف.');
+  }
+  const reference = String(payload.referenceNumber || '').trim().slice(0, 100) || null;
+  const notes = String(payload.notes || '').trim().slice(0, 1000) || null;
+  const invoiceDate = /^\d{4}-\d{2}-\d{2}$/.test(String(payload.invoiceDate || '')) ? String(payload.invoiceDate) : db.prepare("SELECT date('now','localtime') AS d").get().d;
+  const actorId = payload.userId || null;
+  const shiftId = payload.shiftId || null;
+  // الدفع النقدي يجب أن ينقص الصندوق فعلاً: نتطلب وردية مفتوحة بدل تسجيل دفع نقدي بلا أثر على الصندوق.
+  if (paymentMethod === 'cash' && paidMinor > 0) {
+    const shift = shiftId ? db.prepare("SELECT id FROM shifts WHERE id=? AND branch_id=? AND status='open'").get(shiftId, branch.id) : null;
+    if (!shift) throw new Error('افتح وردية (جلسة صندوق) لتسجيل مصروف مدفوع نقداً.');
+  }
+  const total = money.fromMinor(totalMinor, unit);
+  const paid = money.fromMinor(paidMinor, unit);
+  const info = db.prepare(`INSERT INTO purchase_orders (uuid, branch_id, supplier_id, status, total, paid_amount, payment_method, received_at, notes, invoice_type, expense_category_id, expense_category_name, invoice_date, reference_number, synced)
+    VALUES (?, ?, ?, 'received', ?, ?, ?, datetime('now'), ?, 'expense', ?, ?, ?, ?, 0)`)
+    .run(uuid(), branch.id, supplier.id, total, paid, paymentMethod, notes, category.id, category.name, invoiceDate, reference);
+  const poId = info.lastInsertRowid;
+
+  const balanceAfterInvoice = Number(supplier.balance || 0) + total;
+  const balanceAfter = balanceAfterInvoice - paid;
+  db.prepare("UPDATE suppliers SET balance=?, updated_at=datetime('now'), synced=0 WHERE id=? AND branch_id=?").run(balanceAfter, supplier.id, branch.id);
+  db.prepare(`INSERT INTO supplier_ledger (uuid, branch_id, supplier_id, purchase_order_id, entry_type, amount, balance_after, notes, synced) VALUES (?, ?, ?, ?, 'purchase', ?, ?, ?, 0)`)
+    .run(uuid(), branch.id, supplier.id, poId, total, balanceAfterInvoice, `فاتورة مصروف: ${category.name}`);
+  let cashMovementRecorded = false;
+  if (paidMinor > 0) {
+    db.prepare(`INSERT INTO supplier_ledger (uuid, branch_id, supplier_id, purchase_order_id, entry_type, amount, balance_after, notes, synced) VALUES (?, ?, ?, ?, 'payment', ?, ?, ?, 0)`)
+      .run(uuid(), branch.id, supplier.id, poId, -paid, balanceAfter, `دفعة ${paymentMethod === 'cash' ? 'نقدية' : 'بطاقة'} لفاتورة مصروف`);
+    const currency = String(getGlobalProfile().currency_code || 'USD').trim().toUpperCase();
+    db.prepare(`INSERT INTO payment_transactions(uuid,branch_id,shift_id,method,currency_code,amount,exchange_rate,external_id,masked_descriptor,created_by) VALUES(?,?,?,?,?,?,?,?,?,?)`)
+      .run(uuid(), branch.id, shiftId, paymentMethod, currency, -paid, 1, `expense:${poId}`, `مصروف: ${category.name}`, actorId);
+    if (paymentMethod === 'cash') {
+      db.prepare(`INSERT INTO cash_movements(uuid,branch_id,shift_id,type,amount,reason,reference,created_by) VALUES(?,?,?,?,?,?,?,?)`)
+        .run(uuid(), branch.id, shiftId, 'cash_out', paid, `مصروف: ${category.name}`, `expense:${poId}`, actorId);
+      cashMovementRecorded = true;
+    }
+  }
+  // القيد: مدين مصروف الفئة بكامل المبلغ / دائن الصندوق أو البنك بالمدفوع / دائن ذمم الموردين بالباقي الآجل.
+  const lines = [{ accountId: getAccountingAccountId(branch.id, category.account_code), debitMinor: totalMinor, creditMinor: 0, memo: `مصروف ${category.name} #${poId}` }];
+  if (paidMinor > 0) lines.push({ accountId: getAccountingAccountId(branch.id, paymentMethod === 'card' ? '1100' : '1000'), debitMinor: 0, creditMinor: paidMinor, memo: `دفع مصروف #${poId}` });
+  if (totalMinor - paidMinor > 0) lines.push({ accountId: getAccountingAccountId(branch.id, '2000'), debitMinor: 0, creditMinor: totalMinor - paidMinor, memo: `مصروف آجل #${poId}` });
+  insertPostedJournalEntry({ branchId: branch.id, memo: `فاتورة مصروف ${category.name} #${poId}`, referenceType: 'expense_invoice', referenceId: poId, lines, createdBy: actorId });
+
+  logAudit({ userId: actorId, action: 'expense_invoice_created', entityType: 'purchase_order', entityId: poId, details: { supplierId: supplier.id, category: category.name, total, paid, paymentMethod, invoiceDate, reference } });
+  if (paidMinor > 0) logAudit({ userId: actorId, action: 'expense_invoice_payment', entityType: 'purchase_order', entityId: poId, details: { method: paymentMethod, amount: paid, shiftId } });
+  return { success: true, id: poId, total, paidAmount: paid, due: money.fromMinor(totalMinor - paidMinor, unit), balanceAfter, cashMovementRecorded };
+});
+function createExpenseInvoice(payload) { return createExpenseInvoiceTx(payload); }
+
+// ملخص المصروفات التشغيلية (منفصل عن مشتريات البضاعة): إجمالي + حسب الفئة لفترة بتاريخ الفاتورة.
+function getOperatingExpensesSummary(range = {}) {
+  const branch = getCurrentBranch();
+  const unit = Number(getGlobalProfile()?.currency_minor_unit ?? 2);
+  const today = db.prepare("SELECT date('now','localtime') AS d").get().d;
+  const from = /^\d{4}-\d{2}-\d{2}/.test(String(range.from || '')) ? String(range.from).slice(0, 10) : today.slice(0, 8) + '01';
+  const to = /^\d{4}-\d{2}-\d{2}/.test(String(range.to || '')) ? String(range.to).slice(0, 10) : today;
+  const rows = db.prepare(`SELECT expense_category_name AS name, total FROM purchase_orders
+    WHERE branch_id=? AND invoice_type='expense' AND status='received' AND COALESCE(invoice_date, date(created_at)) BETWEEN ? AND ?`).all(branch.id, from, to);
+  const byCategory = new Map();
+  let totalMinor = 0;
+  for (const r of rows) {
+    const m = money.toMinor(Number(r.total || 0).toFixed(unit + 6), unit);
+    totalMinor += m;
+    const key = r.name || 'أخرى';
+    const cur = byCategory.get(key) || { name: key, totalMinor: 0, count: 0 };
+    cur.totalMinor += m; cur.count += 1; byCategory.set(key, cur);
+  }
+  return {
+    from, to, count: rows.length, total: money.fromMinor(totalMinor, unit),
+    byCategory: [...byCategory.values()].sort((a, b) => b.totalMinor - a.totalMinor).map((c) => ({ name: c.name, count: c.count, total: money.fromMinor(c.totalMinor, unit) })),
+  };
+}
+
 function getPurchaseOrder(id) { const b=getCurrentBranch(); const order = db.prepare(`SELECT p.*, s.name AS supplier_name, b.name AS branch_name FROM purchase_orders p JOIN suppliers s ON s.id=p.supplier_id JOIN branches b ON b.id=p.branch_id WHERE p.id=? AND p.branch_id=? AND s.branch_id=?`).get(id,b.id,b.id); return order ? { ...order, items: db.prepare(`SELECT i.*, pr.name AS product_name FROM purchase_order_items i JOIN products pr ON pr.id=i.product_id WHERE i.purchase_order_id=?`).all(id) } : null; }
 
 /* ---------------- طاولات المطعم والطلبات المفتوحة ---------------- */
@@ -3912,20 +4214,63 @@ const setOpenSaleItemsTx = db.transaction((saleId, items) => {
   const appliedRows = db.prepare(`SELECT product_id, COALESCE(SUM(-change_qty),0) AS applied_qty FROM inventory_movements WHERE branch_id=? AND ref_id=? AND reason='table_order' GROUP BY product_id`).all(branch.id, Number(saleId));
   const appliedByProduct = new Map(appliedRows.map((r) => [Number(r.product_id), Number(r.applied_qty || 0)]));
   const normalized=[];
-  let subtotal=0, taxTotal=0;
+  const minorUnit = Number(global?.currency_minor_unit ?? 2);
+  let subtotalMinor=0, taxTotalMinor=0;
+  // Snapshot: البند الموجود مسبقاً في الطلب يحتفظ بسعره ونسبة/نوع ضريبته وتكلفته كما سُجّلت لحظة إضافته.
+  // تغيير سعر المنتج أو ملف الضريبة أو وضع الشمول لاحقاً لا يعيد تسعير الطلب المفتوح؛ يُقرأ المنتج فقط للبنود الجديدة.
+  const existingRows=db.prepare('SELECT * FROM sale_items WHERE sale_id=? ORDER BY id').all(Number(saleId));
+  const usedExisting=new Set();
+  const takeExisting=(productId,wantedUuid)=>{
+    let row=wantedUuid?existingRows.find((r)=>!usedExisting.has(r.id)&&r.uuid===String(wantedUuid)&&Number(r.product_id)===productId):null;
+    if(!row) row=existingRows.find((r)=>!usedExisting.has(r.id)&&Number(r.product_id)===productId);
+    if(row) usedExisting.add(row.id);
+    return row||null;
+  };
   for (const raw of items) {
     const productId=Number(raw.productId ?? raw.product_id);
     const quantity=Number(raw.quantity);
     if (!Number.isInteger(productId) || productId<=0 || !(Number.isFinite(quantity) && quantity>0)) throw new Error('بيانات صنف غير صالحة.');
+    const prior=takeExisting(productId,raw.saleItemUuid??raw.uuid);
     const product=getProductRow.get(branch.id,branch.id,productId);
-    if (!product) throw new Error('منتج غير موجود أو غير نشط.');
-    const taxRate=product.profile_rate==null ? Number(product.tax_rate||0) : Number(product.profile_rate);
-    const inclusive=product.profile_rate!=null ? Number(product.profile_inclusive)===1 : global.tax_mode==='inclusive';
-    const gross=Number(product.price)*quantity;
-    const lineTax=inclusive ? gross - gross/(1+taxRate/100) : gross*(taxRate/100);
-    subtotal += inclusive ? gross-lineTax : gross;
-    taxTotal += lineTax;
-    normalized.push({productId,quantity,unitPrice:Number(product.price),taxRate,taxProfileId:product.tax_profile_id||null,taxInclusive:inclusive,discount:0,lineTotal:gross,notes:String(raw.notes||'').slice(0,1000),costAtSale:Math.max(0,Number(product.branch_cost ?? product.cost ?? 0))});
+    if (!prior && !product) throw new Error('منتج غير موجود أو غير نشط.');
+    let taxRate, inclusive, unitPriceMinor, taxProfileId, costAtSale, itemUuid=null;
+    if (prior) {
+      taxRate=Number(prior.tax_rate||0);
+      inclusive=Number(prior.tax_inclusive)===1;
+      unitPriceMinor=money.toMinor(prior.unit_price,minorUnit);
+      taxProfileId=prior.tax_profile_id||null;
+      costAtSale=Math.max(0,Number(prior.cost_at_sale||0));
+      itemUuid=prior.uuid;
+    } else {
+      taxRate=product.profile_rate==null ? Number(product.tax_rate||0) : Number(product.profile_rate);
+      inclusive=product.profile_rate!=null ? Number(product.profile_inclusive)===1 : global.tax_mode==='inclusive';
+      unitPriceMinor=money.toMinor(product.price,minorUnit);
+      taxProfileId=product.tax_profile_id||null;
+      costAtSale=Math.max(0,Number(product.branch_cost ?? product.cost ?? 0));
+    }
+    // نفس منطق priceItemsFromDatabase: كل الحساب بوحدات صغرى عبر money.taxMinor (تقريب لكل سطر)
+    // حتى يتطابق مجموع الطلب المفتوح مع الفاتورة النهائية دون فرق وحدة صغرى.
+    const lineGrossMinor=money.multiplyMinorQuantity(unitPriceMinor,quantity);
+    const lineTaxMinor=money.taxMinor(lineGrossMinor,taxRate,inclusive);
+    subtotalMinor += inclusive ? Math.max(0,lineGrossMinor-lineTaxMinor) : lineGrossMinor;
+    taxTotalMinor += lineTaxMinor;
+    normalized.push({uuid:itemUuid,productId,quantity,unitPrice:money.fromMinor(unitPriceMinor,minorUnit),taxRate,taxProfileId,taxInclusive:inclusive,discount:0,lineTotal:money.fromMinor(lineGrossMinor,minorUnit),notes:String(raw.notes||'').slice(0,1000),costAtSale,kitchenSentQty:prior?Number(prior.kitchen_sent_qty||0):0,priorNotes:prior?String(prior.notes||''):null});
+  }
+  // فرق المطبخ: ما تغيّر فعلاً عمّا وصل للمطبخ سابقاً (إضافة/إلغاء/تغيير ملاحظة). حفظ بلا تغيير = لا تذكرة.
+  const productNameOf=db.prepare('SELECT name FROM products WHERE id=?');
+  const kitchenDelta=[];
+  let anyKitchenSent=false;
+  for (const item of normalized) {
+    if (item.kitchenSentQty>0) anyKitchenSent=true;
+    const d=Math.round((item.quantity-item.kitchenSentQty)*1e6)/1e6;
+    const noteChanged=item.kitchenSentQty>0 && item.priorNotes!==null && item.priorNotes!==String(item.notes||'');
+    if (Math.abs(d)>1e-9 || noteChanged) kitchenDelta.push({productId:item.productId,productName:productNameOf.get(item.productId)?.name||'',deltaQuantity:d,notes:item.notes||null,noteOnly:Math.abs(d)<=1e-9});
+  }
+  for (const row of existingRows) {
+    if (!usedExisting.has(row.id) && Number(row.kitchen_sent_qty||0)>0) {
+      anyKitchenSent=true;
+      kitchenDelta.push({productId:row.product_id,productName:productNameOf.get(row.product_id)?.name||'',deltaQuantity:-Number(row.kitchen_sent_qty),notes:null,noteOnly:false});
+    }
   }
   const desiredByProduct = new Map();
   for (const item of normalized) desiredByProduct.set(item.productId, (desiredByProduct.get(item.productId) || 0) + item.quantity);
@@ -3958,39 +4303,51 @@ const setOpenSaleItemsTx = db.transaction((saleId, items) => {
   }
   db.prepare("UPDATE sales SET inventory_committed=1 WHERE id=? AND branch_id=? AND status='open'").run(Number(saleId), branch.id);
   db.prepare('DELETE FROM sale_items WHERE sale_id=?').run(Number(saleId));
-  const insertItem=db.prepare(`INSERT INTO sale_items (uuid,sale_id,product_id,quantity,unit_price,tax_rate,tax_profile_id,tax_inclusive,discount,line_total,notes,cost_at_sale) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`);
-  for(const item of normalized) insertItem.run(uuid(),Number(saleId),item.productId,item.quantity,item.unitPrice,item.taxRate,item.taxProfileId,item.taxInclusive ? 1 : 0,item.discount,item.lineTotal,item.notes,item.costAtSale);
-  db.prepare(`UPDATE sales SET subtotal=?,tax_total=?,grand_total=? WHERE id=? AND branch_id=? AND status='open'`).run(subtotal,taxTotal,subtotal+taxTotal,Number(saleId),branch.id);
-  return { success:true, subtotal,taxTotal,grandTotal:subtotal+taxTotal,items:normalized.length };
+  const insertItem=db.prepare(`INSERT INTO sale_items (uuid,sale_id,product_id,quantity,unit_price,tax_rate,tax_profile_id,tax_inclusive,discount,line_total,notes,cost_at_sale,kitchen_sent_qty) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`);
+  for(const item of normalized) insertItem.run(item.uuid||uuid(),Number(saleId),item.productId,item.quantity,item.unitPrice,item.taxRate,item.taxProfileId,item.taxInclusive ? 1 : 0,item.discount,item.lineTotal,item.notes,item.costAtSale,item.kitchenSentQty);
+  const subtotal=money.fromMinor(subtotalMinor,minorUnit);
+  const taxTotal=money.fromMinor(taxTotalMinor,minorUnit);
+  const grandTotal=money.fromMinor(subtotalMinor+taxTotalMinor,minorUnit);
+  db.prepare(`UPDATE sales SET subtotal=?,tax_total=?,grand_total=? WHERE id=? AND branch_id=? AND status='open'`).run(subtotal,taxTotal,grandTotal,Number(saleId),branch.id);
+  return { success:true, subtotal,taxTotal,grandTotal,items:normalized.length,kitchenDelta,kitchenFirst:!anyKitchenSent };
 });
 
 function setOpenSaleItems(saleId, items) {
   return setOpenSaleItemsTx(saleId, items);
 }
 
+// بعد نجاح طباعة تذكرة المطبخ فقط: نُسجّل أن كل كميات الطلب الحالية وصلت للمطبخ.
+function markKitchenSent(saleId) {
+  const branch = getCurrentBranch();
+  const sale = db.prepare(`SELECT id FROM sales WHERE id=? AND branch_id=? AND status='open'`).get(Number(saleId), branch.id);
+  if (!sale) return { success: false };
+  db.prepare('UPDATE sale_items SET kitchen_sent_qty=quantity WHERE sale_id=?').run(sale.id);
+  return { success: true };
+}
+
 function recalculateOpenSale(saleId) {
   const sale = db.prepare("SELECT branch_id FROM sales WHERE id=? AND status='open'").get(Number(saleId));
   if (!sale) throw new Error('الطلب المفتوح غير موجود.');
   const global = getGlobalProfile();
+  // الضريبة من Snapshot البند المخزَّن (tax_rate/tax_inclusive) وليس من ملف الضريبة الحالي أو وضع المنشأة الحالي.
   const rows = db.prepare(`
-    SELECT si.quantity, si.unit_price, si.tax_rate, si.tax_profile_id,
-           tp.rate AS profile_rate, tp.is_inclusive AS profile_inclusive
+    SELECT si.quantity, si.unit_price, si.tax_rate, si.tax_inclusive
     FROM sale_items si
-    LEFT JOIN tax_profiles tp ON tp.id=si.tax_profile_id AND tp.branch_id=? AND tp.is_active=1
     WHERE si.sale_id=?
-  `).all(sale.branch_id, Number(saleId));
-  let subtotal = 0, tax = 0;
+  `).all(Number(saleId));
+  const minorUnit = Number(global?.currency_minor_unit ?? 2);
+  let subtotalMinor = 0, taxMinorTotal = 0;
   for (const row of rows) {
-    const gross = Number(row.quantity) * Number(row.unit_price);
-    const rate = row.profile_rate == null ? Number(row.tax_rate || 0) : Number(row.profile_rate);
-    const inclusive = row.profile_rate != null ? Number(row.profile_inclusive) === 1 : global.tax_mode === 'inclusive';
-    const lineTax = inclusive ? gross - gross / (1 + rate / 100) : gross * rate / 100;
-    subtotal += inclusive ? gross - lineTax : gross;
-    tax += lineTax;
+    const grossMinor = money.multiplyMinorQuantity(money.toMinor(row.unit_price, minorUnit), Number(row.quantity));
+    const rate = Number(row.tax_rate || 0);
+    const inclusive = Number(row.tax_inclusive) === 1;
+    const lineTaxMinor = money.taxMinor(grossMinor, rate, inclusive);
+    subtotalMinor += inclusive ? Math.max(0, grossMinor - lineTaxMinor) : grossMinor;
+    taxMinorTotal += lineTaxMinor;
   }
-  subtotal = Math.round(subtotal * 100) / 100;
-  tax = Math.round(tax * 100) / 100;
-  const grandTotal = Math.round((subtotal + tax) * 100) / 100;
+  const subtotal = money.fromMinor(subtotalMinor, minorUnit);
+  const tax = money.fromMinor(taxMinorTotal, minorUnit);
+  const grandTotal = money.fromMinor(subtotalMinor + taxMinorTotal, minorUnit);
   db.prepare(`UPDATE sales SET subtotal=?, tax_total=?, grand_total=? WHERE id=? AND status='open'`).run(subtotal, tax, grandTotal, Number(saleId));
   return { subtotal, tax, grand_total: grandTotal };
 }
@@ -4011,9 +4368,9 @@ const mergeTablesTx = db.transaction((sourceTableId, targetTableId, userId) => {
     target = db.prepare('SELECT * FROM sales WHERE id=?').get(created.lastInsertRowid);
   }
   const targetInventoryCommitted = Number(target.inventory_committed || 0) === 1;
-  const insert = db.prepare(`INSERT INTO sale_items (uuid,sale_id,product_id,quantity,unit_price,tax_rate,tax_profile_id,tax_inclusive,discount,line_total,notes,cost_at_sale) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`);
+  const insert = db.prepare(`INSERT INTO sale_items (uuid,sale_id,product_id,quantity,unit_price,tax_rate,tax_profile_id,tax_inclusive,discount,line_total,notes,cost_at_sale,kitchen_sent_qty) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`);
   for (const item of db.prepare('SELECT * FROM sale_items WHERE sale_id=?').all(source.id)) {
-    insert.run(uuid(), target.id, item.product_id, item.quantity, item.unit_price, item.tax_rate, item.tax_profile_id || null, item.tax_inclusive ? 1 : 0, item.discount, item.line_total, item.notes, item.cost_at_sale || 0);
+    insert.run(uuid(), target.id, item.product_id, item.quantity, item.unit_price, item.tax_rate, item.tax_profile_id || null, item.tax_inclusive ? 1 : 0, item.discount, item.line_total, item.notes, item.cost_at_sale || 0, item.kitchen_sent_qty || 0);
   }
   db.prepare(`UPDATE inventory_movements SET ref_id=? WHERE branch_id=? AND ref_id=? AND reason='table_order'`).run(target.id, branch.id, source.id);
   db.prepare('DELETE FROM sale_items WHERE sale_id=?').run(source.id);
@@ -4038,24 +4395,36 @@ const splitTableSaleTx = db.transaction((saleId, selected, payment, userId, shif
   for (const item of sourceItems) {
     const qty = wanted.get(item.id) || 0;
     if (qty < 0 || qty > item.quantity) throw new Error('كمية التقسيم غير صالحة.');
-    if (qty > 0) picked.push({ ...item, quantity: qty, line_total: item.unit_price * qty });
+    if (qty > 0) picked.push({ ...item, quantity: qty });
   }
   if (!picked.length) throw new Error('اختر صنفاً واحداً على الأقل للتقسيم.');
+  const sourceQtyById = new Map(sourceItems.map((s) => [s.id, Number(s.quantity)]));
   const global = getGlobalProfile();
-  let subtotal = 0;
-  let tax = 0;
+  const minorUnit = Number(global?.currency_minor_unit ?? 2);
+  // نفس منطق priceItemsFromDatabase تماماً لكن بأسعار البنود المخزَّنة أصلاً بالطلب
+  // (لا نعيد التسعير من سعر المنتج الحالي؛ الطلب سُعِّر وقت الإضافة له). كل الحساب
+  // بوحدات صغرى (money.toMinor/taxMinor) بدل التقريب العشري المباشر (Math.round(x*100)/100)
+  // الذي كان يراكم فروقاً صغيرة ويكسر توازن القيد المحاسبي لاحقاً.
+  let subtotalMinor = 0;
+  let taxTotalMinor = 0;
+  const pricedItems = [];
   for (const i of picked) {
-    const gross = Number(i.unit_price) * Number(i.quantity);
-    const profile = i.tax_profile_id ? db.prepare('SELECT is_inclusive, rate FROM tax_profiles WHERE id=? AND branch_id=?').get(i.tax_profile_id, branch.id) : null;
-    const rate = profile ? Number(profile.rate || 0) : Number(i.tax_rate || 0);
-    const inclusive = profile ? Number(profile.is_inclusive) === 1 : global.tax_mode === 'inclusive';
-    const lineTax = inclusive && rate > 0 ? gross - gross / (1 + rate / 100) : (inclusive ? 0 : gross * rate / 100);
-    subtotal += inclusive ? gross - lineTax : gross;
-    tax += lineTax;
+    const unitPriceMinor = money.toMinor(i.unit_price, minorUnit);
+    // Snapshot: نسبة الضريبة ونوعها (شامل/حصري) كما خُزّنت مع البند لحظة إضافته، لا كما هي الآن في ملف الضريبة.
+    const rate = Number(i.tax_rate || 0);
+    const inclusive = Number(i.tax_inclusive) === 1;
+    const lineGrossMinor = money.multiplyMinorQuantity(unitPriceMinor, Number(i.quantity));
+    const lineTaxMinor = money.taxMinor(lineGrossMinor, rate, inclusive);
+    const lineNetMinor = inclusive ? Math.max(0, lineGrossMinor - lineTaxMinor) : lineGrossMinor;
+    subtotalMinor += lineNetMinor;
+    taxTotalMinor += lineTaxMinor;
+    const costAtSaleMinor = money.toMinor(Math.max(0, Number(i.cost_at_sale || 0)), minorUnit);
+    pricedItems.push({ ...i, unitPriceMinor, lineGrossMinor, lineTaxMinor, costAtSaleMinor, taxRate: rate, taxInclusive: inclusive });
   }
-  subtotal = Math.round(subtotal * 100) / 100;
-  tax = Math.round(tax * 100) / 100;
-  const total = Math.round((subtotal + tax) * 100) / 100;
+  const grandTotalMinor = subtotalMinor + taxTotalMinor;
+  const subtotal = money.fromMinor(subtotalMinor, minorUnit);
+  const tax = money.fromMinor(taxTotalMinor, minorUnit);
+  const total = money.fromMinor(grandTotalMinor, minorUnit);
   if (!sourceInventoryCommitted) {
     for (const item of picked) {
       const product = db.prepare('SELECT id,track_inventory,is_active FROM products WHERE id=?').get(item.product_id);
@@ -4067,20 +4436,41 @@ const splitTableSaleTx = db.transaction((saleId, selected, payment, userId, shif
     }
   }
   const method = payment.paymentMethod || 'cash';
-  validatePaymentAmounts(total, method, payment.cashAmount, payment.cardAmount, payment.changeDue);
+  // البيع الآجل بالتقسيم يتطلب نفس شرط البيع الآجل بأي مسار آخر: عميل محدَّد + موافقة
+  // مدير/مدير عام حقيقية — لم يكن هذا التحقق موجوداً هنا إطلاقاً سابقاً.
+  assertCreditSaleAllowed({ paymentMethod: method, customerId: source.customer_id, creditApprovedBy: payment.creditApprovedBy });
+  const cashAmountMinor = money.toMinor(payment.cashAmount || 0, minorUnit);
+  const cardAmountMinor = money.toMinor(payment.cardAmount || 0, minorUnit);
+  const changeDueMinor = money.toMinor(payment.changeDue || 0, minorUnit);
+  validatePaymentAmountsMinor(grandTotalMinor, method, cashAmountMinor, cardAmountMinor, changeDueMinor);
+  // فحص توافقي إضافي بوحدة كبرى (نفس نمط createSaleTx) — طبقة أمان ثانية لا تُغيّر أي سلوك.
+  validatePaymentAmounts(total, method, money.fromMinor(cashAmountMinor, minorUnit), money.fromMinor(cardAmountMinor, minorUnit), money.fromMinor(changeDueMinor, minorUnit));
+  const cashAmount = money.fromMinor(cashAmountMinor, minorUnit);
+  const cardAmount = money.fromMinor(cardAmountMinor, minorUnit);
+  const changeDue = money.fromMinor(changeDueMinor, minorUnit);
+  const dueAmountMinor = method === 'credit' ? grandTotalMinor : 0;
+  const dueAmount = money.fromMinor(dueAmountMinor, minorUnit);
   const invoiceNumber = nextInvoiceNumber();
-  const info = db.prepare(`INSERT INTO sales (uuid,branch_id,user_id,customer_id,table_id,shift_id,order_type,subtotal,tax_total,grand_total,payment_method,cash_amount,card_amount,change_due,invoice_number,status)
-    VALUES (?,?,?,?,?,?,'table_split',?,?,?,?,?,?,?,?,'completed')`).run(uuid(), branch.id, userId, source.customer_id || null, source.table_id, shiftId, subtotal, tax, total, method,
-    Number(payment.cashAmount) || 0, Number(payment.cardAmount) || 0, Number(payment.changeDue) || 0, invoiceNumber);
+  const info = db.prepare(`INSERT INTO sales (
+      uuid,branch_id,user_id,customer_id,table_id,shift_id,order_type,
+      subtotal,subtotal_minor,tax_total,tax_total_minor,grand_total,grand_total_minor,
+      payment_method,cash_amount,cash_amount_minor,card_amount,card_amount_minor,
+      change_due,change_due_minor,due_amount,due_amount_minor,invoice_number,status)
+    VALUES (?,?,?,?,?,?,'table_split',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'completed')`).run(
+    uuid(), branch.id, userId, source.customer_id || null, source.table_id, shiftId,
+    subtotal, subtotalMinor, tax, taxTotalMinor, total, grandTotalMinor,
+    method, cashAmount, cashAmountMinor, cardAmount, cardAmountMinor,
+    changeDue, changeDueMinor, dueAmount, dueAmountMinor, invoiceNumber);
   const paidSaleId = info.lastInsertRowid;
-  const ins = db.prepare(`INSERT INTO sale_items (uuid,sale_id,product_id,quantity,unit_price,tax_rate,tax_profile_id,tax_inclusive,discount,line_total,notes,cost_at_sale) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`);
+  const ins = db.prepare(`INSERT INTO sale_items (uuid,sale_id,product_id,quantity,unit_price,unit_price_minor,tax_rate,tax_profile_id,tax_inclusive,discount,line_total,line_total_minor,notes,cost_at_sale,cost_at_sale_minor) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
   const stock = db.prepare(`UPDATE inventory SET quantity=quantity-?,updated_at=datetime('now'),synced=0 WHERE branch_id=? AND product_id=?`);
   const movement = db.prepare(`INSERT INTO inventory_movements (uuid,branch_id,product_id,change_qty,reason,ref_id,unit_cost_after,synced) VALUES (?,?,?,?, 'sale',?,?,0)`);
-  const updateSource = db.prepare('UPDATE sale_items SET quantity=quantity-?, line_total=unit_price*(quantity-?) WHERE id=?');
-  for (const item of picked) {
-    const lineTotal = Number(item.unit_price) * Number(item.quantity);
-    ins.run(uuid(), paidSaleId, item.product_id, item.quantity, item.unit_price, item.tax_rate, item.tax_profile_id || null, item.tax_inclusive ? 1 : 0, item.discount, lineTotal, item.notes, item.cost_at_sale || 0);
-    updateSource.run(item.quantity, item.quantity, item.id);
+  const updateSource = db.prepare('UPDATE sale_items SET kitchen_sent_qty=MIN(kitchen_sent_qty, quantity-?), quantity=quantity-?, line_total=unit_price*(quantity-?), line_total_minor=? WHERE id=?');
+  for (const item of pricedItems) {
+    ins.run(uuid(), paidSaleId, item.product_id, item.quantity, item.unit_price, item.unitPriceMinor, item.taxRate, item.tax_profile_id || null, item.taxInclusive ? 1 : 0, item.discount, money.fromMinor(item.lineGrossMinor, minorUnit), item.lineGrossMinor, item.notes, item.cost_at_sale || 0, item.costAtSaleMinor);
+    const remainingQty = sourceQtyById.get(item.id) - item.quantity;
+    const remainingLineTotalMinor = money.multiplyMinorQuantity(item.unitPriceMinor, remainingQty);
+    updateSource.run(item.quantity, item.quantity, item.quantity, remainingLineTotalMinor, item.id);
     if (!sourceInventoryCommitted) {
       const product = db.prepare('SELECT track_inventory FROM products WHERE id=? AND is_active=1').get(item.product_id);
       if (product?.track_inventory) {
@@ -4092,19 +4482,37 @@ const splitTableSaleTx = db.transaction((saleId, selected, payment, userId, shif
   }
   db.prepare('DELETE FROM sale_items WHERE sale_id=? AND quantity<=0').run(saleId);
   recalculateOpenSale(saleId);
-  const currency = String(getGlobalProfile().currency_code || 'USD').toUpperCase();
-  const ptx = db.prepare(`INSERT INTO payment_transactions(uuid,branch_id,sale_id,shift_id,method,currency_code,amount,exchange_rate,provider,provider_reference,created_by) VALUES(?,?,?,?,?,?,?,?,?,?,?)`);
-  if (method === 'cash') ptx.run(uuid(), branch.id, paidSaleId, shiftId || null, 'cash', currency, total, 1, null, null, userId || null);
-  else if (method === 'card') ptx.run(uuid(), branch.id, paidSaleId, shiftId || null, 'card', currency, total, 1, payment.paymentProvider || null, payment.paymentReference || null, userId || null);
+  const currency = String(global.currency_code || 'USD').toUpperCase();
+  const ptx = db.prepare(`INSERT INTO payment_transactions(uuid,branch_id,sale_id,shift_id,method,currency_code,amount,amount_minor,exchange_rate,provider,provider_reference,created_by) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`);
+  if (method === 'cash') ptx.run(uuid(), branch.id, paidSaleId, shiftId || null, 'cash', currency, total, grandTotalMinor, 1, null, null, userId || null);
+  else if (method === 'card') ptx.run(uuid(), branch.id, paidSaleId, shiftId || null, 'card', currency, total, grandTotalMinor, 1, payment.paymentProvider || null, payment.paymentReference || null, userId || null);
   else if (method === 'mixed') {
-    if (Number(payment.cashAmount) > 0) ptx.run(uuid(), branch.id, paidSaleId, shiftId || null, 'cash', currency, Number(payment.cashAmount), 1, null, null, userId || null);
-    if (Number(payment.cardAmount) > 0) ptx.run(uuid(), branch.id, paidSaleId, shiftId || null, 'card', currency, Number(payment.cardAmount), 1, payment.paymentProvider || null, payment.paymentReference || null, userId || null);
+    if (cashAmountMinor > 0) ptx.run(uuid(), branch.id, paidSaleId, shiftId || null, 'cash', currency, cashAmount, cashAmountMinor, 1, null, null, userId || null);
+    if (cardAmountMinor > 0) ptx.run(uuid(), branch.id, paidSaleId, shiftId || null, 'card', currency, cardAmount, cardAmountMinor, 1, payment.paymentProvider || null, payment.paymentReference || null, userId || null);
   } else if (method === 'store_credit') {
     const customer = source.customer_id ? db.prepare('SELECT store_credit_balance FROM customers WHERE id=? AND branch_id=?').get(source.customer_id, branch.id) : null;
     if (!customer || Number(customer.store_credit_balance || 0) + 0.01 < total) throw new Error('رصيد المتجر غير كافٍ للدفع المجزأ.');
     appendStoreCreditLedger({ customerId: source.customer_id, saleId: paidSaleId, entryType: 'sale_spend', amount: -total, createdBy: userId, branchId: branch.id });
-    ptx.run(uuid(), branch.id, paidSaleId, shiftId || null, 'store_credit', currency, -total, 1, null, null, userId || null);
+    ptx.run(uuid(), branch.id, paidSaleId, shiftId || null, 'store_credit', currency, -total, -grandTotalMinor, 1, null, null, userId || null);
+  } else if (method === 'credit') {
+    // لا حركة نقدية فعلية هنا — يُضاف المبلغ لدين العميل بدل تحصيله الآن (لم يكن هذا
+    // المسار يسجّل أي شيء إطلاقاً سابقاً؛ كان مبلغ الفاتورة المجزّأة يختفي بصمت).
+    const customer = db.prepare('SELECT balance FROM customers WHERE id=? AND branch_id=?').get(source.customer_id, branch.id);
+    if (!customer) throw new Error('العميل المحدد غير موجود.');
+    const balanceAfter = Number(customer.balance || 0) + total;
+    db.prepare(`UPDATE customers SET balance = ?, updated_at = datetime('now'), synced = 0 WHERE id = ? AND branch_id=?`).run(balanceAfter, source.customer_id, branch.id);
+    appendCustomerLedger({ customerId: source.customer_id, saleId: paidSaleId, entryType: 'credit_sale', amount: total, balanceAfter, notes: `فاتورة مجزّأة ${invoiceNumber}` });
   }
+  // ترحيل محاسبي: تقسيم فاتورة الطاولة لم يكن يمرّ على postSaleAccountingInTransaction
+  // إطلاقاً (خلافاً للبيع المباشر وإغلاق الطاولة الكامل) — يعني الجزء المدفوع من أي
+  // فاتورة مُجزّأة كان غائباً تماماً عن دفتر الأستاذ رغم ظهوره بالتقارير.
+  const accountingSale = {
+    subtotalMinor, taxTotalMinor, discountTotalMinor: 0, bundleDiscountTotalMinor: 0,
+    deliveryFeeMinor: 0, loyaltyRedeemedValueMinor: 0, grandTotalMinor,
+    paymentMethod: method, cashAmountMinor, cardAmountMinor, invoiceNumber, userId,
+    items: pricedItems.map((it) => ({ costAtSaleMinor: it.costAtSaleMinor, quantity: it.quantity })),
+  };
+  postSaleAccountingInTransaction(accountingSale, paidSaleId, branch.id);
   logAudit({ userId, action: 'table_bill_split', entityType: 'sale', entityId: paidSaleId, details: { sourceSaleId: saleId, total, items: picked.length } });
   return { success: true, id: paidSaleId, invoiceNumber };
 });
@@ -4278,6 +4686,7 @@ const correctSalePaymentMethodTx = db.transaction((payload) => {
     throw new Error('لا يمكن تصحيح طريقة الدفع إلا على فاتورة مكتملة أو مرتجعة جزئياً.');
   }
 
+  if (payload.actorUserId != null && !userCanModifySales(payload.actorUserId)) throw new Error('تصحيح طريقة الدفع يتطلب مديراً أو مديراً عاماً أو كاشيراً فوّضه المدير العام.');
   const reason = String(payload.reason || '').trim();
   if (!reason) throw new Error('سبب التصحيح مطلوب.');
   if (reason.length > 500) throw new Error('سبب التصحيح طويل جداً.');
@@ -4299,8 +4708,10 @@ const correctSalePaymentMethodTx = db.transaction((payload) => {
     cardAmount = total;
   } else {
     // mixed: يحدّد المدير التوزيع يدوياً
-    cashAmount = Math.round((Number(payload.cashAmount) || 0) * 100) / 100;
-    cardAmount = Math.round((Number(payload.cardAmount) || 0) * 100) / 100;
+    const mixedUnit = Number(getGlobalProfile()?.currency_minor_unit ?? 2);
+    const roundToUnit = (v) => money.fromMinor(money.toMinor((Number(v) || 0).toFixed(mixedUnit + 6), mixedUnit), mixedUnit);
+    cashAmount = roundToUnit(payload.cashAmount);
+    cardAmount = roundToUnit(payload.cardAmount);
   }
   validatePaymentAmounts(total, newMethod, cashAmount, cardAmount, 0);
 
@@ -4331,6 +4742,44 @@ const correctSalePaymentMethodTx = db.transaction((payload) => {
 
   db.prepare(`UPDATE sales SET payment_method=?, cash_amount=?, card_amount=?, change_due=0, due_amount=?, synced=0 WHERE id=? AND branch_id=?`)
     .run(newMethod, cashAmount, cardAmount, dueAmount, saleId, branch.id);
+
+  // قيد محاسبي لتصحيح توزيع أصل الدين/النقد/البطاقة فقط. لا نعيد تسجيل الإيراد أو الضريبة؛
+  // القيد الأصلي يبقى تاريخياً، وهذا القيد ينقل الرصيد من الحساب القديم إلى الجديد.
+  const paymentAccountCodes = { cash: '1000', card: '1100', credit: '1200', mixed: null };
+  const paymentAccountIds = db.prepare("SELECT id,code FROM accounting_accounts WHERE branch_id=? AND is_active=1 AND code IN ('1000','1100','1200')").all(branch.id);
+  const paymentAccountByCode = new Map(paymentAccountIds.map((row) => [String(row.code), Number(row.id)]));
+  const requirePaymentAccount = (code) => {
+    const id = paymentAccountByCode.get(String(code));
+    if (!id) throw new Error(`الحساب المحاسبي ${code} غير موجود.`);
+    return id;
+  };
+  const paymentMinorUnit = Number(getGlobalProfile().currency_minor_unit ?? 2);
+  const settlementLegs = (method, cash, card, due) => {
+    if (method === 'mixed') return [
+      ...(cash > 0 ? [{ code: paymentAccountCodes.cash, amount: cash }] : []),
+      ...(card > 0 ? [{ code: paymentAccountCodes.card, amount: card }] : []),
+    ];
+    const code = paymentAccountCodes[method];
+    if (!code) return [];
+    const amount = method === 'credit' ? due : (method === 'cash' ? cash : card);
+    return amount > 0 ? [{ code, amount }] : [];
+  };
+  const oldSettlement = settlementLegs(oldMethod, oldCash, oldCard, oldDue);
+  const newSettlement = settlementLegs(newMethod, cashAmount, cardAmount, dueAmount);
+  const correctionLines = [
+    ...oldSettlement.map((leg) => ({ accountId: requirePaymentAccount(leg.code), debitMinor: 0, creditMinor: money.toMinor(leg.amount, paymentMinorUnit), memo: `عكس توزيع الدفع ${sale.invoice_number}` })),
+    ...newSettlement.map((leg) => ({ accountId: requirePaymentAccount(leg.code), debitMinor: money.toMinor(leg.amount, paymentMinorUnit), creditMinor: 0, memo: `توزيع الدفع المصحح ${sale.invoice_number}` })),
+  ];
+  if (correctionLines.length) {
+    insertPostedJournalEntry({
+      branchId: branch.id,
+      memo: `تصحيح طريقة دفع ${sale.invoice_number}`,
+      referenceType: 'sale_payment_method_correction',
+      referenceId: saleId,
+      lines: correctionLines,
+      createdBy: payload.actorUserId || null,
+    });
+  }
 
   // حركة تصحيحية توثيقية بدفتر المدفوعات (بدون لمس الحركات الأصلية) — لا حركة لطريقة "آجل" لأنه لا مال فعلي تحرّك
   const currency = String(getGlobalProfile().currency_code || 'USD').trim().toUpperCase();
@@ -4376,6 +4825,188 @@ function correctSalePaymentMethod(payload) {
   return correctSalePaymentMethodTx(payload);
 }
 
+
+// تعديل بنود فاتورة مكتملة على نفس السجل (بدون إنشاء رقم فاتورة جديد).
+// العملية كلها ذرّية: تسعير + مخزون + ذمم + ولاء + قيد تصحيحي + audit + sync.
+const modifyCompletedSaleItemsTx = db.transaction((payload = {}) => {
+  const branch = getCurrentBranch();
+  const saleId = Number(payload.saleId);
+  const sale = db.prepare('SELECT * FROM sales WHERE id=? AND branch_id=?').get(saleId, branch.id);
+  if (!sale) throw new Error('الفاتورة غير موجودة في الفرع الحالي.');
+  if (!['completed','partially_refunded'].includes(String(sale.status))) throw new Error('لا يمكن تعديل فاتورة ملغاة أو مرتجعة بالكامل.');
+  if (!Array.isArray(payload.items) || payload.items.length === 0) throw new Error('يجب أن تحتوي الفاتورة المعدلة على صنف واحد على الأقل.');
+  const reason = String(payload.reason || '').trim();
+  if (!reason) throw new Error('سبب تعديل الفاتورة مطلوب.');
+  if (reason.length > 500) throw new Error('سبب تعديل الفاتورة طويل جداً.');
+  const actor = db.prepare('SELECT id, role, is_active FROM users WHERE id=? AND branch_id=?').get(Number(payload.actorUserId || 0), branch.id);
+  // مدير/أدمن بحكم الدور، أو كاشير فوّضه المدير العام بعلامة "تعديل الفواتير" (تُقرأ من القاعدة هنا أيضاً: لا نثق بالواجهة).
+  if (!actor || !actor.is_active || !userCanModifySales(actor.id)) throw new Error('تعديل الفاتورة يتطلب مديراً أو مديراً عاماً أو كاشيراً فوّضه المدير العام.');
+
+  const oldItems = db.prepare('SELECT si.*, p.name AS product_name, p.track_inventory, p.unit FROM sale_items si JOIN products p ON p.id=si.product_id WHERE si.sale_id=? ORDER BY si.id').all(saleId);
+  const returned = db.prepare(`SELECT sale_item_id, COALESCE(SUM(quantity),0) q FROM return_items ri JOIN returns r ON r.id=ri.return_id WHERE r.sale_id=? GROUP BY sale_item_id`).all(saleId);
+  const returnedMap = new Map(returned.map(r => [Number(r.sale_item_id), Number(r.q||0)]));
+  for (const item of oldItems) {
+    const rq = returnedMap.get(Number(item.id)) || 0;
+    if (rq >= Number(item.quantity) - 1e-9) throw new Error(`لا يمكن تعديل الصنف "${item.product_name}" لأنه مُرجع بالكامل.`);
+  }
+
+  const normalized = [];
+  for (const raw of payload.items) {
+    const productId = Number(raw.productId);
+    const quantity = Number(raw.quantity);
+    if (!Number.isInteger(productId) || productId <= 0 || !Number.isFinite(quantity) || quantity <= 0) throw new Error('بيانات صنف غير صالحة.');
+    normalized.push({ productId, quantity, notes: String(raw.notes || '').trim().slice(0,500) || null });
+  }
+  // Merge duplicate product lines deterministically.
+  const merged = new Map();
+  for (const item of normalized) {
+    const key = `${item.productId}`;
+    const prev = merged.get(key);
+    if (prev) prev.quantity += item.quantity;
+    else merged.set(key, {...item});
+  }
+  const itemsForPricing = [...merged.values()];
+  const { priced, subtotal, taxTotal, subtotalMinor, taxTotalMinor, minorUnit } = priceItemsFromDatabase(itemsForPricing, branch.id);
+
+  const discountType = payload.discountType == null ? (sale.discount_type || 'none') : String(payload.discountType);
+  const discountValue = payload.discountValue == null ? Number(sale.discount_value || 0) : Number(payload.discountValue);
+  const trustedDiscountApprover = ['admin','manager'].includes(actor.role) ? actor.id : null;
+  const { discountTotal, discountType: normalizedDiscountType, discountValue: normalizedDiscountValue, discountApprovedBy } =
+    assertDiscountAllowed(subtotal, discountType, discountValue, trustedDiscountApprover);
+  const discountTotalMinor = money.toMinor(discountTotal, minorUnit);
+  const oldQtyByProduct = new Map();
+  for (const old of oldItems) {
+    const key = Number(old.product_id);
+    oldQtyByProduct.set(key, (oldQtyByProduct.get(key) || 0) + Number(old.quantity || 0));
+  }
+  const returnedQtyByProduct = new Map();
+  for (const old of oldItems) {
+    const key = Number(old.product_id);
+    returnedQtyByProduct.set(key, (returnedQtyByProduct.get(key) || 0) + (returnedMap.get(Number(old.id)) || 0));
+  }
+  for (const [productId, returnedQty] of returnedQtyByProduct) {
+    const newQty = itemsForPricing.filter(i => Number(i.productId) === productId).reduce((n, i) => n + Number(i.quantity || 0), 0);
+    if (newQty + 1e-9 < returnedQty) throw new Error(`لا يمكن خفض كمية المنتج ${productId} إلى أقل من الكمية المُرجعة سابقاً (${returnedQty}).`);
+  }
+  const bundleIds = Array.isArray(payload.bundleIds) ? payload.bundleIds : [];
+  if (Number(sale.bundle_discount_total_minor || 0) > 0 && bundleIds.length === 0) throw new Error('هذه الفاتورة تحتوي خصم حزمة سابقاً. اختر الحزمة/الحزم نفسها في شاشة التعديل حتى لا يتغير الخصم بصمت.');
+  const bundleResolved = resolveBundlesFromDatabase(priced, bundleIds, branch.id);
+  const bundleDiscountTotal = bundleResolved.total;
+  saveSaleBundleSnapshot(saleId, bundleResolved.applied, minorUnit);
+  const bundleDiscountTotalMinor = money.toMinor(Math.min(bundleDiscountTotal, Math.max(0, subtotalMinor + taxTotalMinor - discountTotalMinor)), minorUnit);
+  const deliveryFeeMinor = money.toMinor(Number(sale.delivery_fee || 0), minorUnit);
+  const loyaltyRedeemedValueMinor = Math.min(Number(sale.loyalty_redeemed_value_minor || 0), Math.max(0, subtotalMinor + taxTotalMinor - discountTotalMinor - bundleDiscountTotalMinor + deliveryFeeMinor));
+  const grandTotalMinor = Math.max(0, subtotalMinor + taxTotalMinor - discountTotalMinor - bundleDiscountTotalMinor + deliveryFeeMinor - loyaltyRedeemedValueMinor);
+  const grandTotal = money.fromMinor(grandTotalMinor, minorUnit);
+
+  let cashMinor=0, cardMinor=0, dueMinor=0, changeMinor=0;
+  const method=String(sale.payment_method||'cash');
+  if(method==='credit') dueMinor=grandTotalMinor;
+  else if(method==='cash') cashMinor=grandTotalMinor;
+  else if(method==='card') cardMinor=grandTotalMinor;
+  else if(method==='mixed') {
+    const oldTotal=Math.max(1, Number(sale.grand_total_minor||0));
+    const oldCash=Math.max(0, Number(sale.cash_amount_minor||0));
+    cashMinor=Math.round(grandTotalMinor*oldCash/oldTotal);
+    cardMinor=grandTotalMinor-cashMinor;
+  } else throw new Error('طريقة الدفع الحالية غير مدعومة لتعديل البنود.');
+  validatePaymentAmountsMinor(grandTotalMinor,method,cashMinor,cardMinor,changeMinor);
+
+  // Reverse the original sale's posted journal, then post the new economics under the same sale UUID.
+  const oldEntries=db.prepare(`SELECT e.id FROM accounting_journal_entries e WHERE e.branch_id=? AND e.reference_id=? AND e.status='posted' AND e.reference_type IN ('sale','sale_payment_method_correction')`).all(branch.id,saleId);
+  for(const entry of oldEntries){
+    const lines=db.prepare('SELECT account_id,debit_minor,credit_minor,memo FROM accounting_journal_lines WHERE entry_id=?').all(entry.id);
+    insertPostedJournalEntry({branchId:branch.id,memo:`عكس قيد تعديل الفاتورة ${sale.invoice_number}`,referenceType:'sale_modification_reversal',referenceId:saleId,lines:lines.map(l=>({accountId:l.account_id,debitMinor:Number(l.credit_minor||0),creditMinor:Number(l.debit_minor||0),memo:`عكس: ${l.memo||''}`})),createdBy:payload.actorUserId||null});
+  }
+
+  // Restore stock for the original sale, then consume stock for the corrected sale.
+  const stockUpdate=db.prepare(`UPDATE inventory SET quantity=quantity+?,updated_at=datetime('now'),synced=0 WHERE branch_id=? AND product_id=?`);
+  const movement=db.prepare(`INSERT INTO inventory_movements(uuid,branch_id,product_id,change_qty,reason,ref_id,unit_cost_after,synced) VALUES(?,?,?,?,?,?,?,0)`);
+  for(const old of oldItems){
+    if(!old.track_inventory) continue;
+    const qty=Number(old.quantity||0);
+    stockUpdate.run(qty,branch.id,old.product_id);
+    movement.run(uuid(),branch.id,old.product_id,qty,'sale_modification_reverse',saleId,Number(old.cost_at_sale||0));
+  }
+  const insertItem=db.prepare(`INSERT INTO sale_items(uuid,sale_id,product_id,quantity,unit_price,unit_price_minor,tax_rate,tax_profile_id,tax_inclusive,discount,line_total,line_total_minor,notes,cost_at_sale,cost_at_sale_minor) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
+  const updateItem=db.prepare(`UPDATE sale_items SET product_id=?,quantity=?,unit_price=?,unit_price_minor=?,tax_rate=?,tax_profile_id=?,tax_inclusive=?,discount=?,line_total=?,line_total_minor=?,notes=?,cost_at_sale=?,cost_at_sale_minor=? WHERE id=? AND sale_id=?`);
+  const oldByProduct=new Map(oldItems.map(i=>[Number(i.product_id),i]));
+  const newProductIds=new Set();
+  for(const item of priced){
+    newProductIds.add(Number(item.productId));
+    const old=oldByProduct.get(Number(item.productId));
+    if(old){
+      updateItem.run(item.productId,item.quantity,item.unitPrice,item.unitPriceMinor,item.taxRate,item.taxProfileId,item.taxInclusive?1:0,0,item.lineTotal,item.lineTotalMinor,item.notes||null,item.costAtSale,item.costAtSaleMinor,old.id,saleId);
+    } else {
+      insertItem.run(uuid(),saleId,item.productId,item.quantity,item.unitPrice,item.unitPriceMinor,item.taxRate,item.taxProfileId,item.taxInclusive?1:0,0,item.lineTotal,item.lineTotalMinor,item.notes||null,item.costAtSale,item.costAtSaleMinor);
+    }
+    if(item.trackInventory){
+      const r=stockUpdate.run(-item.quantity,branch.id,item.productId);
+      if(r.changes!==1) throw new Error(`تعذر تحديث مخزون المنتج ${item.productId}.`);
+      movement.run(uuid(),branch.id,item.productId,-item.quantity,'sale_modification',saleId,item.costAtSale);
+    }
+  }
+  // Build a deterministic kitchen delta before mutating the sale. Positive values mean
+  // additions/quantity increases; negative values mean removals/cancellations.
+  const newByProduct = new Map(priced.map(item => [Number(item.productId), item]));
+  const kitchenDeltaItems = [];
+  const allProductIds = new Set([...oldByProduct.keys(), ...newByProduct.keys()]);
+  for (const productId of allProductIds) {
+    const old = oldByProduct.get(productId);
+    const next = newByProduct.get(productId);
+    const oldQty = Number(old?.quantity || 0);
+    const newQty = Number(next?.quantity || 0);
+    const deltaQty = newQty - oldQty;
+    if (Math.abs(deltaQty) > 1e-9) {
+      kitchenDeltaItems.push({
+        productId,
+        productName: next?.name || old?.product_name || String(productId),
+        deltaQuantity: deltaQty,
+        notes: next?.notes || old?.notes || null,
+      });
+    }
+  }
+
+  // Preserve IDs referenced by partial returns. A line with any prior return cannot disappear.
+  for(const old of oldItems){
+    const returnedQty=returnedMap.get(Number(old.id))||0;
+    if(!newProductIds.has(Number(old.product_id))){
+      if(returnedQty>0) throw new Error(`لا يمكن حذف الصنف "${old.product_name}" لأنه يحتوي على مرتجع جزئي مرتبط بالفاتورة.`);
+      db.prepare('DELETE FROM sale_items WHERE id=? AND sale_id=?').run(old.id,saleId);
+    }
+  }
+
+  const oldDueMinor=Number(sale.due_amount_minor||money.toMinor(sale.due_amount||0,minorUnit));
+  const dueDeltaMinor=dueMinor-oldDueMinor;
+  if(dueDeltaMinor!==0){
+    if(!sale.customer_id) throw new Error('لا يمكن تعديل الدين بدون عميل مرتبط بالفاتورة.');
+    const customer=db.prepare('SELECT balance FROM customers WHERE id=? AND branch_id=?').get(sale.customer_id,branch.id);
+    if(!customer) throw new Error('العميل المرتبط بالفاتورة غير موجود.');
+    const balanceAfterMinor=Number(customer.balance_minor ?? money.toMinor(customer.balance||0,minorUnit))+dueDeltaMinor;
+    db.prepare('UPDATE customers SET balance=?,balance_minor=?,updated_at=datetime(\'now\'),synced=0 WHERE id=? AND branch_id=?').run(money.fromMinor(balanceAfterMinor,minorUnit),balanceAfterMinor,sale.customer_id,branch.id);
+    appendCustomerLedger({customerId:sale.customer_id,saleId,entryType:'credit_correction',amount:money.fromMinor(dueDeltaMinor,minorUnit),balanceAfter:money.fromMinor(balanceAfterMinor,minorUnit),notes:`تعديل بنود الفاتورة ${sale.invoice_number}: ${reason}`,branchId:branch.id});
+  }
+
+  const earnUnit=Number(getLoyaltySettings().earnPerCurrencyUnit||10);
+  const oldAward=Math.floor(Number(sale.grand_total||0)/earnUnit);
+  const newAward=sale.customer_id?Math.floor(grandTotal/earnUnit):0;
+  const pointsDelta=newAward-oldAward;
+  if(sale.customer_id && pointsDelta!==0){
+    db.prepare('UPDATE customers SET loyalty_points=MAX(0,loyalty_points+?),updated_at=datetime(\'now\'),synced=0 WHERE id=? AND branch_id=?').run(pointsDelta,sale.customer_id,branch.id);
+  }
+
+  db.prepare(`UPDATE sales SET subtotal=?,subtotal_minor=?,tax_total=?,tax_total_minor=?,discount_total=?,discount_total_minor=?,discount_type=?,discount_value=?,discount_approved_by=?,bundle_discount_total=?,bundle_discount_total_minor=?,grand_total=?,grand_total_minor=?,cash_amount=?,cash_amount_minor=?,card_amount=?,card_amount_minor=?,change_due=0,change_due_minor=0,due_amount=?,due_amount_minor=?,loyalty_points_awarded=?,synced=0 WHERE id=? AND branch_id=?`).run(
+    money.fromMinor(subtotalMinor,minorUnit),subtotalMinor,money.fromMinor(taxTotalMinor,minorUnit),taxTotalMinor,money.fromMinor(discountTotalMinor,minorUnit),discountTotalMinor,normalizedDiscountType,normalizedDiscountValue,discountApprovedBy,money.fromMinor(bundleDiscountTotalMinor,minorUnit),bundleDiscountTotalMinor,grandTotal,grandTotalMinor,money.fromMinor(cashMinor,minorUnit),cashMinor,money.fromMinor(cardMinor,minorUnit),cardMinor,money.fromMinor(dueMinor,minorUnit),dueMinor,newAward,saleId,branch.id);
+
+  const updated=db.prepare('SELECT * FROM sales WHERE id=?').get(saleId);
+  updated.items=db.prepare('SELECT si.*,p.name AS product_name,p.unit FROM sale_items si JOIN products p ON p.id=si.product_id WHERE si.sale_id=? ORDER BY si.id').all(saleId);
+  postSaleAccountingInTransaction(updated,saleId,branch.id);
+  logAudit({userId:payload.actorUserId||null,branchId:branch.id,action:'sale_items_modified',entityType:'sale',entityId:saleId,level:'warning',details:{invoiceNumber:sale.invoice_number,reason,before:{subtotal:sale.subtotal,taxTotal:sale.tax_total,grandTotal:sale.grand_total,items:oldItems.map(i=>({id:i.id,productId:i.product_id,quantity:i.quantity,unitPrice:i.unit_price,notes:i.notes}))},after:{subtotal:updated.subtotal,taxTotal:updated.tax_total,grandTotal:updated.grand_total,items:updated.items.map(i=>({id:i.id,productId:i.product_id,quantity:i.quantity,unitPrice:i.unit_price,notes:i.notes}))},pointsDelta,dueDelta:money.fromMinor(dueDeltaMinor,minorUnit)}});
+  recordSyncOutboxEvent({entityType:'sale',entityUuid:sale.uuid,operation:'update',payload:{id:saleId,uuid:sale.uuid,invoiceNumber:sale.invoice_number,reason:'sale_items_modified'}});
+  return {sale:getSale(saleId,branch.id),invoiceNumber:sale.invoice_number,kitchenDeltaItems};
+});
+function modifyCompletedSaleItems(payload){ return modifyCompletedSaleItemsTx(payload); }
+
 /* ==========================================================
    الإعدادات العامة (app_settings)
    ========================================================== */
@@ -4383,7 +5014,21 @@ function getGlobalProfile(){
   const row=db.prepare('SELECT * FROM organization_profile WHERE id=1').get();
   return row || {country_code:'TR',locale:'ar',timezone:'Europe/Istanbul',currency_code:'TRY',currency_minor_unit:2,tax_mode:'exclusive',tax_registration_number:'',fiscalization_mode:'none',fiscal_provider:''};
 }
+// هل يوجد أي أثر مالي حقيقي بالنظام (مبيعات، قيود محاسبية، أو معاملات دفع)؟ يُستخدم
+// لمنع تغيير عملة/دقة النظام بعد بدء التشغيل الفعلي — تغييرها لاحقاً يُفسد كل الأرقام
+// التاريخية المخزَّنة بالعملة/الدقة القديمة دون أي طريقة موثوقة لإعادة حسابها رجعياً.
+function organizationHasFinancialHistory() {
+  const salesCount = db.prepare('SELECT COUNT(*) AS c FROM sales').get().c;
+  if (salesCount > 0) return true;
+  const journalCount = db.prepare('SELECT COUNT(*) AS c FROM accounting_journal_entries').get().c;
+  if (journalCount > 0) return true;
+  const paymentsCount = db.prepare('SELECT COUNT(*) AS c FROM payment_transactions').get().c;
+  if (paymentsCount > 0) return true;
+  return false;
+}
+
 function setGlobalProfile(profile){
+  const current = getGlobalProfile();
   const country=String(profile.countryCode||'TR').trim().toUpperCase();
   const locale=String(profile.locale||'en').trim();
   const timezone=String(profile.timezone||'UTC').trim();
@@ -4396,6 +5041,14 @@ function setGlobalProfile(profile){
   if(![0,1,2,3].includes(minor)) throw new Error('عدد الخانات العشرية للعملة غير صالح.');
   if(!['exclusive','inclusive'].includes(taxMode)) throw new Error('وضع الضريبة غير صالح.');
   if(!['none','adapter'].includes(fiscalMode)) throw new Error('وضع الفوترة الإلكترونية غير صالح.');
+  // العملة ودقتها العشرية أساس كل رقم مالي محفوظ سابقاً (مبيعات، قيود محاسبية، مدفوعات).
+  // تغييرهما بعد وجود تاريخ مالي حقيقي يجعل الأرقام القديمة والجديدة غير قابلة للمقارنة
+  // أو التجميع بشكل صحيح — لذلك نمنع هذا التغيير تحديداً، ونسمح بباقي الحقول كالمعتاد.
+  const changingMoney = currency !== String(current.currency_code || '').toUpperCase()
+    || minor !== Number(current.currency_minor_unit);
+  if (changingMoney && organizationHasFinancialHistory()) {
+    throw new Error('لا يمكن تغيير عملة النظام أو عدد خاناتها العشرية بعد وجود تاريخ مالي (مبيعات أو قيود محاسبية أو مدفوعات مسجّلة).');
+  }
   db.prepare(`UPDATE organization_profile SET country_code=?,locale=?,timezone=?,currency_code=?,currency_minor_unit=?,tax_mode=?,tax_registration_number=?,fiscalization_mode=?,fiscal_provider=?,updated_at=datetime('now') WHERE id=1`).run(country,locale,timezone,currency,minor,taxMode,String(profile.taxRegistrationNumber||'').trim()||null,fiscalMode,String(profile.fiscalProvider||'').trim()||null);
   return getGlobalProfile();
 }
@@ -4687,7 +5340,7 @@ function recalcPayrollEmployeeMonth(monthId, employeeId, options = {}) {
     JOIN payroll_advances a ON a.id=i.advance_id
     WHERE a.branch_id=? AND a.employee_id=? AND a.status='active' AND i.month_key=?
   `).get(b.id, em.employee_id, month.month_key)?.amount_minor || 0);
-  const unit = Number(getGlobalProfile()?.currency_minor_unit || 2);
+  const unit = Number(getGlobalProfile()?.currency_minor_unit ?? 2);
   const scheduledAdvance = money.fromMinor(scheduledAdvanceMinor, unit);
   const absDays = sums.absence?.quantity || 0;
   // ساعات العمل الفعلية لهذا الشهر = مجموع سجلات "ساعات يوم" التي أدخلها المدير يوماً بيوم
@@ -4736,7 +5389,7 @@ function addPayrollV2Employee(fullName,jobTitle,payType,payRate,meta={}) {
   if(!name) return {success:false,message:'اسم العامل مطلوب.'};
   if(!title) return {success:false,message:'المسمى الوظيفي مطلوب.'};
   if(!Number.isFinite(rate)||rate<=0) return {success:false,message:'قيمة الأجر يجب أن تكون أكبر من صفر.'};
-  const b=getCurrentBranch(), rateMinor=money.toMinor(rate,Number(getGlobalProfile()?.currency_minor_unit||2)), v=money.fromMinor(rateMinor,Number(getGlobalProfile()?.currency_minor_unit||2));
+  const b=getCurrentBranch(), rateMinor=money.toMinor(rate,Number(getGlobalProfile()?.currency_minor_unit ?? 2)), v=money.fromMinor(rateMinor,Number(getGlobalProfile()?.currency_minor_unit ?? 2));
   const info=db.prepare(`INSERT INTO payroll_employees(uuid,branch_id,full_name,job_title,pay_type,pay_rate,pay_rate_minor,is_active,national_id,hire_date,phone,department,iban,country_code,payroll_notes) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(uuid(),b.id,name,title,type,v,rateMinor,1,String(meta.nationalId||'').trim()||null,String(meta.hireDate||'').trim()||null,String(meta.phone||'').trim()||null,String(meta.department||'').trim()||null,String(meta.iban||'').trim()||null,String(meta.countryCode||'').trim()||null,String(meta.payrollNotes||'').trim()||null);
   return {success:true,id:Number(info.lastInsertRowid)};
 }
@@ -4745,7 +5398,7 @@ function updatePayrollV2Employee(employeeId, fullName, jobTitle, payType, payRat
   if(!name||!title) return {success:false,message:'الاسم والوظيفة مطلوبان.'};
   if(!Number.isFinite(rate)||rate<=0) return {success:false,message:'قيمة الأجر يجب أن تكون أكبر من صفر.'};
   const row=db.prepare('SELECT id FROM payroll_employees WHERE id=? AND branch_id=?').get(id,b.id); if(!row) return {success:false,message:'العامل غير موجود.'};
-  const unit=Number(getGlobalProfile()?.currency_minor_unit||2); const rateMinor=money.toMinor(rate,unit);
+  const unit=Number(getGlobalProfile()?.currency_minor_unit ?? 2); const rateMinor=money.toMinor(rate,unit);
   const metaValues=[String(meta.nationalId||'').trim()||null,String(meta.hireDate||'').trim()||null,String(meta.phone||'').trim()||null,String(meta.department||'').trim()||null,String(meta.iban||'').trim()||null,String(meta.countryCode||'').trim()||null,String(meta.payrollNotes||'').trim()||null];
   db.prepare('UPDATE payroll_employees SET full_name=?,job_title=?,pay_type=?,pay_rate=?,pay_rate_minor=?,national_id=?,hire_date=?,phone=?,department=?,iban=?,country_code=?,payroll_notes=?,updated_at=datetime(\'now\'),synced=0 WHERE id=? AND branch_id=?').run(name,title,type,money.fromMinor(rateMinor,unit),rateMinor,...metaValues,id,b.id);
   return {success:true,id};
@@ -4765,7 +5418,7 @@ function deletePayrollV2Employee(employeeId){
 }
 function getPayrollV2Report(monthKey) {
   const month = getPayrollV2Month(monthKey);
-  const unit = Number(getGlobalProfile()?.currency_minor_unit || 2);
+  const unit = Number(getGlobalProfile()?.currency_minor_unit ?? 2);
   const rows = month.items.map((x) => {
     const paidMinor = Number(x.paid_total_minor || 0);
     const netMinor = Number(x.net_salary_minor || 0);
@@ -4794,7 +5447,7 @@ function getPayrollV2Month(monthKey) {
     FROM payroll_employee_months m JOIN payroll_employees e ON e.id=m.employee_id WHERE m.month_id=? AND e.branch_id=? ORDER BY e.full_name COLLATE NOCASE`).all(m.id,b.id);
   const paymentRows=db.prepare(`SELECT employee_id,COALESCE(SUM(amount_minor),0) paid_minor,COALESCE(SUM(amount),0) paid_amount FROM payroll_payments WHERE branch_id=? AND month_id=? GROUP BY employee_id`).all(b.id,m.id);
   const paymentMap=new Map(paymentRows.map(x=>[Number(x.employee_id),x]));
-  const unit=Number(getGlobalProfile()?.currency_minor_unit||2);
+  const unit=Number(getGlobalProfile()?.currency_minor_unit ?? 2);
   const transactions=db.prepare('SELECT * FROM payroll_transactions WHERE month_id=? AND branch_id=? ORDER BY event_date DESC,id DESC').all(m.id,b.id);
   const enrichedItems=items.map(x=>{const paid=paymentMap.get(Number(x.employee_id));const paidMinor=Number(paid?.paid_minor||0);const netMinor=Number(x.net_salary_minor||money.toMinor(Number(x.net_salary||0),unit));return {...x,paid_total:money.fromMinor(paidMinor,unit),paid_total_minor:paidMinor,remaining_salary:money.fromMinor(Math.max(0,netMinor-paidMinor),unit),remaining_salary_minor:Math.max(0,netMinor-paidMinor),payment_status:paidMinor>=netMinor?'paid':paidMinor>0?'partial':'unpaid'};});
   const payableItems=enrichedItems.filter(x=>Number(x.is_active)!==0);
@@ -4811,7 +5464,7 @@ function getPayrollEmployeePaymentState(monthId, employeeId) {
   const month = payrollMonth(monthId);
   const item = db.prepare(`SELECT m.*,e.full_name,e.is_active FROM payroll_employee_months m JOIN payroll_employees e ON e.id=m.employee_id WHERE m.month_id=? AND m.employee_id=? AND e.branch_id=?`).get(month.id, Number(employeeId), b.id);
   if (!item) throw new Error('العامل غير موجود في هذا الشهر.');
-  const unit = Number(getGlobalProfile()?.currency_minor_unit || 2);
+  const unit = Number(getGlobalProfile()?.currency_minor_unit ?? 2);
   const netMinor = money.toMinor(Number(item.net_salary || 0), unit);
   const paid = db.prepare('SELECT COALESCE(SUM(amount_minor),0) paid_minor FROM payroll_payments WHERE branch_id=? AND month_id=? AND employee_id=?').get(b.id, month.id, item.employee_id);
   const paidMinor = Number(paid?.paid_minor || 0);
@@ -4873,7 +5526,7 @@ function accruePayrollMonth(monthId, { createdBy = null } = {}) {
 
 function addPayrollV2Transaction({monthId,employeeId,type,amount,quantity,eventDate,reason,createdBy,paidFromRegister,overtimeMultiplier=1.5}) {
   const b=getCurrentBranch(), m=payrollMonth(monthId);
-  const unit = Number(getGlobalProfile()?.currency_minor_unit || 2);
+  const unit = Number(getGlobalProfile()?.currency_minor_unit ?? 2);
   assertPayrollMonthMutable(m);
   // 'hours' = سجل ساعات عمل ليوم واحد بالتحديد (quantity = عدد الساعات)، يُستخدم مع
   // العاملين بالساعة بدل إدخال إجمالي شهري يدوي واحد عرضة للخطأ.
@@ -4968,7 +5621,7 @@ function createPayrollAdvance({monthId,employeeId,amount,installmentCount=1,firs
   const employee=db.prepare('SELECT id,full_name,is_active FROM payroll_employees WHERE id=? AND branch_id=?').get(Number(employeeId),b.id);
   if(!employee) throw new Error('العامل غير موجود.');
   if(!employee.is_active) throw new Error('لا يمكن إنشاء سلفة لعامل معطّل.');
-  const unit=Number(getGlobalProfile()?.currency_minor_unit||2);
+  const unit=Number(getGlobalProfile()?.currency_minor_unit ?? 2);
   const principalMinor=money.toMinor(Number(amount),unit);
   if(principalMinor<=0) throw new Error('قيمة السلفة يجب أن تكون أكبر من صفر.');
   const count=Number(installmentCount);
@@ -5018,7 +5671,7 @@ function createPayrollAdvance({monthId,employeeId,amount,installmentCount=1,firs
   return {success:true,id:tx.advanceId,cashMovementId:tx.cashMovementId,principal:money.fromMinor(tx.principalMinor,unit),installmentCount:count,firstDeductionMonth:first,disbursementMethod};
 }
 function listPayrollAdvances(employeeId=null){
-  const b=getCurrentBranch(); const unit=Number(getGlobalProfile()?.currency_minor_unit||2);
+  const b=getCurrentBranch(); const unit=Number(getGlobalProfile()?.currency_minor_unit ?? 2);
   const where=employeeId!=null?'AND a.employee_id=?':''; const params=employeeId!=null?[b.id,Number(employeeId)]:[b.id];
   const rows=db.prepare(`SELECT a.*,e.full_name employee_name FROM payroll_advances a JOIN payroll_employees e ON e.id=a.employee_id WHERE a.branch_id=? ${where} ORDER BY a.created_at DESC,a.id DESC`).all(...params);
   return rows.map(a=>{
@@ -5042,7 +5695,7 @@ function listPayrollAdvancePayments(advanceId){
 }
 
 function repayPayrollAdvance({advanceId,amount,paymentDate,method='cash',reference,notes,createdBy,paidFromRegister=false}){
-  const b=getCurrentBranch(); const unit=Number(getGlobalProfile()?.currency_minor_unit||2);
+  const b=getCurrentBranch(); const unit=Number(getGlobalProfile()?.currency_minor_unit ?? 2);
   const advance=db.prepare('SELECT * FROM payroll_advances WHERE id=? AND branch_id=?').get(Number(advanceId),b.id);
   if(!advance) throw new Error('السلفة غير موجودة.');
   if(String(advance.status)==='completed') throw new Error('هذه السلفة مسددة بالكامل.');
@@ -5091,7 +5744,7 @@ function repayPayrollAdvance({advanceId,amount,paymentDate,method='cash',referen
 // أدناه). أي تمرير معرّف السلفة هناك كان يُبحث خطأً عن سلف موظف رقمه = معرّف السلفة، فتفشل
 // شبه دائماً بخطأ "السلفة غير موجودة" حتى لو كانت السلفة موجودة فعلاً. نجلب السلفة مباشرة بمعرّفها.
 function settlePayrollAdvance(advanceId,{paymentDate,method='cash',reference='payroll_advance_early_settlement',notes,createdBy,paidFromRegister=false}={}){
-  const b=getCurrentBranch(); const unit=Number(getGlobalProfile()?.currency_minor_unit||2);
+  const b=getCurrentBranch(); const unit=Number(getGlobalProfile()?.currency_minor_unit ?? 2);
   const advance=db.prepare('SELECT * FROM payroll_advances WHERE id=? AND branch_id=?').get(Number(advanceId),b.id);
   if(!advance) throw new Error('السلفة غير موجودة.');
   const recoveredMinor=Number(db.prepare(`SELECT COALESCE(SUM(pa.amount_minor),0) x FROM payroll_advance_payment_allocations pa JOIN payroll_advance_payments p ON p.id=pa.payment_id WHERE p.voided_at IS NULL AND p.advance_id=?`).get(advance.id).x||0);
@@ -5101,7 +5754,7 @@ function settlePayrollAdvance(advanceId,{paymentDate,method='cash',reference='pa
 }
 
 function recordPayrollSalaryAdvanceRecovery({monthId,employeeId,amountMinor,createdBy,sourcePaymentId}){
-  const b=getCurrentBranch(); const m=payrollMonth(monthId); const unit=Number(getGlobalProfile()?.currency_minor_unit||2);
+  const b=getCurrentBranch(); const m=payrollMonth(monthId); const unit=Number(getGlobalProfile()?.currency_minor_unit ?? 2);
   const paidMinor=Math.max(0,Number(amountMinor||0)); if(!paidMinor) return {recoveredMinor:0};
   const advanceRows=db.prepare(`SELECT a.* FROM payroll_advances a WHERE a.branch_id=? AND a.employee_id=? AND a.status='active' ORDER BY a.first_deduction_month,a.created_at,a.id`).all(b.id,Number(employeeId));
   let left=paidMinor, recovered=0;
@@ -5130,7 +5783,7 @@ function recordPayrollSalaryAdvanceRecovery({monthId,employeeId,amountMinor,crea
 // (10 = نقطة واحدة لكل 10 وحدات عملة إنفاقاً، و10 نقاط = وحدة عملة واحدة استبدالاً؛
 // أي تعادل تام بين المنح والاستبدال افتراضياً) قابلة للتعديل من الإعدادات.
 function getLoyaltySettings(){
-  const unit=Number(getGlobalProfile()?.currency_minor_unit||2);
+  const unit=Number(getGlobalProfile()?.currency_minor_unit ?? 2);
   const earnRate=Number(getSetting('loyalty_earn_per_currency_unit','10'));
   const redeemRate=Number(getSetting('loyalty_points_per_currency_unit','10'));
   return{
@@ -5172,7 +5825,7 @@ function getLoyaltyRedemptionQuote(customerId, payableMinor){
 // وتعيد أيضاً قيمة الاستبدال الأقصى بالعملة الرئيسية جاهزة للعرض مباشرة بدون أي تحويل
 // إضافي بالواجهة. المنطق الفعلي نفسه بالكامل (نفس القيود والأسقف) — هذه غلاف عرض فقط.
 function getLoyaltyRedemptionQuoteMajor(customerId, payableMajor){
-  const unit=Number(getGlobalProfile()?.currency_minor_unit||2);
+  const unit=Number(getGlobalProfile()?.currency_minor_unit ?? 2);
   const payableMinor=money.toMinor(Math.max(0,Number(payableMajor)||0),unit);
   const quote=getLoyaltyRedemptionQuote(customerId,payableMinor);
   return{...quote,maxRedeemableValue:money.fromMinor(quote.maxRedeemableValueMinor,unit)};
@@ -5187,7 +5840,7 @@ function resolveLoyaltyRedemption(customerId, requestedPoints, payableMinor){
   const quote=getLoyaltyRedemptionQuote(customerId,payableMinor);
   if(requested>quote.availablePoints) throw new Error(`رصيد نقاط العميل غير كافٍ. المتاح حالياً: ${quote.availablePoints} نقطة.`);
   if(requested>quote.maxRedeemablePoints) throw new Error(`لا يمكن استبدال أكثر من ${quote.maxRedeemablePoints} نقطة بهذه الفاتورة (قيمة الاستبدال لا يمكن أن تتجاوز المبلغ المستحق).`);
-  const unit=Number(getGlobalProfile()?.currency_minor_unit||2);
+  const unit=Number(getGlobalProfile()?.currency_minor_unit ?? 2);
   const valueMinor=money.toMinor(requested/quote.redeemPointsPerCurrencyUnit,unit);
   return{points:requested,valueMinor};
 }
@@ -5238,11 +5891,11 @@ function saveTaxDefaultRate(rate){
   return{success:true,defaultTaxRate:v};
 }
 
-function getPayrollSettings(){const unit=Number(getGlobalProfile()?.currency_minor_unit||2),m=Number(getSetting('payroll_overtime_multiplier','1.5')),h=Number(getSetting('payroll_work_hours_per_day','8'));return{overtimeMultiplier:Number.isFinite(m)&&m>0?m:1.5,workHoursPerDay:Number.isFinite(h)&&h>0?h:8,currencyMinorUnit:unit};}
+function getPayrollSettings(){const unit=Number(getGlobalProfile()?.currency_minor_unit ?? 2),m=Number(getSetting('payroll_overtime_multiplier','1.5')),h=Number(getSetting('payroll_work_hours_per_day','8'));return{overtimeMultiplier:Number.isFinite(m)&&m>0?m:1.5,workHoursPerDay:Number.isFinite(h)&&h>0?h:8,currencyMinorUnit:unit};}
 function savePayrollSettings({overtimeMultiplier,workHoursPerDay}={}){const m=Number(overtimeMultiplier),h=Number(workHoursPerDay);if(!Number.isFinite(m)||m<=0||m>10)throw new Error('معامل الإضافي يجب أن يكون بين 0 و10.');if(!Number.isFinite(h)||h<=0||h>24)throw new Error('ساعات العمل اليومية يجب أن تكون بين 0 و24.');setSetting('payroll_overtime_multiplier',String(m));setSetting('payroll_work_hours_per_day',String(h));return{success:true,overtimeMultiplier:m,workHoursPerDay:h};}
 function setPayrollV2RegularHours(monthId,employeeId,hours){ const b=getCurrentBranch(); const m=payrollMonth(monthId); assertPayrollMonthMutable(m); const n=Number(hours); if(!Number.isFinite(n)||n<0||n>744)throw new Error('ساعات العمل غير صالحة.'); const e=db.prepare('SELECT id,pay_type,pay_rate FROM payroll_employees WHERE id=? AND branch_id=?').get(Number(employeeId),b.id); if(!e)throw new Error('العامل غير موجود.'); db.prepare(`INSERT INTO payroll_employee_months(month_id,employee_id,pay_type,pay_rate,base_amount) VALUES(?,?,?,?,0) ON CONFLICT(month_id,employee_id) DO NOTHING`).run(m.id,e.id,e.pay_type,e.pay_rate); db.prepare('UPDATE payroll_employee_months SET regular_hours=?,updated_at=datetime(\'now\'),synced=0 WHERE month_id=? AND employee_id=?').run(Math.round(n*100)/100,m.id,e.id); return{success:true,item:recalcPayrollEmployeeMonth(m.id,e.id)}; }
 function recordPayrollPayment({monthId, employeeId, amount, method='cash', paymentDate, reference, notes, createdBy}) {
-  const b = getCurrentBranch(); const unit=Number(getGlobalProfile()?.currency_minor_unit||2);
+  const b = getCurrentBranch(); const unit=Number(getGlobalProfile()?.currency_minor_unit ?? 2);
   const m = payrollMonth(monthId);
   assertPayrollMonthMutable(m);
   const state = getPayrollEmployeePaymentState(m.id, employeeId);
@@ -5311,7 +5964,7 @@ function calculatePayrollFinalSettlement(monthId, employeeId, settlementDate, ad
   const existing=db.prepare("SELECT id FROM payroll_final_settlements WHERE branch_id=? AND employee_id=? AND status='paid' ORDER BY id DESC LIMIT 1").get(b.id,employee.id);
   if(existing) throw new Error('تمت تسوية الموظف سابقاً.');
   const item=recalcPayrollEmployeeMonth(m.id,employee.id,{asOfDate:date});
-  const unit=Number(getGlobalProfile()?.currency_minor_unit||2);
+  const unit=Number(getGlobalProfile()?.currency_minor_unit ?? 2);
   const grossEarned=Number(item.base_amount||0)-Number(item.absence_deduction||0)+Number(item.bonus_total||0)+Number(item.overtime_total||0);
   const deductions=Number(item.deduction_total||0);
   const advanceRows=listPayrollAdvances(employee.id);
@@ -5330,7 +5983,7 @@ function calculatePayrollFinalSettlement(monthId, employeeId, settlementDate, ad
 }
 
 function settleEmployeeFinalPayroll({monthId,employeeId,settlementDate,additionalCompensation=0,method='cash',notes,createdBy,paidFromRegister=true,terminationReason}) {
-  const b=getCurrentBranch(); const unit=Number(getGlobalProfile()?.currency_minor_unit||2);
+  const b=getCurrentBranch(); const unit=Number(getGlobalProfile()?.currency_minor_unit ?? 2);
   const data=calculatePayrollFinalSettlement(monthId,employeeId,settlementDate,additionalCompensation);
   if(!['cash','bank','other'].includes(String(method))) throw new Error('طريقة دفع التسوية غير صالحة.');
   const tx=db.transaction(()=>{
@@ -5374,7 +6027,7 @@ function settleEmployeeFinalPayroll({monthId,employeeId,settlementDate,additiona
 }
 
 function listPayrollFinalSettlements(employeeId=null) {
-  const b=getCurrentBranch(); const unit=Number(getGlobalProfile()?.currency_minor_unit||2);
+  const b=getCurrentBranch(); const unit=Number(getGlobalProfile()?.currency_minor_unit ?? 2);
   const rows=db.prepare(`SELECT s.*,e.full_name employee_name,m.month_key FROM payroll_final_settlements s JOIN payroll_employees e ON e.id=s.employee_id JOIN payroll_months m ON m.id=s.month_id WHERE s.branch_id=? ${employeeId!=null?'AND s.employee_id=?':''} ORDER BY s.settlement_date DESC,s.id DESC`).all(...(employeeId!=null?[b.id,Number(employeeId)]:[b.id]));
   return rows.map(r=>({...r,grossEarned:money.fromMinor(Number(r.gross_earned_minor||0),unit),deductions:money.fromMinor(Number(r.deductions_minor||0),unit),advanceBalance:money.fromMinor(Number(r.advance_balance_minor||0),unit),additionalCompensation:money.fromMinor(Number(r.additional_compensation_minor||0),unit),netDue:money.fromMinor(Number(r.net_due_minor||0),unit),paidAmount:money.fromMinor(Number(r.paid_amount_minor||0),unit)}));
 }
@@ -5419,7 +6072,7 @@ function reopenPayrollMonth(monthId, reason, reopenedBy) {
   return {success:true,status:'open',reason:text};
 }
 
-function getPayrollV2Employee(monthId,employeeId){ const m=payrollMonth(monthId), b=getCurrentBranch(); recalcPayrollEmployeeMonth(m.id,Number(employeeId)); const employee=db.prepare(`SELECT e.*,m.month_id,pm.month_key,m.pay_type,m.pay_rate,m.base_amount,m.base_amount_minor,m.regular_hours,m.absence_days,m.absence_deduction,m.bonus_total,m.deduction_total,m.advance_total,m.overtime_total,m.net_salary,m.net_salary_minor,m.debt_carry,m.debt_carry_minor FROM payroll_employee_months m JOIN payroll_employees e ON e.id=m.employee_id JOIN payroll_months pm ON pm.id=m.month_id WHERE m.month_id=? AND m.employee_id=? AND e.branch_id=?`).get(m.id,Number(employeeId),b.id); if(!employee)throw new Error('العامل غير موجود في هذا الشهر.'); const unit=Number(getGlobalProfile()?.currency_minor_unit||2); const paid=db.prepare('SELECT COALESCE(SUM(amount_minor),0) paid_minor,COALESCE(SUM(amount),0) paid_amount FROM payroll_payments WHERE branch_id=? AND month_id=? AND employee_id=?').get(b.id,m.id,Number(employeeId)); const paidMinor=Number(paid?.paid_minor||0),netMinor=money.toMinor(Number(employee.net_salary||0),unit); employee.paid_total=money.fromMinor(paidMinor,unit); employee.paid_total_minor=paidMinor; employee.remaining_salary=money.fromMinor(Math.max(0,netMinor-paidMinor),unit); employee.remaining_salary_minor=Math.max(0,netMinor-paidMinor); employee.payment_status=paidMinor>=netMinor?'paid':paidMinor>0?'partial':'unpaid'; const transactions=db.prepare('SELECT * FROM payroll_transactions WHERE month_id=? AND employee_id=? ORDER BY event_date DESC,id DESC').all(m.id,Number(employeeId)); const payments=listPayrollPayments(m.id,Number(employeeId)); return {employee,transactions,payments,monthStatus:m.status||'open'}; }
+function getPayrollV2Employee(monthId,employeeId){ const m=payrollMonth(monthId), b=getCurrentBranch(); recalcPayrollEmployeeMonth(m.id,Number(employeeId)); const employee=db.prepare(`SELECT e.*,m.month_id,pm.month_key,m.pay_type,m.pay_rate,m.base_amount,m.base_amount_minor,m.regular_hours,m.absence_days,m.absence_deduction,m.bonus_total,m.deduction_total,m.advance_total,m.overtime_total,m.net_salary,m.net_salary_minor,m.debt_carry,m.debt_carry_minor FROM payroll_employee_months m JOIN payroll_employees e ON e.id=m.employee_id JOIN payroll_months pm ON pm.id=m.month_id WHERE m.month_id=? AND m.employee_id=? AND e.branch_id=?`).get(m.id,Number(employeeId),b.id); if(!employee)throw new Error('العامل غير موجود في هذا الشهر.'); const unit=Number(getGlobalProfile()?.currency_minor_unit ?? 2); const paid=db.prepare('SELECT COALESCE(SUM(amount_minor),0) paid_minor,COALESCE(SUM(amount),0) paid_amount FROM payroll_payments WHERE branch_id=? AND month_id=? AND employee_id=?').get(b.id,m.id,Number(employeeId)); const paidMinor=Number(paid?.paid_minor||0),netMinor=money.toMinor(Number(employee.net_salary||0),unit); employee.paid_total=money.fromMinor(paidMinor,unit); employee.paid_total_minor=paidMinor; employee.remaining_salary=money.fromMinor(Math.max(0,netMinor-paidMinor),unit); employee.remaining_salary_minor=Math.max(0,netMinor-paidMinor); employee.payment_status=paidMinor>=netMinor?'paid':paidMinor>0?'partial':'unpaid'; const transactions=db.prepare('SELECT * FROM payroll_transactions WHERE month_id=? AND employee_id=? ORDER BY event_date DESC,id DESC').all(m.id,Number(employeeId)); const payments=listPayrollPayments(m.id,Number(employeeId)); return {employee,transactions,payments,monthStatus:m.status||'open'}; }
 
 /* ==========================================================
    المرتجعات
@@ -5525,36 +6178,46 @@ const createReturnTx = db.transaction((payload) => {
     `SELECT COALESCE(SUM(quantity),0) AS q FROM return_items WHERE sale_item_id = ?`
   );
 
-  const saleItemsTotalBeforeDiscount = Math.max(0, Number(sale.subtotal || 0) + Number(sale.tax_total || 0));
-  // مجمع الخصم الموزَّع على البنود عند حساب المسترد: يشمل الخصم اليدوي وخصم "العروض"،
+  // (بالوحدات الصغرى) مجمع الخصم الموزَّع على البنود عند حساب المسترد: يشمل الخصم اليدوي وخصم "العروض"،
   // وأيضاً قيمة استبدال نقاط الولاء (loyalty_redeemed_value) — لأنها خصم فعلي أنقص ما
   // دفعه العميل حقاً. لولا هذا، كان العميل يُسترد له المبلغ الكامل قبل خصم النقاط (300
   // بدل 296 مثلاً)، أي أكثر مما دفع فعلياً — تسرّب مالي حقيقي، وليس مجرد فرق تقريب.
-  const saleDiscountPool = Math.max(0, Math.min(
-    saleItemsTotalBeforeDiscount,
-    Number(sale.discount_total || 0) + Number(sale.bundle_discount_total || 0) + Number(sale.loyalty_redeemed_value || 0)
-  ));
   const globalProfile = getGlobalProfile();
-  function refundableUnitAmount(saleItem) {
-    const quantity = Number(saleItem.quantity);
-    const base = Number(saleItem.line_total);
-    const rate = Number(saleItem.tax_rate || 0);
-    const inclusive = saleItem.tax_inclusive != null
-      ? Number(saleItem.tax_inclusive) === 1
-      : globalProfile.tax_mode === 'inclusive';
-    const tax = inclusive ? base - base / (1 + rate / 100) : base * (rate / 100);
-    const merchandiseGross = inclusive ? base : base + tax;
-    if (!(quantity > 0) || !(merchandiseGross >= 0)) return 0;
-    const allocatedDiscount = saleItemsTotalBeforeDiscount > 0
-      ? saleDiscountPool * (merchandiseGross / saleItemsTotalBeforeDiscount)
-      : 0;
-    return Math.max(0, (merchandiseGross - allocatedDiscount) / quantity);
+  const accountingUnit = Number(globalProfile.currency_minor_unit ?? 2);
+  // كل حساب المرتجع بوحدات صغرى صحيحة: صافي ما دفعه العميل عن البند = (سعر السطر شامل الضريبة) − (حصته من الخصم).
+  // المبلغ المسترد، مبلغ القيد المحاسبي، الضريبة، والمتبقي القابل للإرجاع كلها تخرج من نفس الأعداد الصحيحة.
+  const minorOf = (minorValue, majorValue) => (minorValue != null && Number.isFinite(Number(minorValue)))
+    ? Math.round(Number(minorValue))
+    : money.toMinor(Number(majorValue || 0).toFixed(accountingUnit + 6), accountingUnit);
+  const isInclusiveItem = (si) => (si.tax_inclusive != null ? Number(si.tax_inclusive) === 1 : globalProfile.tax_mode === 'inclusive');
+  const allSaleItems = db.prepare('SELECT * FROM sale_items WHERE sale_id = ? ORDER BY id').all(sale.id);
+  const merchandiseGrossMinorById = new Map(allSaleItems.map((si) => {
+    const gross = minorOf(si.line_total_minor, si.line_total);
+    return [si.id, isInclusiveItem(si) ? gross : gross + money.taxMinor(gross, Number(si.tax_rate || 0), false)];
+  }));
+  const saleItemsTotalBeforeDiscountMinor = [...merchandiseGrossMinorById.values()].reduce((n, v) => n + v, 0);
+  const saleDiscountPoolMinor = Math.max(0, Math.min(
+    saleItemsTotalBeforeDiscountMinor,
+    minorOf(sale.discount_total_minor, sale.discount_total) + minorOf(sale.bundle_discount_total_minor, sale.bundle_discount_total) + minorOf(sale.loyalty_redeemed_value_minor, sale.loyalty_redeemed_value)
+  ));
+  const allocatedDiscountMinorById = allocateByWeight(saleDiscountPoolMinor, allSaleItems.map((si) => [si.id, merchandiseGrossMinorById.get(si.id)]));
+  const netPaidMinorOf = (si) => Math.max(0, (merchandiseGrossMinorById.get(si.id) || 0) - (allocatedDiscountMinorById.get(si.id) || 0));
+  const refundedRowsFor = db.prepare('SELECT refund_amount FROM return_items WHERE sale_item_id = ?');
+  // المبلغ القابل للاسترداد لكمية من البند: نسبة كمية × صافي المدفوع، والقطعة الأخيرة تأخذ الباقي بالضبط
+  // (فمجموع كل المرتجعات لبند ما = صافي ما دفعه العميل عنه، بلا فلس زائد أو ناقص).
+  function refundableAmountMinor(saleItem, quantity, isLastPiece) {
+    const soldQuantity = Number(saleItem.quantity);
+    if (!(soldQuantity > 0) || !(quantity > 0)) return 0;
+    const netPaid = netPaidMinorOf(saleItem);
+    const previouslyRefunded = refundedRowsFor.all(saleItem.id).reduce((n, r) => n + minorOf(null, r.refund_amount), 0);
+    const leftover = Math.max(0, netPaid - previouslyRefunded);
+    return isLastPiece ? leftover : Math.min(leftover, Math.round(netPaid * quantity / soldQuantity));
   }
 
   let totalRefunded = 0;
+  let totalRefundedMinor = 0;
   let totalTaxRefundedMinor = 0;
   let totalCostReversedMinor = 0;
-  const accountingUnit = Number(globalProfile.currency_minor_unit || 2);
   for (const item of payload.items) {
     const saleItem = db.prepare('SELECT * FROM sale_items WHERE id = ? AND sale_id = ?').get(item.saleItemId, payload.saleId);
     if (!saleItem) continue;
@@ -5567,8 +6230,9 @@ const createReturnTx = db.transaction((payload) => {
     const cappedQuantity = Math.min(quantity, remaining); // لا يمكن إرجاع أكثر مما بقي غير مُرتجَع
     item.quantity = cappedQuantity;
 
-    const unitRefund = refundableUnitAmount(saleItem);
-    const refundAmount = unitRefund * item.quantity;
+    const isLastPiece = remaining - cappedQuantity <= 1e-9;
+    const refundMinor = refundableAmountMinor(saleItem, item.quantity, isLastPiece);
+    const refundAmount = money.fromMinor(refundMinor, accountingUnit);
     insertReturnItem.run(returnId, item.saleItemId, saleItem.product_id, item.quantity, refundAmount);
     const product = db.prepare('SELECT track_inventory FROM products WHERE id=?').get(saleItem.product_id);
     if (product?.track_inventory) {
@@ -5577,17 +6241,18 @@ const createReturnTx = db.transaction((payload) => {
       const currentCost = db.prepare('SELECT COALESCE(unit_cost,0) AS unit_cost FROM inventory WHERE branch_id=? AND product_id=?').get(branch.id, saleItem.product_id)?.unit_cost || 0;
       logMovement.run(uuid(), branch.id, saleItem.product_id, item.quantity, returnId, currentCost);
     }
-    totalRefunded += refundAmount;
+    totalRefundedMinor += refundMinor;
     // نفس منطق tax-inclusive المستخدم أصلاً بحساب refundableUnitAmount: نسبة الضريبة
     // من إجمالي المسترد = rate/(100+rate) بغض النظر عن كون سعر البيع شامل الضريبة أم لا،
     // لأن refundAmount هنا هو المبلغ الإجمالي (شامل الضريبة) أصلاً في الحالتين.
     const rate = Number(saleItem.tax_rate || 0);
-    if (rate > 0) totalTaxRefundedMinor += money.taxMinor(money.toMinor(refundAmount, accountingUnit), rate, true);
+    if (rate > 0) totalTaxRefundedMinor += money.taxMinor(refundMinor, rate, true);
     // عكس التكلفة يعتمد على تكلفة هذا البند وقت البيع فعلياً (cost_at_sale) — وليس
     // تكلفة المخزون الحالية — حتى يكون عكساً دقيقاً لنفس قيد COGS الأصلي.
     totalCostReversedMinor += money.toMinor(Number(saleItem.cost_at_sale || 0) * item.quantity, accountingUnit);
   }
 
+  totalRefunded = money.fromMinor(totalRefundedMinor, accountingUnit);
   if (!(totalRefunded > 0)) throw new Error('لم توجد كمية قابلة للإرجاع.');
   db.prepare(`UPDATE returns SET total_refunded = ? WHERE id = ?`).run(totalRefunded, returnId);
   if (refundMethod === 'cash' || refundMethod === 'card') {
@@ -5609,7 +6274,7 @@ const createReturnTx = db.transaction((payload) => {
   // بـ payment_transactions/store_credit_ledger أعلاه. ثم عكس تكلفة البضاعة المباعة
   // بقيمتها الأصلية وقت البيع إن وُجدت.
   {
-    const totalMinor = money.toMinor(totalRefunded, accountingUnit);
+    const totalMinor = totalRefundedMinor;
     const taxMinorAmt = Math.min(totalTaxRefundedMinor, totalMinor);
     const revenueMinorAmt = Math.max(0, totalMinor - taxMinorAmt);
     const settleCode = refundMethod === 'card' ? '1100' : refundMethod === 'store_credit' ? '2200' : '1000';
@@ -5798,6 +6463,7 @@ function syncPayload() {
     user_username: sale.user_id ? db.prepare('SELECT username FROM users WHERE id=? AND branch_id=?').get(sale.user_id, branch.id)?.username : null,
     table_uuid: sale.table_id ? db.prepare('SELECT uuid FROM restaurant_tables WHERE id=? AND branch_id=?').get(sale.table_id, branch.id)?.uuid : null,
     items: db.prepare(`SELECT si.*,p.uuid AS product_uuid,tp.uuid AS tax_profile_uuid FROM sale_items si JOIN products p ON p.id=si.product_id LEFT JOIN tax_profiles tp ON tp.id=si.tax_profile_id AND tp.branch_id=? WHERE si.sale_id=?`).all(branch.id,sale.id),
+    bundles_applied: db.prepare('SELECT uuid,bundle_uuid,bundle_name,applications,discount,discount_minor,items_json FROM sale_bundles WHERE sale_id=? ORDER BY id').all(sale.id),
   }));
   const paymentRows = db.prepare(`SELECT pt.*,b.uuid AS branch_uuid,s.uuid AS sale_uuid,r.uuid AS return_uuid,sh.uuid AS shift_uuid,u.username AS created_by_username FROM payment_transactions pt JOIN branches b ON b.id=pt.branch_id LEFT JOIN sales s ON s.id=pt.sale_id LEFT JOIN returns r ON r.id=pt.return_id LEFT JOIN shifts sh ON sh.id=pt.shift_id LEFT JOIN users u ON u.id=pt.created_by WHERE pt.branch_id=? AND pt.synced=0`).all(branch.id);
   const cashMovementRows = db.prepare(`SELECT cm.*,b.uuid AS branch_uuid,sh.uuid AS shift_uuid,u.username AS created_by_username FROM cash_movements cm JOIN branches b ON b.id=cm.branch_id JOIN shifts sh ON sh.id=cm.shift_id LEFT JOIN users u ON u.id=cm.created_by WHERE cm.branch_id=? AND cm.synced=0`).all(branch.id);
@@ -5991,11 +6657,13 @@ function applyRemoteChanges(changes={}) {
       const supplierId=po.supplier_uuid?db.prepare('SELECT id FROM suppliers WHERE uuid=? AND branch_id=?').get(po.supplier_uuid,branchId)?.id:null;
       if(!supplierId) continue;
       db.prepare(`
-        INSERT INTO purchase_orders(uuid,branch_id,supplier_id,status,total,paid_amount,payment_method,received_at,notes,created_at,updated_at,synced)
-        VALUES(@uuid,@branchId,@supplierId,@status,@total,@paid_amount,@payment_method,@received_at,@notes,@created_at,@updated_at,1)
+        INSERT INTO purchase_orders(uuid,branch_id,supplier_id,status,total,paid_amount,payment_method,received_at,notes,created_at,updated_at,invoice_type,expense_category_name,invoice_date,reference_number,synced)
+        VALUES(@uuid,@branchId,@supplierId,@status,@total,@paid_amount,@payment_method,@received_at,@notes,@created_at,@updated_at,@invoice_type,@expense_category_name,@invoice_date,@reference_number,1)
         ON CONFLICT(uuid) DO UPDATE SET status=excluded.status,total=excluded.total,paid_amount=excluded.paid_amount,payment_method=excluded.payment_method,
-          received_at=excluded.received_at,notes=excluded.notes,updated_at=excluded.updated_at,synced=1`)
-        .run({...po,branchId,supplierId,payment_method:po.payment_method||'credit',created_at:po.created_at||new Date().toISOString(),updated_at:po.updated_at||new Date().toISOString()});
+          received_at=excluded.received_at,notes=excluded.notes,updated_at=excluded.updated_at,invoice_type=excluded.invoice_type,expense_category_name=excluded.expense_category_name,
+          invoice_date=excluded.invoice_date,reference_number=excluded.reference_number,synced=1`)
+        .run({...po,branchId,supplierId,payment_method:po.payment_method||'credit',created_at:po.created_at||new Date().toISOString(),updated_at:po.updated_at||new Date().toISOString(),
+          invoice_type:po.invoice_type||'goods',expense_category_name:po.expense_category_name||null,invoice_date:po.invoice_date||null,reference_number:po.reference_number||null});
       const localPo=db.prepare('SELECT id FROM purchase_orders WHERE uuid=?').get(po.uuid);
       if(!localPo) continue;
       const hasItems=db.prepare('SELECT 1 FROM purchase_order_items WHERE purchase_order_id=? LIMIT 1').get(localPo.id);
@@ -6036,6 +6704,13 @@ function applyRemoteChanges(changes={}) {
         });
       const localSale=db.prepare('SELECT id FROM sales WHERE uuid=? AND branch_id=?').get(sale.uuid,branchId);
       if(!localSale) continue;
+      // لقطة العروض المطبَّقة (كلمة "عرض" على الطباعة): idempotent بمفتاح uuid.
+      for(const b of Array.isArray(sale.bundles_applied)?sale.bundles_applied:[]){
+        if(!b||!b.uuid) continue;
+        const localBundleId=b.bundle_uuid?db.prepare('SELECT id FROM bundles WHERE uuid=? AND branch_id=?').get(b.bundle_uuid,branchId)?.id||null:null;
+        db.prepare(`INSERT INTO sale_bundles(uuid,sale_id,bundle_id,bundle_uuid,bundle_name,applications,discount,discount_minor,items_json)
+          VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(uuid) DO NOTHING`).run(String(b.uuid),localSale.id,localBundleId,b.bundle_uuid||null,String(b.bundle_name||''),Math.max(1,Number(b.applications||1)),Number(b.discount||0),Number(b.discount_minor||0),String(b.items_json||'[]'));
+      }
       const hasItems=db.prepare('SELECT 1 FROM sale_items WHERE sale_id=? LIMIT 1').get(localSale.id);
       if(hasItems) continue;
       const ins=db.prepare('INSERT INTO sale_items(uuid,sale_id,product_id,quantity,unit_price,tax_rate,tax_profile_id,tax_inclusive,discount,line_total,notes,cost_at_sale) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)');
@@ -6265,7 +6940,7 @@ function recalcAllCustomerBalancesForBranch(branchId) {
    المحاسبة + سجل المزامنة
    ========================================================== */
 function listAccountingAccounts(){const b=getCurrentBranch();return db.prepare('SELECT * FROM accounting_accounts WHERE branch_id=? ORDER BY code').all(b.id);}
-function createAccountingAccount(input){const b=getCurrentBranch();const n=accounting.normalizeAccount(input,Number(getGlobalProfile()?.currency_minor_unit||2));const r=db.prepare(`INSERT INTO accounting_accounts(uuid,branch_id,code,name,account_type,currency_code,opening_balance_minor,is_active,updated_at,synced) VALUES(?,?,?,?,?,?,?,?,datetime('now'),0)`).run(uuid(),b.id,n.code,n.name,n.type,n.currencyCode,n.openingBalanceMinor,n.isActive);return db.prepare('SELECT * FROM accounting_accounts WHERE id=?').get(r.lastInsertRowid);}
+function createAccountingAccount(input){const b=getCurrentBranch();const n=accounting.normalizeAccount(input,Number(getGlobalProfile()?.currency_minor_unit ?? 2));const r=db.prepare(`INSERT INTO accounting_accounts(uuid,branch_id,code,name,account_type,currency_code,opening_balance_minor,is_active,updated_at,synced) VALUES(?,?,?,?,?,?,?,?,datetime('now'),0)`).run(uuid(),b.id,n.code,n.name,n.type,n.currencyCode,n.openingBalanceMinor,n.isActive);return db.prepare('SELECT * FROM accounting_accounts WHERE id=?').get(r.lastInsertRowid);}
 // يبحث عن حساب محاسبي بكوده داخل فرع معيّن — تُستخدم بكل نقاط الترحيل التلقائي
 // (مبيعات/مشتريات/مرتجعات/رواتب) بدل تكرار الاستعلام بكل مكان.
 function getAccountingAccountId(branchId, code) {
@@ -6288,7 +6963,7 @@ function isAccountingPeriodLocked(branchId, dateStr) {
 }
 function insertPostedJournalEntry({ branchId, memo = null, referenceType = null, referenceId = null, entryDate = null, lines = [], createdBy = null, currencyCode = null }) {
   const p = getGlobalProfile();
-  const unit = Number(p?.currency_minor_unit || 2);
+  const unit = Number(p?.currency_minor_unit ?? 2);
   const finalEntryDate = entryDate || new Date().toISOString();
   // قفل الفترة المحاسبية خط دفاع أخير: حتى لو فات نظام آخر (شراء/راتب/مرتجع) بالخطأ
   // بتاريخ ضمن فترة مقفلة، هذه النقطة الوحيدة التي كل قيد يمر منها فعلياً تمنعه.
@@ -6368,7 +7043,7 @@ function getNetIncomeToDateFast(branchId, unit) {
 function getTrialBalance(asOfDate = null) {
   const b = getCurrentBranch();
   const cutoff = asOfDate ? `${asOfDate}T23:59:59.999Z` : '9999-12-31T23:59:59.999Z';
-  const unit = Number(getGlobalProfile()?.currency_minor_unit || 2);
+  const unit = Number(getGlobalProfile()?.currency_minor_unit ?? 2);
   const canUseCache = !hasPostedEntriesAfterCutoff(b.id, cutoff);
   const rows = canUseCache
     ? db.prepare(`
@@ -6397,7 +7072,7 @@ function getIncomeStatement(fromDate = null, toDate = null) {
   const b = getCurrentBranch();
   const from = fromDate ? `${fromDate} 00:00:00` : '0001-01-01 00:00:00';
   const to = toDate ? `${toDate}T23:59:59.999Z` : '9999-12-31T23:59:59.999Z';
-  const unit = Number(getGlobalProfile()?.currency_minor_unit || 2);
+  const unit = Number(getGlobalProfile()?.currency_minor_unit ?? 2);
   const rows = db.prepare(`
     SELECT a.code, a.name, a.account_type, COALESCE(SUM(l.credit_minor - l.debit_minor),0) AS net_minor
     FROM accounting_accounts a
@@ -6419,7 +7094,7 @@ function getIncomeStatement(fromDate = null, toDate = null) {
 function getBalanceSheet(asOfDate = null) {
   const b = getCurrentBranch();
   const cutoff = asOfDate ? `${asOfDate}T23:59:59.999Z` : '9999-12-31T23:59:59.999Z';
-  const unit = Number(getGlobalProfile()?.currency_minor_unit || 2);
+  const unit = Number(getGlobalProfile()?.currency_minor_unit ?? 2);
   const canUseCache = !hasPostedEntriesAfterCutoff(b.id, cutoff);
   const rows = canUseCache
     ? db.prepare(`
@@ -6457,7 +7132,7 @@ function getAccountLedger(accountId, fromDate = null, toDate = null) {
   if (!account) throw new Error('الحساب غير موجود في الفرع الحالي.');
   const from = fromDate ? `${fromDate} 00:00:00` : '0001-01-01 00:00:00';
   const to = toDate ? `${toDate}T23:59:59.999Z` : '9999-12-31T23:59:59.999Z';
-  const unit = Number(getGlobalProfile()?.currency_minor_unit || 2);
+  const unit = Number(getGlobalProfile()?.currency_minor_unit ?? 2);
   const openingBeforeMinor = db.prepare(`
     SELECT COALESCE(SUM(l.debit_minor - l.credit_minor),0) AS v FROM accounting_journal_lines l
     JOIN accounting_journal_entries e ON e.id=l.entry_id
@@ -6710,10 +7385,18 @@ module.exports = {
   setTableSaleCustomer,
   getOpenSaleForTable,
   setOpenSaleItems,
+  markKitchenSent,
+  setUserSalesModify,
+  userCanModifySales,
+  listExpenseCategories,
+  saveExpenseCategory,
+  createExpenseInvoice,
+  getOperatingExpensesSummary,
   mergeTables,
   splitTableSale,
   closeTableSale,
   correctSalePaymentMethod,
+  modifyCompletedSaleItems,
   logAudit,
   listAuditLogs,
   getSetting,

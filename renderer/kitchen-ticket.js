@@ -8,7 +8,12 @@ async function init() {
   applyTranslations(lang);
 
   const params = new URLSearchParams(window.location.search);
+  document.body.dataset.paperWidth = ['58','80'].includes(params.get('paperWidth')) ? params.get('paperWidth') : '80';
   const saleId = parseInt(params.get('saleId'), 10);
+  let deltaItems = null;
+  if (params.get('delta') === '1' && params.get('deltaItems')) {
+    try { deltaItems = JSON.parse(atob(params.get('deltaItems').replace(/-/g,'+').replace(/_/g,'/'))); } catch { deltaItems = null; }
+  }
   const ticketEl = document.getElementById('ticket');
 
   if (!saleId) {
@@ -22,14 +27,50 @@ async function init() {
     return;
   }
 
-  const itemsHtml = sale.items
+  const isDeltaTicket = Array.isArray(deltaItems);
+  // العروض (Bundles) المطبَّقة: تظهر بإطار وكلمة "عرض" واضحة، ومكوّناتها تُخصم من البنود العادية أدناه.
+  const offers = !isDeltaTicket && Array.isArray(sale.bundles) ? sale.bundles.filter((b) => b && Array.isArray(b.items) && b.items.length) : [];
+  const consumed = new Map();
+  for (const offer of offers) {
+    for (const oi of offer.items) consumed.set(Number(oi.product_id), (consumed.get(Number(oi.product_id)) || 0) + Number(oi.quantity || 0));
+  }
+  const noteShown = new Set();
+  const noteFor = (productId) => {
+    const line = (sale.items || []).find((it) => Number(it.product_id) === Number(productId) && it.notes && !noteShown.has(it.id));
+    if (!line) return '';
+    noteShown.add(line.id);
+    return `<div class="kitchen-item-note">⚠ ${escapeHtml(line.notes)}</div>`;
+  };
+  const offersHtml = offers
+    .map((offer) => {
+      const apps = Number(offer.applications || 1);
+      const rows = offer.items
+        .map((oi) => `<div class="kitchen-item kitchen-offer-item"><span class="kitchen-item-qty">${Number(oi.quantity || 0)}×</span><span class="kitchen-item-name">${escapeHtml(oi.product_name)}</span>${noteFor(oi.product_id)}</div>`)
+        .join('');
+      return `<div class="kitchen-offer"><div class="kitchen-offer-title">*** ${t('kitchen.offer')} *** ${escapeHtml(offer.name)}${apps > 1 ? ` ×${apps}` : ''}</div>${rows}</div>`;
+    })
+    .join('');
+  // البنود العادية = كمية كل سطر بعد طرح ما استهلكته العروض.
+  const sourceItems = isDeltaTicket
+    ? deltaItems.map((i) => ({ ...i, product_name: i.productName, quantity: i.deltaQuantity }))
+    : (sale.items || [])
+        .map((i) => {
+          const pid = Number(i.product_id);
+          const left = consumed.get(pid) || 0;
+          const take = Math.min(left, Number(i.quantity || 0));
+          if (take > 0) consumed.set(pid, left - take);
+          return { ...i, quantity: Number(i.quantity || 0) - take };
+        })
+        .filter((i) => i.quantity > 1e-9);
+  const itemsHtml = sourceItems
     .map(
-      (i) => `
-      <div class="kitchen-item">
-        <span class="kitchen-item-qty">${i.quantity}×</span>
-        <span class="kitchen-item-name">${escapeHtml(i.product_name)}</span>
-        ${i.notes ? `<div class="kitchen-item-note">⚠ ${escapeHtml(i.notes)}</div>` : ''}
-      </div>`
+      (i) => {
+        const qty = Number(i.quantity ?? i.deltaQuantity ?? 0);
+        const isDelta = Array.isArray(deltaItems);
+        const noteOnly = isDelta && qty === 0;
+        const prefix = noteOnly ? 'تعديل ملاحظة ' : (isDelta && qty < 0 ? 'إلغاء ' : (isDelta ? 'إضافة ' : ''));
+        return `<div class="kitchen-item"><span class="kitchen-item-qty">${noteOnly ? '•' : `${isDelta ? Math.abs(qty) : qty}×`}</span><span class="kitchen-item-name">${prefix}${escapeHtml(i.product_name)}</span>${i.notes ? `<div class="kitchen-item-note">⚠ ${escapeHtml(i.notes)}</div>` : ''}</div>`;
+      }
     )
     .join('');
 
@@ -44,14 +85,14 @@ async function init() {
 
   ticketEl.innerHTML = `
     <div class="receipt-header">
-      <div class="receipt-brand">${t('kitchen.title')}</div>
+      <div class="receipt-brand">${Array.isArray(deltaItems) ? (lang === 'ar' ? 'تعديل طلب المطبخ' : lang === 'tr' ? 'Mutfak Sipariş Değişikliği' : 'Kitchen Order Change') : t('kitchen.title')}</div>
       <div class="receipt-meta">${t('kitchen.orderNumber')} ${sale.id}${sale.table_name ? ` — ${escapeHtml(sale.table_name)}` : ''}</div>
       <div class="receipt-meta">${formatDate(sale.created_at)}</div>
     </div>
     ${deliveryTimeHtml}
     ${orderNoteHtml}
     <div class="receipt-divider"></div>
-    <div class="kitchen-items">${itemsHtml}</div>
+    <div class="kitchen-items">${offersHtml}${itemsHtml}</div>
   `;
   document.body.dataset.printReady = '1';
 

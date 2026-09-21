@@ -45,6 +45,7 @@
         <h1>الموردون وفواتير الشراء</h1>
         <button id="addSupplierBtn" class="btn btn-secondary">+ مورد</button>
         <button id="addPurchaseBtn" class="btn btn-primary">+ فاتورة شراء</button>
+        <button id="addExpenseBtn" class="btn btn-secondary">+ فاتورة مصروف</button>
       </div>
 
       <div class="kpi-row" id="suppliersKpis">
@@ -61,6 +62,10 @@
           <div class="kpi-body"><div class="kpi-label">فواتير شراء غير مستلمة</div><div class="kpi-value" id="kpiDraftPurchases">0</div></div>
         </div>
       </div>
+        <div class="kpi-card" data-tone="indigo">
+          <span class="kpi-icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 10h18M5 10v9h14v-9M9 10V6h6v4"/></svg></span>
+          <div class="kpi-body"><div class="kpi-label">مصروفات الشهر</div><div class="kpi-value" id="kpiMonthExpenses">0.00</div></div>
+        </div>
 
       <div class="reports-grid">
         <div class="report-panel">
@@ -73,7 +78,7 @@
         <div class="report-panel">
           <h2>فواتير الشراء</h2>
           <table class="products-table">
-            <thead><tr><th>المورد</th><th>الإجمالي</th><th>المدفوع / المتبقي</th><th>الحالة</th><th></th></tr></thead>
+            <thead><tr><th>المورد</th><th>النوع</th><th>الإجمالي</th><th>المدفوع / المتبقي</th><th>الحالة</th><th></th></tr></thead>
             <tbody id="purchasesBody"></tbody>
           </table>
         </div>
@@ -158,6 +163,43 @@
         <div class="modal-actions">
           <button type="button" id="cancelPurchaseBtn" class="btn btn-secondary">إلغاء</button>
           <button id="savePurchaseBtn" class="btn btn-primary">حفظ واستلام المخزون</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="expenseModal" class="modal-overlay hidden">
+    <div class="modal">
+      <h2>فاتورة مصروف تشغيلي</h2>
+      <p class="field-hint">مصروف تشغيلي: لا يدخل المخزون ولا يُحتسب ضمن تكلفة البضاعة.</p>
+      <form id="expenseForm">
+        <div class="form-grid">
+          <div class="form-field full"><label>المورد</label><select id="expenseSupplier" required></select></div>
+          <div class="form-field full">
+            <label>فئة المصروف</label>
+            <div style="display:flex; gap:6px;">
+              <select id="expenseCategory" style="flex:1;" required></select>
+              <button type="button" id="expenseAddCategoryBtn" class="btn btn-secondary">+ فئة</button>
+            </div>
+          </div>
+          <div class="form-field full hidden" id="expenseNewCategoryRow">
+            <div style="display:flex; gap:6px;">
+              <input id="expenseNewCategoryName" placeholder="اسم الفئة الجديدة" style="flex:1;" />
+              <button type="button" id="expenseSaveCategoryBtn" class="btn btn-primary">حفظ الفئة</button>
+              <button type="button" id="expenseCancelCategoryBtn" class="btn btn-secondary">إلغاء</button>
+            </div>
+          </div>
+          <div class="form-field"><label>مبلغ المصروف</label><input id="expenseAmount" type="text" inputmode="decimal" required /></div>
+          <div class="form-field"><label>تاريخ الفاتورة</label><input id="expenseDate" type="date" /></div>
+          <div class="form-field"><label>رقم مرجعي (اختياري)</label><input id="expenseReference" maxlength="100" /></div>
+          <div class="form-field"><label>ملاحظات</label><input id="expenseNotes" maxlength="1000" /></div>
+          <div class="form-field"><label>طريقة الدفع</label><select id="expensePaymentMethod"><option value="credit">آجل للمورد</option><option value="cash">نقدي من الصندوق</option><option value="card">بطاقة / تحويل</option></select></div>
+          <div class="form-field"><label>مدفوع للمورد الآن</label><input id="expensePaid" type="text" inputmode="decimal" value="0" /></div>
+        </div>
+        <p id="expensePaymentHint" class="field-hint"></p>
+        <div class="modal-actions">
+          <button type="button" id="cancelExpenseBtn" class="btn btn-secondary">إلغاء</button>
+          <button id="saveExpenseBtn" class="btn btn-primary">حفظ فاتورة المصروف</button>
         </div>
       </form>
     </div>

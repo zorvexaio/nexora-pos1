@@ -428,6 +428,20 @@ CREATE TABLE IF NOT EXISTS purchase_order_items (
   unit_cost REAL NOT NULL
 );
 
+-- فئات المصروفات التشغيلية (إيجار، كهرباء، ماء...). كل فئة مربوطة بحساب مصروف مستقل في دليل الحسابات.
+CREATE TABLE IF NOT EXISTS expense_categories (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  uuid TEXT UNIQUE NOT NULL,
+  branch_id INTEGER NOT NULL REFERENCES branches(id),
+  name TEXT NOT NULL,
+  account_code TEXT NOT NULL,
+  is_active INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  synced INTEGER NOT NULL DEFAULT 0,
+  UNIQUE(branch_id, name)
+);
+
 -- المرتجعات (كامل أو جزئي من فاتورة سابقة)
 CREATE TABLE IF NOT EXISTS returns (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -508,6 +522,23 @@ CREATE TABLE IF NOT EXISTS bundle_items (
   quantity REAL NOT NULL DEFAULT 1
 );
 
+-- لقطة (Snapshot) العروض المطبَّقة على كل فاتورة لحظة البيع: اسم العرض ومكوناته وعدد مرات التطبيق.
+-- تُستخدم لإظهار كلمة عرض على تذكرة المطبخ والفاتورة حتى لو تغيّر العرض أو حُذف لاحقاً.
+CREATE TABLE IF NOT EXISTS sale_bundles (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  uuid TEXT UNIQUE NOT NULL,
+  sale_id INTEGER NOT NULL REFERENCES sales(id),
+  bundle_id INTEGER,
+  bundle_uuid TEXT,
+  bundle_name TEXT NOT NULL,
+  applications INTEGER NOT NULL DEFAULT 1,
+  discount REAL NOT NULL DEFAULT 0,
+  discount_minor INTEGER NOT NULL DEFAULT 0,
+  items_json TEXT NOT NULL DEFAULT '[]',
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_sale_bundles_sale ON sale_bundles(sale_id);
+
 
 -- تحويلات المخزون بين الفروع — وثيقة مشتركة مع إيصال استلام منفصل لكل فرع.
 CREATE TABLE IF NOT EXISTS branch_directory (
@@ -546,7 +577,10 @@ CREATE TABLE IF NOT EXISTS inventory_transfer_receipt_items (
 
 
 -- =========================
--- Payroll V2 (current through schema v15)
+-- Payroll V2 (base tables below; extended further by numbered migrations
+-- through v22 in database/db.js — see CURRENT_SCHEMA_VERSION there for the
+-- authoritative current version instead of a hardcoded number here, which
+-- drifts out of date every time a new migration ships)
 -- =========================
 CREATE TABLE IF NOT EXISTS payroll_employees (
   id INTEGER PRIMARY KEY AUTOINCREMENT,

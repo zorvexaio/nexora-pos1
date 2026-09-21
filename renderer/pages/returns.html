@@ -45,7 +45,18 @@
       <div class="page-header"><h1>المرتجعات</h1></div>
 
       <div class="report-panel settings-panel">
-        <h2>البحث عن فاتورة لإرجاعها</h2>
+        <h2 data-i18n="returns.manageTitle">إدارة الفواتير المكتملة</h2>
+        <div class="form-grid">
+          <div class="form-field full">
+            <label data-i18n="returns.searchLabel">بحث برقم الفاتورة / العميل / الوقت</label>
+            <input id="salesSearchInput" type="text" placeholder="رقم الفاتورة أو اسم العميل" />
+          </div>
+        </div>
+        <div id="salesManageList" class="returns-sale-list"></div>
+      </div>
+
+      <div class="report-panel settings-panel" id="saleReturnSection">
+        <h2 data-i18n="returns.searchTitle">البحث عن فاتورة لإرجاعها</h2>
         <div class="form-grid">
           <div class="form-field full">
             <label>رقم الفاتورة</label>
@@ -86,6 +97,50 @@
           </div>
           <div class="form-field full">
             <button id="confirmReturnBtn" class="btn btn-danger">تنفيذ المرتجع</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="modifyPanel" class="report-panel hidden">
+        <div class="page-header" style="margin:0 0 12px;">
+          <h2><span data-i18n="returns.modifyTitle">تعديل الفاتورة</span> <span id="modifyInvoiceLabel"></span></h2>
+          <button id="closeModifyBtn" class="btn btn-secondary" data-i18n="common.close">إغلاق</button>
+        </div>
+        <div class="modify-grid">
+          <section>
+            <h3 data-i18n="returns.productGrid">الأصناف</h3>
+            <div id="modifyCategoryTabs" class="modify-category-tabs"></div>
+            <input id="modifyProductSearch" class="search-input" type="text" data-i18n-placeholder="returns.searchProductBarcode" placeholder="بحث بالاسم أو امسح الباركود ثم Enter" autocomplete="off" />
+            <div id="modifyBarcodeHint" class="field-hint" data-i18n="returns.barcodeHint">البحث بالباركود يدعم المطابقة الدقيقة كما في الكاشير.</div>
+            <div id="modifyBundleList" class="modify-bundles"></div>
+            <div id="modifyProductGrid" class="modify-product-grid"></div>
+          </section>
+          <section>
+            <h3 data-i18n="returns.modifiedCart">السلة المعدلة</h3>
+            <div id="modifyCart" class="modify-cart"></div>
+            <div id="modifyDiscountBox" class="modify-discount-box">
+              <label data-i18n="returns.modifyDiscount">الخصم</label>
+              <div class="modify-discount-fields"><select id="modifyDiscountType"><option value="none" data-i18n="returns.noDiscount">بدون خصم</option><option value="percent" data-i18n="returns.percentDiscount">نسبة %</option><option value="fixed" data-i18n="returns.fixedDiscount">مبلغ ثابت</option></select><input id="modifyDiscountValue" type="number" min="0" step="0.01" value="0" disabled /></div>
+            </div>
+            <div id="modifyTotals" class="modify-totals"></div>
+            <label data-i18n="returns.reasonLabel">سبب التعديل</label>
+            <input id="modifyReasonInput" type="text" maxlength="500" placeholder="مثال: العميل غيّر الطلب" />
+            <div class="modify-actions">
+              <button id="saveModifyBtn" class="btn btn-primary" data-i18n="returns.saveModification">حفظ التعديل</button>
+            </div>
+          </section>
+        </div>
+      </div>
+      <div id="paymentModifyModal" class="pro-modal hidden">
+        <div class="pro-modal-card">
+          <div class="pro-modal-head"><div><h2 data-i18n="returns.paymentModifyTitle">تعديل طريقة الدفع</h2><p id="paymentModifyInvoice"></p></div><button id="closePaymentModify" class="pro-close">×</button></div>
+          <div class="pro-form">
+            <div class="form-field"><label data-i18n="returns.newPaymentMethod">الطريقة الجديدة</label><select id="paymentModifyMethod"><option value="cash">نقداً</option><option value="card">بطاقة</option><option value="mixed">مختلط</option><option value="credit">آجل</option></select></div>
+            <div class="form-field" id="paymentMixedFields"><label data-i18n="returns.cashAmount">النقد</label><input id="paymentModifyCash" type="number" min="0" step="0.01"></div>
+            <div class="form-field" id="paymentCardField"><label data-i18n="returns.cardAmount">البطاقة</label><input id="paymentModifyCard" type="number" min="0" step="0.01"></div>
+            <div class="form-field"><label data-i18n="returns.reasonLabel">السبب</label><input id="paymentModifyReason" maxlength="500"></div>
+            <div class="pro-form-help" data-i18n="returns.closedShiftWarning">إذا كانت الوردية الأصلية مغلقة، لن يُعاد كتابة رصيدها التاريخي؛ سيُحفظ التصحيح في التدقيق.</div>
+            <div class="pro-form-actions"><button id="savePaymentModify" class="btn btn-primary" data-i18n="returns.saveModification">حفظ التعديل</button></div>
           </div>
         </div>
       </div>

@@ -3,6 +3,8 @@
 const PERMISSIONS = Object.freeze({
   'pos.sell': ['admin', 'manager', 'cashier'],
   'pos.refund': ['admin', 'manager'],
+  // تعديل فاتورة مكتملة (أصناف/دفع). الكاشير يحصل عليها فقط بتفعيل المدير العام لها من شاشة المستخدمين (users.can_modify_sales).
+  'sales.modify': ['admin', 'manager'],
   'pos.discount.approval': ['admin', 'manager'],
   'customers.manage': ['admin', 'manager'],
   'inventory.manage': ['admin', 'manager'],

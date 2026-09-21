@@ -57,6 +57,19 @@ const TRANSLATIONS = {
     'lan.disconnectConfirm': "فصل هذا الجهاز عن مشاركة المحل؟ سيصبح يعمل ببياناته المحلية فقط من الآن.",
     'returns.refundTotal': "إجمالي الاسترداد",
     'returns.success': "تم تنفيذ المرتجع بنجاح. المبلغ المسترد",
+    'returns.modifyPayment': "تعديل الدفع",
+    'returns.modifyItems': "تعديل الأصناف",
+    'returns.modifyDiscount': "الخصم",
+    'returns.allCategories': "الكل",
+    'returns.searchProductBarcode': "ابحث بالاسم أو امسح الباركود ثم اضغط Enter",
+    'returns.barcodeHint': "البحث بالباركود يدعم المطابقة الدقيقة كما في الكاشير.",
+    'returns.noDiscount': "بدون خصم",
+    'returns.percentDiscount': "نسبة %",
+    'returns.fixedDiscount': "مبلغ ثابت",
+    'returns.netItems': "صافي الأصناف",
+    'returns.tax': "الضريبة",
+    'returns.total': "الإجمالي",
+    'returns.deltaPrintFailed': "تعذر طباعة تعديل المطبخ",
     'users.clearPinFor': "مسح رقم PIN الخاص بـ",
     'users.clearPinWarning': "لن يعود يقدر يدخل بالـ PIN بعدها.",
     'products.edit': "تعديل منتج",
@@ -156,6 +169,13 @@ const TRANSLATIONS = {
     'receipt.notFound': 'تعذّر العثور على الفاتورة.',
     'receipt.invoiceNumber': 'فاتورة رقم',
     'receipt.taxNumber': 'الرقم الضريبي',
+    'receipt.pricesIncludeTax': 'الأسعار شاملة الضريبة',
+    'kitchen.offer': 'عرض',
+    'receipt.offer': 'عرض',
+    'receipt.bundleDiscount': 'خصم العروض',
+    'receipt.offerPrice': 'سعر العرض',
+    'receipt.offerSaved': 'وفّرت',
+    'receipt.someItemsIncludeTax': 'بعض الأصناف أسعارها شاملة الضريبة',
     'receipt.customer': 'العميل',
     'receipt.deliveryOrder': 'طلب توصيل',
     'receipt.deliveryPerson': 'المندوب',
@@ -365,6 +385,19 @@ const TRANSLATIONS = {
     'lan.disconnectConfirm': "Bu cihaz mağaza paylaşımından ayrılsın mı? Bundan sonra yalnızca yerel verileri kullanacak.",
     'returns.refundTotal': "İade toplamı",
     'returns.success': "İade başarıyla gerçekleştirildi. İade edilen tutar",
+    'returns.modifyPayment': "Ödemeyi düzenle",
+    'returns.modifyItems': "Ürünleri düzenle",
+    'returns.modifyDiscount': "İndirim",
+    'returns.allCategories': "Tümü",
+    'returns.searchProductBarcode': "Ürün adıyla arayın veya barkodu okutun, ardından Enter'a basın",
+    'returns.barcodeHint': "Barkod araması POS kasasındakiyle aynı kesin eşleşmeyi destekler.",
+    'returns.noDiscount': "İndirim yok",
+    'returns.percentDiscount': "Yüzde %",
+    'returns.fixedDiscount': "Sabit tutar",
+    'returns.netItems': "Net ürünler",
+    'returns.tax': "Vergi",
+    'returns.total': "Toplam",
+    'returns.deltaPrintFailed': "Mutfak değişikliği yazdırılamadı",
     'users.clearPinFor': "PIN'i temizle:",
     'users.clearPinWarning': "Bu kullanıcı artık PIN ile giriş yapamaz.",
     'products.edit': "Ürünü düzenle",
@@ -464,6 +497,13 @@ const TRANSLATIONS = {
     'receipt.notFound': 'Fatura bulunamadı.',
     'receipt.invoiceNumber': 'Fatura no',
     'receipt.taxNumber': 'Vergi numarası',
+    'receipt.pricesIncludeTax': 'Fiyatlara vergi dahildir',
+    'kitchen.offer': 'PAKET',
+    'receipt.offer': 'PAKET',
+    'receipt.bundleDiscount': 'Paket indirimi',
+    'receipt.offerPrice': 'Paket fiyatı',
+    'receipt.offerSaved': 'Tasarruf',
+    'receipt.someItemsIncludeTax': 'Bazı ürünlerin fiyatına vergi dahildir',
     'receipt.customer': 'Müşteri',
     'receipt.deliveryOrder': 'Teslimat siparişi',
     'receipt.deliveryPerson': 'Kurye',
@@ -669,6 +709,19 @@ const TRANSLATIONS = {
     'lan.disconnectConfirm': "Disconnect this device from store sharing? It will use only its local data from now on.",
     'returns.refundTotal': "Refund total",
     'returns.success': "Return completed successfully. Refunded amount",
+    'returns.modifyPayment': "Modify payment",
+    'returns.modifyItems': "Modify items",
+    'returns.modifyDiscount': "Discount",
+    'returns.allCategories': "All",
+    'returns.searchProductBarcode': "Search by name or scan barcode, then press Enter",
+    'returns.barcodeHint': "Barcode search supports the same exact matching as the main POS.",
+    'returns.noDiscount': "No discount",
+    'returns.percentDiscount': "Percent %",
+    'returns.fixedDiscount': "Fixed amount",
+    'returns.netItems': "Net items",
+    'returns.tax': "Tax",
+    'returns.total': "Total",
+    'returns.deltaPrintFailed': "Kitchen change could not be printed",
     'users.clearPinFor': "Clear PIN for",
     'users.clearPinWarning': "This user will no longer be able to sign in with a PIN.",
     'products.edit': "Edit product",
@@ -768,6 +821,13 @@ const TRANSLATIONS = {
     'receipt.notFound': 'Invoice not found.',
     'receipt.invoiceNumber': 'Invoice #',
     'receipt.taxNumber': 'Tax number',
+    'receipt.pricesIncludeTax': 'Prices include tax',
+    'kitchen.offer': 'OFFER',
+    'receipt.offer': 'OFFER',
+    'receipt.bundleDiscount': 'Offer discount',
+    'receipt.offerPrice': 'Offer price',
+    'receipt.offerSaved': 'You saved',
+    'receipt.someItemsIncludeTax': 'Some items include tax in the price',
     'receipt.customer': 'Customer',
     'receipt.deliveryOrder': 'Delivery order',
     'receipt.deliveryPerson': 'Courier',
@@ -1119,6 +1179,456 @@ Object.assign(TRANSLATIONS.en, {
   'common.unexpectedError': 'An unexpected error occurred: ',
 });
 
+Object.assign(TRANSLATIONS.ar, {
+  'common.ok': 'موافق',
+  'common.loading': 'جارٍ التحميل...',
+  'common.savingBusy': 'جارٍ الحفظ...',
+  'pos.createCustomerFailed': 'تعذّر إنشاء العميل',
+  'pos.createCustomerPrefix': 'إنشاء عميل جديد باسم',
+  'tableOrder.saveFailed': 'تعذر حفظ الطلب.',
+  'tables.release': 'تحرير',
+  'tables.releaseDone': 'تم تحرير الطاولة.',
+  'tables.releaseTitle': 'تحرير الطاولة إن كانت عالقة بدون أصناف',
+});
+Object.assign(TRANSLATIONS.en, {
+  'common.ok': 'OK',
+  'common.loading': 'Loading...',
+  'common.savingBusy': 'Saving...',
+  'pos.createCustomerFailed': 'Could not create customer',
+  'pos.createCustomerPrefix': 'Create new customer named',
+  'tableOrder.saveFailed': 'Could not save the order.',
+  'tables.release': 'Release',
+  'tables.releaseDone': 'The table has been released.',
+  'tables.releaseTitle': 'Release the table if it is stuck with no items',
+});
+Object.assign(TRANSLATIONS.tr, {
+  'common.ok': 'Tamam',
+  'common.loading': 'Yükleniyor...',
+  'common.savingBusy': 'Kaydediliyor...',
+  'pos.createCustomerFailed': 'Müşteri oluşturulamadı',
+  'pos.createCustomerPrefix': 'Şu adla yeni müşteri oluştur',
+  'tableOrder.saveFailed': 'Sipariş kaydedilemedi.',
+  'tables.release': 'Serbest bırak',
+  'tables.releaseDone': 'Masa serbest bırakıldı.',
+  'tables.releaseTitle': 'Masa, öğe olmadan takılı kaldıysa serbest bırak',
+});
+
+Object.assign(TRANSLATIONS.ar, {
+  'accounting.type.asset': 'أصول',
+  'accounting.type.liability': 'خصوم',
+  'accounting.type.equity': 'حقوق ملكية',
+  'accounting.type.revenue': 'إيراد',
+  'accounting.type.expense': 'مصروف',
+  'accounting.revenueExplain': 'هذا الرقم بدون الضريبة المحصّلة من الزبون (تظهر كالتزام لا كربح). لو قارنته بـ"إجمالي المبيعات" بصفحة التقارير رح تلاقيه أقل بمقدار الضريبة تماماً — هذا طبيعي وليس خطأ.',
+  'accounting.netIncomeGain': 'ربحت {amount} صافي بهالفترة (بعد كل المصاريف).',
+  'accounting.netIncomeLoss': 'خسرت {amount} صافي بهالفترة — مصاريفك تجاوزت مبيعاتك.',
+  'accounting.netIncomeBreakeven': 'تعادلت مبيعاتك مع مصاريفك بالضبط بهالفترة.',
+  'accounting.balanced': 'متوازن',
+  'accounting.unbalanced': 'غير متوازن',
+  'accounting.unbalancedReview': 'غير متوازن — راجع القيود',
+  'accounting.balancedFull': 'متوازن (الأصول = الخصوم + حقوق الملكية)',
+  'accounting.noRevenueThisPeriod': 'لا توجد حركة إيرادات بهذه الفترة',
+  'accounting.noExpenseThisPeriod': 'لا توجد حركة مصاريف بهذه الفترة',
+  'accounting.nothing': 'لا شيء',
+  'accounting.noEntriesThisPeriod': 'لا توجد قيود بهذه الفترة',
+  'accounting.noMovementsThisPeriod': 'لا توجد حركات بهذه الفترة',
+  'accounting.ref.sale': 'بيع',
+  'accounting.ref.purchase_order': 'شراء',
+  'accounting.ref.return': 'مرتجع',
+  'accounting.ref.supplier_payment': 'دفعة مورد',
+  'accounting.ref.customer_payment': 'تحصيل عميل',
+  'accounting.ref.payroll_payment': 'صرف راتب',
+  'accounting.ref.payroll_accrual': 'استحقاق راتب',
+  'accounting.reopen': 'إعادة فتح',
+  'accounting.lock': 'إقفال',
+  'accounting.periodLocked': 'مقفلة',
+  'accounting.periodOpen': 'مفتوحة',
+  'accounting.noLockedPeriodsYet': 'لا توجد فترات مقفلة بعد — كل الفترات مفتوحة تلقائياً حتى تُقفَل',
+  'accounting.confirmLockPeriod': 'تأكيد إقفال الفترة {key}؟ لن يمكن إضافة أي قيد محاسبي جديد بتاريخ ضمنها (مبيعات/مشتريات/مرتجعات/رواتب) إلا بعد إعادة فتحها.',
+  'accounting.chooseAccount': 'اختر حساب…',
+});
+Object.assign(TRANSLATIONS.en, {
+  'accounting.type.asset': 'Assets',
+  'accounting.type.liability': 'Liabilities',
+  'accounting.type.equity': 'Equity',
+  'accounting.type.revenue': 'Revenue',
+  'accounting.type.expense': 'Expense',
+  'accounting.revenueExplain': "This figure excludes tax collected from customers (it's a liability, not profit). Compared to \"Total sales\" on the Reports page, it will be lower by exactly the tax amount — this is normal, not an error.",
+  'accounting.netIncomeGain': 'You made a net profit of {amount} this period (after all expenses).',
+  'accounting.netIncomeLoss': 'You had a net loss of {amount} this period — your expenses exceeded your sales.',
+  'accounting.netIncomeBreakeven': 'Your sales exactly matched your expenses this period.',
+  'accounting.balanced': 'Balanced',
+  'accounting.unbalanced': 'Unbalanced',
+  'accounting.unbalancedReview': 'Unbalanced — review the entries',
+  'accounting.balancedFull': 'Balanced (Assets = Liabilities + Equity)',
+  'accounting.noRevenueThisPeriod': 'No revenue activity in this period',
+  'accounting.noExpenseThisPeriod': 'No expense activity in this period',
+  'accounting.nothing': 'Nothing',
+  'accounting.noEntriesThisPeriod': 'No entries in this period',
+  'accounting.noMovementsThisPeriod': 'No movements in this period',
+  'accounting.ref.sale': 'Sale',
+  'accounting.ref.purchase_order': 'Purchase',
+  'accounting.ref.return': 'Return',
+  'accounting.ref.supplier_payment': 'Supplier payment',
+  'accounting.ref.customer_payment': 'Customer payment',
+  'accounting.ref.payroll_payment': 'Payroll payment',
+  'accounting.ref.payroll_accrual': 'Payroll accrual',
+  'accounting.reopen': 'Reopen',
+  'accounting.lock': 'Lock',
+  'accounting.periodLocked': 'Locked',
+  'accounting.periodOpen': 'Open',
+  'accounting.noLockedPeriodsYet': 'No locked periods yet — all periods are open automatically until locked',
+  'accounting.confirmLockPeriod': "Confirm locking period {key}? No new accounting entry dated within it (sales/purchases/returns/payroll) can be added until it's reopened.",
+  'accounting.chooseAccount': 'Choose an account…',
+});
+Object.assign(TRANSLATIONS.tr, {
+  'accounting.type.asset': 'Varlıklar',
+  'accounting.type.liability': 'Borçlar',
+  'accounting.type.equity': 'Özkaynak',
+  'accounting.type.revenue': 'Gelir',
+  'accounting.type.expense': 'Gider',
+  'accounting.revenueExplain': 'Bu rakam müşteriden tahsil edilen vergiyi içermez (kâr değil, borç olarak görünür). Raporlar sayfasındaki "Toplam satış" ile karşılaştırırsanız tam olarak vergi kadar daha düşük olduğunu göreceksiniz — bu normaldir, hata değildir.',
+  'accounting.netIncomeGain': 'Bu dönemde {amount} net kâr elde ettiniz (tüm giderlerden sonra).',
+  'accounting.netIncomeLoss': 'Bu dönemde {amount} net zarar ettiniz — giderleriniz satışlarınızı aştı.',
+  'accounting.netIncomeBreakeven': 'Bu dönemde satışlarınız giderlerinizle tam olarak eşleşti.',
+  'accounting.balanced': 'Dengeli',
+  'accounting.unbalanced': 'Dengesiz',
+  'accounting.unbalancedReview': 'Dengesiz — kayıtları gözden geçirin',
+  'accounting.balancedFull': 'Dengeli (Varlıklar = Borçlar + Özkaynak)',
+  'accounting.noRevenueThisPeriod': 'Bu dönemde gelir hareketi yok',
+  'accounting.noExpenseThisPeriod': 'Bu dönemde gider hareketi yok',
+  'accounting.nothing': 'Hiçbir şey yok',
+  'accounting.noEntriesThisPeriod': 'Bu dönemde kayıt yok',
+  'accounting.noMovementsThisPeriod': 'Bu dönemde hareket yok',
+  'accounting.ref.sale': 'Satış',
+  'accounting.ref.purchase_order': 'Satın alma',
+  'accounting.ref.return': 'İade',
+  'accounting.ref.supplier_payment': 'Tedarikçi ödemesi',
+  'accounting.ref.customer_payment': 'Müşteri tahsilatı',
+  'accounting.ref.payroll_payment': 'Maaş ödemesi',
+  'accounting.ref.payroll_accrual': 'Maaş tahakkuku',
+  'accounting.reopen': 'Yeniden aç',
+  'accounting.lock': 'Kilitle',
+  'accounting.periodLocked': 'Kilitli',
+  'accounting.periodOpen': 'Açık',
+  'accounting.noLockedPeriodsYet': 'Henüz kilitli dönem yok — kilitlenene kadar tüm dönemler otomatik olarak açıktır',
+  'accounting.confirmLockPeriod': '{key} dönemini kilitlemeyi onaylıyor musunuz? Yeniden açılana kadar bu tarih aralığına ait yeni bir muhasebe kaydı (satış/satın alma/iade/maaş) eklenemez.',
+  'accounting.chooseAccount': 'Hesap seçin…',
+});
+
+Object.assign(TRANSLATIONS.ar, {
+  'inventory.reason.sale': 'بيع',
+  'inventory.reason.adjustment': 'تسوية / جرد',
+  'inventory.reason.purchase': 'شراء بضاعة جديدة',
+  'inventory.reason.damage': 'تالف / منتهي الصلاحية',
+  'inventory.reason.transfer': 'تحويل بين فروع',
+  'inventory.reason.transfer_out': 'تحويل صادر',
+  'inventory.reason.transfer_in': 'تحويل وارد',
+  'inventory.reason.transfer_cancel': 'إلغاء تحويل',
+  'inventory.low': 'منخفض',
+  'inventory.adjust': 'تسوية',
+  'inventory.transferStatus.shipped': 'مشحون',
+  'inventory.transferStatus.received': 'مستلم',
+  'inventory.transferStatus.cancelled': 'ملغى',
+  'inventory.incoming': 'وارد',
+  'inventory.outgoing': 'صادر',
+  'inventory.details': 'تفاصيل',
+  'inventory.receive': 'استلام',
+  'inventory.chooseDestinationBranch': 'اختر الفرع المستلم',
+  'inventory.chooseProduct': 'اختر المنتج',
+  'inventory.chooseProductValidQty': 'اختر منتجًا وأدخل كمية صحيحة.',
+  'inventory.qtyExceedsAvailable': 'الكمية المطلوبة تتجاوز المتاح ({stock}).',
+  'inventory.noItemsAdded': 'لم تتم إضافة أصناف.',
+  'inventory.availableInCurrentBranch': 'المتاح في الفرع الحالي: {stock}',
+  'inventory.selectDestinationBranchRequired': 'اختر الفرع المستلم.',
+  'inventory.addAtLeastOneItem': 'أضف صنفًا واحدًا على الأقل.',
+  'inventory.shipping': 'جارٍ الشحن...',
+  'inventory.shipTransfer': 'شحن التحويل',
+  'inventory.transferCreatedShipped': 'تم إنشاء التحويل {uuid} وشحنه بنجاح.',
+  'inventory.branchSaved': 'تم حفظ الفرع.',
+  'inventory.confirmReceiveTransfer': 'سيتم إضافة الكميات إلى مخزون هذا الفرع. هل تريد المتابعة؟',
+  'inventory.confirmCancelTransfer': 'سيتم إلغاء التحويل وإرجاع الكميات إلى المخزون. هل أنت متأكد؟',
+  'inventory.noLineItems': 'لا توجد بنود',
+  'inventory.transferDetails': 'التحويل: {uuid}\nالحالة: {status}\nمن: {from}\nإلى: {to}\n\n{lines}',
+});
+Object.assign(TRANSLATIONS.en, {
+  'inventory.reason.sale': 'Sale',
+  'inventory.reason.adjustment': 'Adjustment / stocktake',
+  'inventory.reason.purchase': 'New stock purchase',
+  'inventory.reason.damage': 'Damaged / expired',
+  'inventory.reason.transfer': 'Transfer between branches',
+  'inventory.reason.transfer_out': 'Outgoing transfer',
+  'inventory.reason.transfer_in': 'Incoming transfer',
+  'inventory.reason.transfer_cancel': 'Transfer cancelled',
+  'inventory.low': 'Low',
+  'inventory.adjust': 'Adjust',
+  'inventory.transferStatus.shipped': 'Shipped',
+  'inventory.transferStatus.received': 'Received',
+  'inventory.transferStatus.cancelled': 'Cancelled',
+  'inventory.incoming': 'Incoming',
+  'inventory.outgoing': 'Outgoing',
+  'inventory.details': 'Details',
+  'inventory.receive': 'Receive',
+  'inventory.chooseDestinationBranch': 'Choose destination branch',
+  'inventory.chooseProduct': 'Choose product',
+  'inventory.chooseProductValidQty': 'Choose a product and enter a valid quantity.',
+  'inventory.qtyExceedsAvailable': 'The requested quantity exceeds what is available ({stock}).',
+  'inventory.noItemsAdded': 'No items have been added.',
+  'inventory.availableInCurrentBranch': 'Available in the current branch: {stock}',
+  'inventory.selectDestinationBranchRequired': 'Select the destination branch.',
+  'inventory.addAtLeastOneItem': 'Add at least one item.',
+  'inventory.shipping': 'Shipping...',
+  'inventory.shipTransfer': 'Ship transfer',
+  'inventory.transferCreatedShipped': 'Transfer {uuid} was created and shipped successfully.',
+  'inventory.branchSaved': 'Branch saved.',
+  'inventory.confirmReceiveTransfer': 'The quantities will be added to this branch\'s inventory. Continue?',
+  'inventory.confirmCancelTransfer': 'The transfer will be cancelled and the quantities returned to inventory. Are you sure?',
+  'inventory.noLineItems': 'No line items',
+  'inventory.transferDetails': 'Transfer: {uuid}\nStatus: {status}\nFrom: {from}\nTo: {to}\n\n{lines}',
+});
+Object.assign(TRANSLATIONS.tr, {
+  'inventory.reason.sale': 'Satış',
+  'inventory.reason.adjustment': 'Düzeltme / sayım',
+  'inventory.reason.purchase': 'Yeni stok alımı',
+  'inventory.reason.damage': 'Hasarlı / süresi dolmuş',
+  'inventory.reason.transfer': 'Şubeler arası transfer',
+  'inventory.reason.transfer_out': 'Giden transfer',
+  'inventory.reason.transfer_in': 'Gelen transfer',
+  'inventory.reason.transfer_cancel': 'Transfer iptal edildi',
+  'inventory.low': 'Düşük',
+  'inventory.adjust': 'Düzelt',
+  'inventory.transferStatus.shipped': 'Gönderildi',
+  'inventory.transferStatus.received': 'Teslim alındı',
+  'inventory.transferStatus.cancelled': 'İptal edildi',
+  'inventory.incoming': 'Gelen',
+  'inventory.outgoing': 'Giden',
+  'inventory.details': 'Ayrıntılar',
+  'inventory.receive': 'Teslim al',
+  'inventory.chooseDestinationBranch': 'Hedef şubeyi seçin',
+  'inventory.chooseProduct': 'Ürün seçin',
+  'inventory.chooseProductValidQty': 'Bir ürün seçin ve geçerli bir miktar girin.',
+  'inventory.qtyExceedsAvailable': 'İstenen miktar mevcut olanı aşıyor ({stock}).',
+  'inventory.noItemsAdded': 'Henüz ürün eklenmedi.',
+  'inventory.availableInCurrentBranch': 'Mevcut şubede kullanılabilir: {stock}',
+  'inventory.selectDestinationBranchRequired': 'Hedef şubeyi seçin.',
+  'inventory.addAtLeastOneItem': 'En az bir ürün ekleyin.',
+  'inventory.shipping': 'Gönderiliyor...',
+  'inventory.shipTransfer': 'Transferi gönder',
+  'inventory.transferCreatedShipped': '{uuid} transferi oluşturuldu ve başarıyla gönderildi.',
+  'inventory.branchSaved': 'Şube kaydedildi.',
+  'inventory.confirmReceiveTransfer': 'Miktarlar bu şubenin stoğuna eklenecek. Devam edilsin mi?',
+  'inventory.confirmCancelTransfer': 'Transfer iptal edilecek ve miktarlar stoğa geri alınacak. Emin misiniz?',
+  'inventory.noLineItems': 'Kalem yok',
+  'inventory.transferDetails': 'Transfer: {uuid}\nDurum: {status}\nKimden: {from}\nKime: {to}\n\n{lines}',
+});
+
+Object.assign(TRANSLATIONS.ar, {
+  'common.edit': 'تعديل',
+  'customers.editCustomer': 'تعديل عميل',
+  'customers.newCustomer': 'عميل جديد',
+  'customers.outstandingDebt': 'الرصيد المستحق (دين)',
+  'customers.storeCreditOwed': 'رصيد المتجر (له)',
+  'customers.noLedgerMovements': 'لا توجد حركات.',
+  'customers.paymentRecordedNoOpenSession': 'تم تسجيل التسديد، ولا توجد جلسة صندوق مفتوحة لإضافة حركة كاش.',
+});
+Object.assign(TRANSLATIONS.en, {
+  'common.edit': 'Edit',
+  'customers.editCustomer': 'Edit customer',
+  'customers.newCustomer': 'New customer',
+  'customers.outstandingDebt': 'Outstanding balance (debt)',
+  'customers.storeCreditOwed': 'Store credit (owed to customer)',
+  'customers.noLedgerMovements': 'No movements.',
+  'customers.paymentRecordedNoOpenSession': 'The payment was recorded, but there is no open register session to add a cash movement to.',
+});
+Object.assign(TRANSLATIONS.tr, {
+  'common.edit': 'Düzenle',
+  'customers.editCustomer': 'Müşteriyi düzenle',
+  'customers.newCustomer': 'Yeni müşteri',
+  'customers.outstandingDebt': 'Bakiye borcu',
+  'customers.storeCreditOwed': 'Mağaza kredisi (müşteriye borçlu)',
+  'customers.noLedgerMovements': 'Hareket yok.',
+  'customers.paymentRecordedNoOpenSession': 'Ödeme kaydedildi, ancak nakit hareketi eklemek için açık bir kasa oturumu yok.',
+});
+
+Object.assign(TRANSLATIONS.ar, {
+  'bundles.active': 'فعّالة',
+  'bundles.inactive': 'متوقفة',
+  'bundles.deactivate': 'إيقاف',
+  'bundles.activate': 'تفعيل',
+  'bundles.editOffer': 'تعديل عرض',
+  'bundles.newOffer': 'عرض جديد',
+  'bundles.remove': 'إزالة',
+  'common.listSeparator': '، ',
+});
+Object.assign(TRANSLATIONS.en, {
+  'bundles.active': 'Active',
+  'bundles.inactive': 'Inactive',
+  'bundles.deactivate': 'Deactivate',
+  'bundles.activate': 'Activate',
+  'bundles.editOffer': 'Edit offer',
+  'bundles.newOffer': 'New offer',
+  'bundles.remove': 'Remove',
+  'common.listSeparator': ', ',
+});
+Object.assign(TRANSLATIONS.tr, {
+  'bundles.active': 'Aktif',
+  'bundles.inactive': 'Pasif',
+  'bundles.deactivate': 'Devre dışı bırak',
+  'bundles.activate': 'Etkinleştir',
+  'bundles.editOffer': 'Teklifi düzenle',
+  'bundles.newOffer': 'Yeni teklif',
+  'bundles.remove': 'Kaldır',
+  'common.listSeparator': ', ',
+});
+
+Object.assign(TRANSLATIONS.ar, {
+  'reports.confirmCorrectPaymentMethod': 'تأكيد تصحيح طريقة الدفع للفاتورة {invoice} إلى "{method}"؟ هذا الإجراء يُسجَّل بسجل التدقيق ولا يمكن التراجع عنه إلا بتصحيح آخر.',
+});
+Object.assign(TRANSLATIONS.en, {
+  'reports.confirmCorrectPaymentMethod': 'Confirm correcting the payment method for invoice {invoice} to "{method}"? This action is recorded in the audit log and can only be undone with another correction.',
+});
+Object.assign(TRANSLATIONS.tr, {
+  'reports.confirmCorrectPaymentMethod': '{invoice} numaralı faturanın ödeme yönteminin "{method}" olarak düzeltilmesini onaylıyor musunuz? Bu işlem denetim günlüğüne kaydedilir ve yalnızca başka bir düzeltmeyle geri alınabilir.',
+});
+
+Object.assign(TRANSLATIONS.ar, {
+  'settings.categoryImages.offersTabName': 'العروض',
+  'settings.categoryImages.changeImage': 'تغيير الصورة',
+  'settings.categoryImages.chooseImage': 'اختر صورة',
+  'settings.categoryImages.removeImage': 'مسح الصورة',
+  'settings.categoryImages.hiddenBadge': 'مخفية',
+  'settings.categoryImages.showInPos': 'إظهار في الكاشير',
+  'settings.categoryImages.hideFromPos': 'إخفاء من الكاشير',
+  'settings.categoryImages.noCategoriesYet': 'لا توجد فئات بعد — تُنشأ تلقائياً عند إضافة منتج بفئة جديدة من صفحة المنتجات.',
+  'settings.categoryImages.saveOffersImageFailed': 'تعذّر حفظ صورة تبويب العروض: ',
+  'settings.categoryImages.confirmRemoveOffersImage': 'هل تريد مسح صورة تبويب العروض؟ سيبقى التبويب ظاهراً بأيقونة افتراضية بدل الصورة.',
+  'settings.categoryImages.offersImageRemoved': 'تم مسح صورة تبويب العروض.',
+  'settings.categoryImages.removeImageFailed': 'تعذّر مسح الصورة: ',
+  'settings.categoryImages.categoryHidden': 'تم إخفاء الفئة من شاشة الكاشير.',
+  'settings.categoryImages.categoryShown': 'أصبحت الفئة ظاهرة في شاشة الكاشير.',
+  'settings.categoryImages.toggleHiddenFailed': 'تعذّر تغيير حالة الفئة: ',
+  'settings.categoryImages.saveCategoryImageFailed': 'تعذّر حفظ صورة الفئة: ',
+  'settings.categoryImages.confirmRemoveCategoryImage': 'هل تريد مسح صورة قسم «{name}»؟ سيبقى القسم ظاهراً في الكاشير بدون صورة.',
+  'settings.categoryImages.categoryImageRemoved': 'تم مسح صورة الفئة. سيظهر القسم في الكاشير بدون صورة.',
+  'settings.categoryImages.removeCategoryImageFailed': 'تعذّر مسح صورة الفئة: ',
+});
+Object.assign(TRANSLATIONS.en, {
+  'settings.categoryImages.offersTabName': 'Offers',
+  'settings.categoryImages.changeImage': 'Change image',
+  'settings.categoryImages.chooseImage': 'Choose image',
+  'settings.categoryImages.removeImage': 'Remove image',
+  'settings.categoryImages.hiddenBadge': 'Hidden',
+  'settings.categoryImages.showInPos': 'Show in POS',
+  'settings.categoryImages.hideFromPos': 'Hide from POS',
+  'settings.categoryImages.noCategoriesYet': 'No categories yet — they are created automatically when a product is added with a new category from the Products page.',
+  'settings.categoryImages.saveOffersImageFailed': 'Could not save the Offers tab image: ',
+  'settings.categoryImages.confirmRemoveOffersImage': 'Remove the Offers tab image? The tab will still show with a default icon instead of the image.',
+  'settings.categoryImages.offersImageRemoved': 'The Offers tab image was removed.',
+  'settings.categoryImages.removeImageFailed': 'Could not remove the image: ',
+  'settings.categoryImages.categoryHidden': 'The category has been hidden from the POS screen.',
+  'settings.categoryImages.categoryShown': 'The category is now shown on the POS screen.',
+  'settings.categoryImages.toggleHiddenFailed': 'Could not change the category visibility: ',
+  'settings.categoryImages.saveCategoryImageFailed': 'Could not save the category image: ',
+  'settings.categoryImages.confirmRemoveCategoryImage': 'Remove the image for category "{name}"? The category will still show in the POS without an image.',
+  'settings.categoryImages.categoryImageRemoved': 'The category image was removed. The category will show in the POS without an image.',
+  'settings.categoryImages.removeCategoryImageFailed': 'Could not remove the category image: ',
+});
+Object.assign(TRANSLATIONS.tr, {
+  'settings.categoryImages.offersTabName': 'Teklifler',
+  'settings.categoryImages.changeImage': 'Görseli değiştir',
+  'settings.categoryImages.chooseImage': 'Görsel seç',
+  'settings.categoryImages.removeImage': 'Görseli kaldır',
+  'settings.categoryImages.hiddenBadge': 'Gizli',
+  'settings.categoryImages.showInPos': 'Kasada göster',
+  'settings.categoryImages.hideFromPos': 'Kasadan gizle',
+  'settings.categoryImages.noCategoriesYet': 'Henüz kategori yok — Ürünler sayfasından yeni bir kategoriyle ürün eklendiğinde otomatik olarak oluşturulur.',
+  'settings.categoryImages.saveOffersImageFailed': 'Teklifler sekmesi görseli kaydedilemedi: ',
+  'settings.categoryImages.confirmRemoveOffersImage': 'Teklifler sekmesi görseli kaldırılsın mı? Sekme, görsel yerine varsayılan bir simgeyle gösterilmeye devam edecek.',
+  'settings.categoryImages.offersImageRemoved': 'Teklifler sekmesi görseli kaldırıldı.',
+  'settings.categoryImages.removeImageFailed': 'Görsel kaldırılamadı: ',
+  'settings.categoryImages.categoryHidden': 'Kategori kasa ekranından gizlendi.',
+  'settings.categoryImages.categoryShown': 'Kategori artık kasa ekranında gösteriliyor.',
+  'settings.categoryImages.toggleHiddenFailed': 'Kategori görünürlüğü değiştirilemedi: ',
+  'settings.categoryImages.saveCategoryImageFailed': 'Kategori görseli kaydedilemedi: ',
+  'settings.categoryImages.confirmRemoveCategoryImage': '"{name}" kategorisinin görseli kaldırılsın mı? Kategori, kasada görselsiz olarak gösterilmeye devam edecek.',
+  'settings.categoryImages.categoryImageRemoved': 'Kategori görseli kaldırıldı. Kategori kasada görselsiz gösterilecek.',
+  'settings.categoryImages.removeCategoryImageFailed': 'Kategori görseli kaldırılamadı: ',
+});
+
+Object.assign(TRANSLATIONS.ar, {
+  'shift.cashIn': 'إدخال نقدي',
+  'shift.cashOut': 'إخراج نقدي',
+});
+Object.assign(TRANSLATIONS.en, {
+  'shift.cashIn': 'Cash in',
+  'shift.cashOut': 'Cash out',
+});
+Object.assign(TRANSLATIONS.tr, {
+  'shift.cashIn': 'Nakit girişi',
+  'shift.cashOut': 'Nakit çıkışı',
+});
+
+Object.assign(TRANSLATIONS.ar, {
+  'suppliers.receivedAndPaidNoSession': 'تم الاستلام وتسجيل الدفعة؛ لا توجد جلسة صندوق مفتوحة لإضافة حركة كاش.',
+  'suppliers.receivedAndUpdated': 'تم استلام الشراء وتحديث المخزون والحسابات.',
+});
+Object.assign(TRANSLATIONS.en, {
+  'suppliers.receivedAndPaidNoSession': 'Received and payment recorded; there is no open register session to add a cash movement to.',
+  'suppliers.receivedAndUpdated': 'The purchase was received and inventory and accounts were updated.',
+});
+Object.assign(TRANSLATIONS.tr, {
+  'suppliers.receivedAndPaidNoSession': 'Teslim alındı ve ödeme kaydedildi; nakit hareketi eklemek için açık bir kasa oturumu yok.',
+  'suppliers.receivedAndUpdated': 'Satın alma teslim alındı, stok ve hesaplar güncellendi.',
+});
+
+Object.assign(TRANSLATIONS.ar, {
+  'suppliers.editSupplier': 'تعديل مورد',
+  'suppliers.newSupplier': 'مورد جديد',
+  'suppliers.creditHint': 'سيُستلم المخزون الآن ويُسجّل المبلغ كذمة على المورد.',
+  'suppliers.cashHint': 'سيُستلم المخزون الآن، وتُسجّل الدفعة والحركة المالية تلقائياً.',
+});
+Object.assign(TRANSLATIONS.en, {
+  'suppliers.editSupplier': 'Edit supplier',
+  'suppliers.newSupplier': 'New supplier',
+  'suppliers.creditHint': 'Inventory will be received now and the amount recorded as a payable to the supplier.',
+  'suppliers.cashHint': 'Inventory will be received now, and the payment and cash movement will be recorded automatically.',
+});
+Object.assign(TRANSLATIONS.tr, {
+  'suppliers.editSupplier': 'Tedarikçiyi düzenle',
+  'suppliers.newSupplier': 'Yeni tedarikçi',
+  'suppliers.creditHint': 'Stok şimdi teslim alınacak ve tutar tedarikçiye borç olarak kaydedilecek.',
+  'suppliers.cashHint': 'Stok şimdi teslim alınacak ve ödeme ile nakit hareketi otomatik olarak kaydedilecek.',
+});
+
+Object.assign(TRANSLATIONS.ar, {
+  'common.unknownError': 'خطأ غير معروف',
+  'tableOrder.kitchenPrintFailed': '⚠️ لم تُطبع تذكرة المطبخ: {reason}',
+  'tableOrder.receiptPrintFailed': '⚠️ لم تُطبع الفاتورة: {reason}',
+});
+Object.assign(TRANSLATIONS.en, {
+  'common.unknownError': 'Unknown error',
+  'tableOrder.kitchenPrintFailed': '⚠️ The kitchen ticket did not print: {reason}',
+  'tableOrder.receiptPrintFailed': '⚠️ The receipt did not print: {reason}',
+});
+Object.assign(TRANSLATIONS.tr, {
+  'common.unknownError': 'Bilinmeyen hata',
+  'tableOrder.kitchenPrintFailed': '⚠️ Mutfak fişi yazdırılamadı: {reason}',
+  'tableOrder.receiptPrintFailed': '⚠️ Fatura yazdırılamadı: {reason}',
+});
+
+Object.assign(TRANSLATIONS.ar, {
+  'users.confirmDeleteUser': 'حذف المستخدم "{name}"؟ إذا كان له سجلات سابقة (مبيعات، ورديات، رواتب...) سيُعطَّل حسابه بدلاً من حذفه نهائياً، ولن يستطيع تسجيل الدخول بعدها.',
+  'users.deactivatedInsteadOfDeleted': 'لم يكن الحذف النهائي ممكناً لأن "{name}" مرتبط بسجلات سابقة (مبيعات/ورديات/رواتب/تدقيق). تم تعطيل حسابه بدلاً من ذلك ولن يستطيع تسجيل الدخول بعد الآن.',
+});
+Object.assign(TRANSLATIONS.en, {
+  'users.confirmDeleteUser': 'Delete the user "{name}"? If they have prior records (sales, shifts, payroll...) their account will be disabled instead of permanently deleted, and they will no longer be able to sign in.',
+  'users.deactivatedInsteadOfDeleted': 'Permanent deletion was not possible because "{name}" is linked to prior records (sales/shifts/payroll/audit). Their account was disabled instead and they can no longer sign in.',
+});
+Object.assign(TRANSLATIONS.tr, {
+  'users.confirmDeleteUser': '"{name}" kullanıcısı silinsin mi? Önceki kayıtları varsa (satış, vardiya, maaş...) hesabı kalıcı olarak silinmek yerine devre dışı bırakılacak ve artık giriş yapamayacak.',
+  'users.deactivatedInsteadOfDeleted': '"{name}" önceki kayıtlara (satış/vardiya/maaş/denetim) bağlı olduğu için kalıcı silme mümkün olmadı. Bunun yerine hesabı devre dışı bırakıldı ve artık giriş yapamıyor.',
+});
+
 const RTL_LANGS = ['ar'];
 
 // دالة عامة أي صفحة تقدر تستخدمها لترجمة نص برمجياً (مثل رسائل alert/confirm)
@@ -1126,6 +1636,12 @@ function t(key, fallback) {
   const lang = document.documentElement.getAttribute('data-lang') || 'ar';
   const dict = TRANSLATIONS[lang] || TRANSLATIONS.ar;
   return dict[key] || (RAW_TRANSLATIONS[lang] && RAW_TRANSLATIONS[lang][key]) || fallback || TRANSLATIONS.ar[key] || (RAW_TRANSLATIONS.ar && RAW_TRANSLATIONS.ar[key]) || key;
+}
+
+// نفس t() لكن لرسائل فيها قيمة متغيّرة داخل النص (مثل "ربحت {amount} صافي"). القالب
+// المخزّن بالقاموس يحتوي {name} كنائب، وهذي الدالة تستبدله بالقيمة الفعلية بعد الترجمة.
+function tf(key, values = {}, fallback) {
+  return t(key, fallback).replace(/\{(\w+)\}/g, (_match, name) => String(values[name] ?? ''));
 }
 
 Object.assign(TRANSLATIONS.ar, {
@@ -1178,7 +1694,9 @@ const STATIC_TRANSLATIONS = {
     'التقارير': 'Reports', 'تصدير Excel': 'Export Excel', 'تصدير PDF': 'Export PDF', 'اليوم': 'Today', 'آخر 7 أيام': 'Last 7 days', 'آخر 30 يوم': 'Last 30 days', 'تطبيق': 'Apply', 'عدد الفواتير': 'Invoice count', 'إجمالي المبيعات': 'Total sales', 'حسب طريقة الدفع': 'By payment method', 'الأكثر مبيعاً': 'Best sellers', 'المبيعات اليومية': 'Daily sales', 'أرباح التوصيل': 'Delivery revenue', 'عدد طلبات التوصيل': 'Delivery orders', 'قيمة المنتجات': 'Products value', 'رسوم التوصيل': 'Delivery fees',
     'الوردية': 'Shift', 'لا توجد وردية مفتوحة حالياً': 'No shift is currently open', 'فتح الوردية': 'Open shift', 'الوردية الحالية': 'Current shift', 'إغلاق الوردية': 'Close shift', 'مبلغ افتتاح الصندوق (كاش)': 'Opening cash', 'الكاش الفعلي المعدود بالصندوق': 'Actual counted cash', 'إغلاق الوردية': 'Close shift', 'المرتجعات': 'Returns', 'البحث عن فاتورة لإرجاعها': 'Find an invoice to return', 'رقم الفاتورة': 'Invoice number', 'بحث': 'Search', 'سبب الإرجاع': 'Return reason', 'طريقة استرداد المبلغ': 'Refund method', 'تنفيذ المرتجع': 'Process return',
     'الطاولات': 'Tables', '+ طاولة جديدة': '+ New table', 'طاولة جديدة': 'New table', 'اسم/رقم الطاولة *': 'Table name/number *', 'عدد المقاعد': 'Seats', 'إضافة': 'Add', 'حفظ الطلب': 'Save order', 'إرسال للمطبخ 🖨️': 'Send to kitchen 🖨️', 'الدفع وإغلاق الطاولة': 'Pay and close table',
-    'الإعدادات': 'Settings', 'بيانات الفرع ونوع النشاط': 'Branch details and business type', 'اسم الفرع': 'Branch name', 'نوع النشاط': 'Business type', 'حفظ الإعدادات': 'Save settings', 'حد الخصم المسموح للكاشير': 'Cashier discount limit', 'العلامة التجارية (تظهر على الفاتورة)': 'Branding (shown on receipt)', 'النسخ الاحتياطي والاستعادة': 'Backup and restore', 'إنشاء نسخة احتياطية': 'Create backup', 'استعادة نسخة احتياطية': 'Restore backup', 'المزامنة مع السيرفر المركزي': 'Central server synchronization', 'عنوان الخادم': 'Server URL', 'رمز الوصول (Token)': 'Access token', 'تفعيل المزامنة': 'Enable synchronization', 'حفظ إعدادات المزامنة': 'Save sync settings', 'مزامنة الآن': 'Sync now'
+    'الإعدادات': 'Settings', 'بيانات الفرع ونوع النشاط': 'Branch details and business type', 'اسم الفرع': 'Branch name', 'نوع النشاط': 'Business type', 'حفظ الإعدادات': 'Save settings', 'حد الخصم المسموح للكاشير': 'Cashier discount limit', 'العلامة التجارية (تظهر على الفاتورة)': 'Branding (shown on receipt)', 'النسخ الاحتياطي والاستعادة': 'Backup and restore', 'إنشاء نسخة احتياطية': 'Create backup', 'استعادة نسخة احتياطية': 'Restore backup', 'المزامنة مع السيرفر المركزي': 'Central server synchronization', 'عنوان الخادم': 'Server URL', 'رمز الوصول (Token)': 'Access token', 'تفعيل المزامنة': 'Enable synchronization', 'حفظ إعدادات المزامنة': 'Save sync settings', 'مزامنة الآن': 'Sync now',
+    'أخطاء': 'Errors', 'أضف بند شراء واحداً على الأقل.': 'Add at least one purchase line item.', 'أضف منتجاً واحداً على الأقل للعرض.': 'Add at least one product to the offer.', 'الرصيد': 'Balance', 'العروض': 'Offers', 'الفرق': 'Difference', 'الفعلي': 'Actual', 'المتوقع': 'Expected', 'تعذر إلغاء التحويل: ': 'Could not cancel the transfer: ', 'تعذر إنشاء التحويل: ': 'Could not create the transfer: ', 'تعذر استلام التحويل: ': 'Could not receive the transfer: ', 'تعذر الحفظ: ': 'Could not save: ', 'تعذر تحديث التقارير: ': 'Could not refresh the reports: ', 'تعذر تحميل التحويلات: ': 'Could not load the transfers: ', 'تعذر تسجيل التسديد: ': 'Could not record the payment: ', 'تعذر تصحيح طريقة الدفع: ': 'Could not correct the payment method: ', 'تعذر حذف المستخدم': 'Could not delete the user', 'تعذر حفظ الفرع: ': 'Could not save the branch: ', 'تعذر فتح التحويل: ': 'Could not open the transfer: ', 'تعذّر إنشاء المنتج: ': 'Could not create the product: ', 'تعذّر الاستلام: ': 'Could not receive: ', 'تعذّر تسجيل الدفعة: ': 'Could not record the payment: ', 'تم': 'Done', 'تم إغلاق جلسة الصندوق.': 'The register session has been closed.', 'تم الاستيراد': 'Imported', 'تم التحديث': 'Updated', 'تم تسجيل الدفعة، ولا توجد جلسة صندوق مفتوحة لإضافة حركة كاش.': 'The payment was recorded, but there is no open register session to add a cash movement to.', 'تم تصحيح طريقة الدفع.': 'The payment method has been corrected.', 'تم تصدير التقرير بصيغة': 'The report was exported as', 'تم حفظ الفاتورة': 'The invoice was saved', 'تنبيه: الوردية المرتبطة بهذه الفاتورة مقفولة أصلاً — تقرير إقفالها لن يتغيّر، والفرق موثّق بسجل التدقيق فقط.': 'Note: the shift linked to this invoice is already closed — its closing report will not change; the difference is only recorded in the audit log.', 'جرّب اسماً أقصر أو امسح الباركود.': 'Try a shorter name or scan the barcode.', 'حدث خطأ أثناء الحذف: ': 'An error occurred while deleting: ', 'حدث خطأ أثناء الحفظ: ': 'An error occurred while saving: ', 'حدث خطأ أثناء حفظ التسوية: ': 'An error occurred while saving the adjustment: ', 'حدث خطأ: ': 'An error occurred: ', 'دقيقة تقريباً': 'about a minute', 'سبب التصحيح مطلوب.': 'A reason for the correction is required.', 'سيُضاف المخزون وتُحدّث التكلفة والحسابات. متابعة؟': 'Inventory will be added and cost/accounts updated. Continue?', 'صالح لمدة': 'Valid for', 'صف': 'Row', 'طلب الحساب': 'Bill requested', 'عرض': 'Offer', 'لا توجد عروض حالياً': 'No offers currently', 'لعرض منتج واحد فقط، يجب أن تكون الكمية المطلوبة أكبر من 1 (مثال: 3 قطع بسعر خاص). لخصم على قطعة واحدة، عدّل سعر المنتج مباشرة بدل إنشاء عرض.': 'To offer a single product, the required quantity must be greater than 1 (e.g. 3 pieces at a special price). To discount a single piece, edit the product price directly instead of creating an offer.', 'لم تُضف أي حزمة/عرض نشط بعد من صفحة الحزم.': 'No active bundle/offer has been added yet from the Bundles page.', 'لم نعثر على منتج يطابق': "We couldn't find a matching product", 'متغيّر': 'Variant', 'مجموع النقدي والبطاقة يجب أن يساوي إجمالي الفاتورة.': 'The total of cash and card must equal the invoice total.', 'مقاعد': 'Seats', 'منتج جديد،': 'New product,', 'منتج مُحدَّث (تمت إضافة الكمية لمخزونه).': 'Product updated (quantity added to its stock).',
+    'لا يوجد رصيد مستحق على هذا العميل.': 'This customer has no outstanding balance.', 'لا توجد فاتورة بهذا الرقم': 'No invoice with this number was found.', 'هذه الفاتورة مرتجعة بالكامل مسبقاً': 'This invoice has already been fully returned.', 'حدد كمية إرجاع لصنف واحد على الأقل': 'Select a return quantity for at least one item.', 'هل تريد تنفيذ هذا المرتجع؟ سيتم إرجاع الكمية للمخزون تلقائياً.': 'Execute this return? The quantity will be returned to inventory automatically.', 'تعذّر فتح جلسة الصندوق': 'Could not open the cash session', 'هل أنت متأكد من إغلاق جلسة الصندوق؟ لن تتوقف المبيعات؛ الإغلاق يخص جلسة متابعة الكاش فقط.': 'Are you sure you want to close the cash session? Sales will continue; closing only ends cash tracking for this session.', 'أدخل بند شراء صحيحاً.': 'Enter a valid purchase item.', '(مشغولة)': '(Occupied)', 'سيتم نقل كل الأصناف إلى الطاولة الهدف. متابعة؟': 'All items will be moved to the target table. Continue?', 'مشغولة': 'Occupied', 'متاحة': 'Available', 'كلمة المرور مطلوبة للمستخدم الجديد': 'Password is required for a new user', 'حدث خطأ أثناء الحفظ': 'An error occurred while saving', 'لا يمكن تغيير عملة النظام أو عدد خاناتها العشرية بعد وجود تاريخ مالي (مبيعات أو قيود محاسبية أو مدفوعات مسجّلة).': 'The system currency or its decimal places cannot be changed once real financial history exists (sales, accounting entries, or recorded payments).'
   },
   tr: {
     'جارٍ التحميل...': 'Yükleniyor...',
@@ -1187,7 +1705,9 @@ const STATIC_TRANSLATIONS = {
     'العملاء': 'Müşteriler', '+ عميل جديد': '+ Yeni müşteri', 'الهاتف': 'Telefon', 'نقاط الولاء': 'Sadakat puanları', 'المستخدمون': 'Kullanıcılar', '+ مستخدم جديد': '+ Yeni kullanıcı', 'اسم المستخدم *': 'Kullanıcı adı *', 'الدور *': 'Rol *',
     'التقارير': 'Raporlar', 'تصدير Excel': 'Excel dışa aktar', 'تصدير PDF': 'PDF dışa aktar', 'اليوم': 'Bugün', 'آخر 7 أيام': 'Son 7 gün', 'آخر 30 يوم': 'Son 30 gün', 'تطبيق': 'Uygula', 'عدد الفواتير': 'Fatura sayısı', 'إجمالي المبيعات': 'Toplam satış', 'حسب طريقة الدفع': 'Ödeme yöntemine göre', 'الأكثر مبيعاً': 'En çok satanlar', 'المبيعات اليومية': 'Günlük satışlar', 'أرباح التوصيل': 'Teslimat geliri',
     'الوردية': 'Vardiya', 'فتح الوردية': 'Vardiya aç', 'إغلاق الوردية': 'Vardiyayı kapat', 'المرتجعات': 'İadeler', 'رقم الفاتورة': 'Fatura numarası', 'بحث': 'Ara', 'الطاولات': 'Masalar', '+ طاولة جديدة': '+ Yeni masa', 'الإعدادات': 'Ayarlar', 'إنشاء نسخة احتياطية': 'Yedek oluştur', 'استعادة نسخة احتياطية': 'Yedeği geri yükle', 'المزامنة مع السيرفر المركزي': 'Merkezi sunucu eşitleme', 'عنوان الخادم': 'Sunucu adresi', 'مزامنة الآن': 'Şimdi eşitle',
-    '+ خيارات متقدمة (أزياء / مطاعم)': '+ Gelişmiş seçenekler (moda / restoran)', 'إرسال للمطبخ 🖨️': 'Mutfağa gönder 🖨️', 'إضافة': 'Ekle', 'إضافة كمية (+)': 'Miktar ekle (+)', 'اسم الفرع': 'Şube adı', 'اسم/رقم الطاولة *': 'Masa adı/numarası *', 'الاسم الكامل *': 'Ad soyad *', 'البحث عن فاتورة لإرجاعها': 'İade edilecek faturayı bul', 'الحساب مفعّل (يمكنه تسجيل الدخول)': 'Hesap aktif (giriş yapabilir)', 'الدفع وإغلاق الطاولة': 'Öde ve masayı kapat', 'العلامة التجارية (تظهر على الفاتورة)': 'Marka (fişte görünür)', 'القيمة': 'Değer', 'الكاش الفعلي المعدود بالصندوق': 'Kasada sayılan gerçek nakit', 'الكمية الحالية': 'Mevcut miktar', 'الكود الداخلي (SKU)': 'Dahili kod (SKU)', 'اللون (أزياء)': 'Renk (moda)', 'المقاس (أزياء)': 'Beden (moda)', 'النسخ الاحتياطي والاستعادة': 'Yedekleme ve geri yükleme', 'الوردية الحالية': 'Mevcut vardiya', 'بيانات الفرع ونوع النشاط': 'Şube bilgileri ve işletme türü', 'تتبّع المخزون لهذا المنتج': 'Bu ürün için stok takibi yap', 'تحديد الكمية الفعلية (جرد)': 'Gerçek miktarı belirle (sayım)', 'تفعيل المزامنة': 'Eşitlemeyi etkinleştir', 'تنفيذ المرتجع': 'İadeyi gerçekleştir', 'حد التنبيه (إعادة الطلب)': 'Uyarı eşiği (yeniden sipariş)', 'حد الخصم المسموح للكاشير': 'Kasiyer indirim limiti', 'حفظ إعدادات المزامنة': 'Eşitleme ayarlarını kaydet', 'حفظ الإعدادات': 'Ayarları kaydet', 'حفظ الطلب': 'Siparişi kaydet', 'خصم كمية (−)': 'Miktar düş (-)', 'رسوم التوصيل': 'Teslimat ücreti', 'رمز الوصول (Token)': 'Erişim jetonu (Token)', 'سبب الإرجاع': 'İade nedeni', 'طاولة جديدة': 'Yeni masa', 'طريقة استرداد المبلغ': 'İade yöntemi', 'عدد المقاعد': 'Koltuk sayısı', 'عدد طلبات التوصيل': 'Teslimat sipariş sayısı', 'فئة جديدة (اختياري)': 'Yeni kategori (isteğe bağlı)', 'قيمة المنتجات': 'Ürün değeri', 'لا توجد وردية مفتوحة حالياً': 'Şu anda açık vardiya yok', 'لا يوجد عملاء بعد.': 'Henüz müşteri yok.', 'مبلغ افتتاح الصندوق (كاش)': 'Kasa açılış tutarı (nakit)', 'ملاحظات (اختياري)': 'Notlar (isteğe bağlı)', 'منتج أساسي (اجعل هذا متغيّراً تابعاً له — أزياء)': 'Ana ürün (bunu ona bağlı bir varyant yap — moda)', 'نسبة الضريبة %': 'Vergi oranı %', 'نوع الحركة': 'Hareket türü', 'نوع النشاط': 'İşletme türü', 'هذا صنف مُحضّر (مطعم) وله مكوّنات': 'Bu hazırlanan bir üründür (restoran) ve bileşenleri var'
+    '+ خيارات متقدمة (أزياء / مطاعم)': '+ Gelişmiş seçenekler (moda / restoran)', 'إرسال للمطبخ 🖨️': 'Mutfağa gönder 🖨️', 'إضافة': 'Ekle', 'إضافة كمية (+)': 'Miktar ekle (+)', 'اسم الفرع': 'Şube adı', 'اسم/رقم الطاولة *': 'Masa adı/numarası *', 'الاسم الكامل *': 'Ad soyad *', 'البحث عن فاتورة لإرجاعها': 'İade edilecek faturayı bul', 'الحساب مفعّل (يمكنه تسجيل الدخول)': 'Hesap aktif (giriş yapabilir)', 'الدفع وإغلاق الطاولة': 'Öde ve masayı kapat', 'العلامة التجارية (تظهر على الفاتورة)': 'Marka (fişte görünür)', 'القيمة': 'Değer', 'الكاش الفعلي المعدود بالصندوق': 'Kasada sayılan gerçek nakit', 'الكمية الحالية': 'Mevcut miktar', 'الكود الداخلي (SKU)': 'Dahili kod (SKU)', 'اللون (أزياء)': 'Renk (moda)', 'المقاس (أزياء)': 'Beden (moda)', 'النسخ الاحتياطي والاستعادة': 'Yedekleme ve geri yükleme', 'الوردية الحالية': 'Mevcut vardiya', 'بيانات الفرع ونوع النشاط': 'Şube bilgileri ve işletme türü', 'تتبّع المخزون لهذا المنتج': 'Bu ürün için stok takibi yap', 'تحديد الكمية الفعلية (جرد)': 'Gerçek miktarı belirle (sayım)', 'تفعيل المزامنة': 'Eşitlemeyi etkinleştir', 'تنفيذ المرتجع': 'İadeyi gerçekleştir', 'حد التنبيه (إعادة الطلب)': 'Uyarı eşiği (yeniden sipariş)', 'حد الخصم المسموح للكاشير': 'Kasiyer indirim limiti', 'حفظ إعدادات المزامنة': 'Eşitleme ayarlarını kaydet', 'حفظ الإعدادات': 'Ayarları kaydet', 'حفظ الطلب': 'Siparişi kaydet', 'خصم كمية (−)': 'Miktar düş (-)', 'رسوم التوصيل': 'Teslimat ücreti', 'رمز الوصول (Token)': 'Erişim jetonu (Token)', 'سبب الإرجاع': 'İade nedeni', 'طاولة جديدة': 'Yeni masa', 'طريقة استرداد المبلغ': 'İade yöntemi', 'عدد المقاعد': 'Koltuk sayısı', 'عدد طلبات التوصيل': 'Teslimat sipariş sayısı', 'فئة جديدة (اختياري)': 'Yeni kategori (isteğe bağlı)', 'قيمة المنتجات': 'Ürün değeri', 'لا توجد وردية مفتوحة حالياً': 'Şu anda açık vardiya yok', 'لا يوجد عملاء بعد.': 'Henüz müşteri yok.', 'مبلغ افتتاح الصندوق (كاش)': 'Kasa açılış tutarı (nakit)', 'ملاحظات (اختياري)': 'Notlar (isteğe bağlı)', 'منتج أساسي (اجعل هذا متغيّراً تابعاً له — أزياء)': 'Ana ürün (bunu ona bağlı bir varyant yap — moda)', 'نسبة الضريبة %': 'Vergi oranı %', 'نوع الحركة': 'Hareket türü', 'نوع النشاط': 'İşletme türü', 'هذا صنف مُحضّر (مطعم) وله مكوّنات': 'Bu hazırlanan bir üründür (restoran) ve bileşenleri var', 'لا يمكن تغيير عملة النظام أو عدد خاناتها العشرية بعد وجود تاريخ مالي (مبيعات أو قيود محاسبية أو مدفوعات مسجّلة).': 'Gerçek bir mali geçmiş (satışlar, muhasebe kayıtları veya kaydedilmiş ödemeler) varsa sistem para birimi veya ondalık basamak sayısı değiştirilemez.',
+    'أخطاء': 'Hatalar', 'أضف بند شراء واحداً على الأقل.': 'En az bir satın alma kalemi ekleyin.', 'أضف منتجاً واحداً على الأقل للعرض.': 'Teklife en az bir ürün ekleyin.', 'الرصيد': 'Bakiye', 'العروض': 'Teklifler', 'الفرق': 'Fark', 'الفعلي': 'Gerçek', 'المتوقع': 'Beklenen', 'تعذر إلغاء التحويل: ': 'Transfer iptal edilemedi: ', 'تعذر إنشاء التحويل: ': 'Transfer oluşturulamadı: ', 'تعذر استلام التحويل: ': 'Transfer teslim alınamadı: ', 'تعذر الحفظ: ': 'Kaydedilemedi: ', 'تعذر تحديث التقارير: ': 'Raporlar güncellenemedi: ', 'تعذر تحميل التحويلات: ': 'Transferler yüklenemedi: ', 'تعذر تسجيل التسديد: ': 'Ödeme kaydedilemedi: ', 'تعذر تصحيح طريقة الدفع: ': 'Ödeme yöntemi düzeltilemedi: ', 'تعذر حذف المستخدم': 'Kullanıcı silinemedi', 'تعذر حفظ الفرع: ': 'Şube kaydedilemedi: ', 'تعذر فتح التحويل: ': 'Transfer açılamadı: ', 'تعذّر إنشاء المنتج: ': 'Ürün oluşturulamadı: ', 'تعذّر الاستلام: ': 'Teslim alınamadı: ', 'تعذّر تسجيل الدفعة: ': 'Ödeme kaydedilemedi: ', 'تم': 'Tamam', 'تم إغلاق جلسة الصندوق.': 'Kasa oturumu kapatıldı.', 'تم الاستيراد': 'İçe aktarıldı', 'تم التحديث': 'Güncellendi', 'تم تسجيل الدفعة، ولا توجد جلسة صندوق مفتوحة لإضافة حركة كاش.': 'Ödeme kaydedildi, ancak nakit hareketi eklemek için açık bir kasa oturumu yok.', 'تم تصحيح طريقة الدفع.': 'Ödeme yöntemi düzeltildi.', 'تم تصدير التقرير بصيغة': 'Rapor şu biçimde dışa aktarıldı', 'تم حفظ الفاتورة': 'Fatura kaydedildi', 'تنبيه: الوردية المرتبطة بهذه الفاتورة مقفولة أصلاً — تقرير إقفالها لن يتغيّر، والفرق موثّق بسجل التدقيق فقط.': 'Not: bu faturaya bağlı vardiya zaten kapatılmış — kapanış raporu değişmeyecek; fark yalnızca denetim günlüğüne kaydedilir.', 'جرّب اسماً أقصر أو امسح الباركود.': 'Daha kısa bir isim deneyin veya barkodu okutun.', 'حدث خطأ أثناء الحذف: ': 'Silinirken bir hata oluştu: ', 'حدث خطأ أثناء الحفظ: ': 'Kaydedilirken bir hata oluştu: ', 'حدث خطأ أثناء حفظ التسوية: ': 'Düzeltme kaydedilirken bir hata oluştu: ', 'حدث خطأ: ': 'Bir hata oluştu: ', 'دقيقة تقريباً': 'yaklaşık bir dakika', 'سبب التصحيح مطلوب.': 'Düzeltme için bir neden gereklidir.', 'سيُضاف المخزون وتُحدّث التكلفة والحسابات. متابعة؟': 'Stok eklenecek ve maliyet/hesaplar güncellenecek. Devam edilsin mi?', 'صالح لمدة': 'Geçerlilik süresi', 'صف': 'Satır', 'طلب الحساب': 'Hesap istendi', 'عرض': 'Teklif', 'لا توجد عروض حالياً': 'Şu anda teklif yok', 'لعرض منتج واحد فقط، يجب أن تكون الكمية المطلوبة أكبر من 1 (مثال: 3 قطع بسعر خاص). لخصم على قطعة واحدة، عدّل سعر المنتج مباشرة بدل إنشاء عرض.': "Tek bir ürün için teklif oluşturmak amacıyla gereken miktar 1'den büyük olmalıdır (örnek: özel fiyata 3 adet). Tek bir parçaya indirim yapmak için teklif oluşturmak yerine doğrudan ürün fiyatını düzenleyin.", 'لم تُضف أي حزمة/عرض نشط بعد من صفحة الحزم.': 'Paketler sayfasından henüz aktif bir paket/teklif eklenmedi.', 'لم نعثر على منتج يطابق': 'Eşleşen bir ürün bulunamadı', 'متغيّر': 'Varyant', 'مجموع النقدي والبطاقة يجب أن يساوي إجمالي الفاتورة.': 'Nakit ve kart toplamı fatura toplamına eşit olmalıdır.', 'مقاعد': 'Koltuklar', 'منتج جديد،': 'Yeni ürün,', 'منتج مُحدَّث (تمت إضافة الكمية لمخزونه).': 'Ürün güncellendi (miktar stoğuna eklendi).',
+    'لا يوجد رصيد مستحق على هذا العميل.': 'Bu müşterinin açık bakiyesi yok.', 'لا توجد فاتورة بهذا الرقم': 'Bu numaraya ait fatura bulunamadı.', 'هذه الفاتورة مرتجعة بالكامل مسبقاً': 'Bu fatura zaten tamamen iade edilmiş.', 'حدد كمية إرجاع لصنف واحد على الأقل': 'En az bir ürün için iade miktarı seçin.', 'هل تريد تنفيذ هذا المرتجع؟ سيتم إرجاع الكمية للمخزون تلقائياً.': 'Bu iadeyi gerçekleştirmek istiyor musunuz? Miktar otomatik olarak stoğa eklenecek.', 'تعذّر فتح جلسة الصندوق': 'Kasa oturumu açılamadı', 'هل أنت متأكد من إغلاق جلسة الصندوق؟ لن تتوقف المبيعات؛ الإغلاق يخص جلسة متابعة الكاش فقط.': 'Kasa oturumunu kapatmak istediğinizden emin misiniz? Satışlar devam eder; kapanış yalnızca nakit takibini bitirir.', 'أدخل بند شراء صحيحاً.': 'Geçerli bir satın alma kalemi girin.', '(مشغولة)': '(Dolu)', 'سيتم نقل كل الأصناف إلى الطاولة الهدف. متابعة؟': 'Tüm ürünler hedef masaya taşınacak. Devam edilsin mi?', 'مشغولة': 'Dolu', 'متاحة': 'Müsait', 'كلمة المرور مطلوبة للمستخدم الجديد': 'Yeni kullanıcı için parola gereklidir', 'حدث خطأ أثناء الحفظ': 'Kaydederken hata oluştu'
   }
 };
 const STATIC_ORIGINALS = new WeakMap();
@@ -1686,6 +2206,21 @@ Object.assign(STATIC_TRANSLATIONS.tr, {
 // Raw Arabic fallback catalog: legacy/dynamic strings that are not yet keyed with data-i18n.
 // This is intentionally shared by DOM translation and t() so alerts/confirmations and
 // dynamically-rendered content follow the same language switch as static HTML.
+Object.assign(STATIC_TRANSLATIONS.en, {
+  'حذف': 'Delete',
+  'لا توجد طاولات بعد': 'No tables yet',
+  'أضف أول طاولة لتبدأ إدارة الطلبات داخل المحل.': 'Add your first table to start managing in-store orders.',
+  'إضافة أول طاولة': 'Add first table',
+  'تعذّر حفظ الـ PIN': 'Could not save the PIN',
+});
+Object.assign(STATIC_TRANSLATIONS.tr, {
+  'حذف': 'Sil',
+  'لا توجد طاولات بعد': 'Henüz masa yok',
+  'أضف أول طاولة لتبدأ إدارة الطلبات داخل المحل.': 'Mağaza içi siparişleri yönetmeye başlamak için ilk masanızı ekleyin.',
+  'إضافة أول طاولة': 'İlk masayı ekle',
+  'تعذّر حفظ الـ PIN': 'PIN kaydedilemedi',
+});
+
 const RAW_TRANSLATIONS = {
   en: {
   "رقم PIN غير صحيح": "Invalid PIN.",
@@ -2360,6 +2895,124 @@ Object.assign(STATIC_TRANSLATIONS.tr, {
 // التي لا تمر بالـ DOM إطلاقاً (نوافذ المتصفح الأصلية) ولذلك لا يقدر
 // applyStaticTranslations (الذي يمسح عناصر body فقط) يترجمها لاحقاً. تستخدم
 // نفس قاموس STATIC_TRANSLATIONS المستخدم للنصوص الثابتة بالصفحات القديمة.
+// ترجمات فواتير المصروفات التشغيلية (صفحة الموردين)
+Object.assign(STATIC_TRANSLATIONS.en, {
+  "مصروفات تشغيلية": "Operating expenses",
+  "صافي الربح (بعد الرواتب والمصروفات)": "Net profit (after payroll & expenses)",
+  "+ فاتورة مصروف": "+ Expense invoice",
+  "مصروفات الشهر": "Operating expenses (month)",
+  "النوع": "Type",
+  "فاتورة مصروف تشغيلي": "Operating expense invoice",
+  "مصروف تشغيلي: لا يدخل المخزون ولا يُحتسب ضمن تكلفة البضاعة.": "Operating expense: it never enters inventory and is not part of the cost of goods.",
+  "فئة المصروف": "Expense category",
+  "+ فئة": "+ Category",
+  "اسم الفئة الجديدة": "New category name",
+  "حفظ الفئة": "Save category",
+  "مبلغ المصروف": "Expense amount",
+  "تاريخ الفاتورة": "Invoice date",
+  "رقم مرجعي (اختياري)": "Reference number (optional)",
+  "حفظ فاتورة المصروف": "Save expense invoice",
+  "مصروف": "Expense",
+  "بضاعة": "Goods",
+  "مسجّلة": "Recorded",
+  "اسم الفئة مطلوب.": "Category name is required.",
+  "أضف مورداً أولاً.": "Add a supplier first.",
+  "يُسجَّل المبلغ كذمة على المورد ولا يتأثر الصندوق.": "The amount is recorded as a payable to the supplier; the cash drawer is not affected.",
+  "يُخصم المبلغ المدفوع من الصندوق ويلزم وردية مفتوحة.": "The paid amount is deducted from the cash drawer; an open shift is required.",
+  "يُسجَّل الدفع عبر البنك / البطاقة.": "The payment is recorded through the bank / card.",
+  "أدخل مبلغ المصروف.": "Enter the expense amount.",
+  "تم تسجيل فاتورة المصروف.": "Expense invoice recorded.",
+  "تعذر تسجيل المصروف: ": "Could not record the expense: ",
+  "إيجار المحل": "Shop rent",
+  "كهرباء": "Electricity",
+  "ماء": "Water",
+  "إنترنت / هاتف": "Internet / phone",
+  "صيانة": "Maintenance",
+  "نظافة": "Cleaning",
+  "نقل وتوصيل": "Transport & delivery",
+  "رسوم حكومية / رخص": "Government fees / licenses",
+  "تسويق وإعلان": "Marketing & advertising",
+  "أخرى": "Other"
+});
+Object.assign(STATIC_TRANSLATIONS.tr, {
+  "مصروفات تشغيلية": "İşletme giderleri",
+  "صافي الربح (بعد الرواتب والمصروفات)": "Net kâr (maaşlar ve giderler sonrası)",
+  "+ فاتورة مصروف": "+ Gider faturası",
+  "مصروفات الشهر": "Aylık işletme giderleri",
+  "النوع": "Tür",
+  "فاتورة مصروف تشغيلي": "İşletme gideri faturası",
+  "مصروف تشغيلي: لا يدخل المخزون ولا يُحتسب ضمن تكلفة البضاعة.": "İşletme gideri: stoğa girmez ve satılan malın maliyetine dahil edilmez.",
+  "فئة المصروف": "Gider kategorisi",
+  "+ فئة": "+ Kategori",
+  "اسم الفئة الجديدة": "Yeni kategori adı",
+  "حفظ الفئة": "Kategoriyi kaydet",
+  "مبلغ المصروف": "Gider tutarı",
+  "تاريخ الفاتورة": "Fatura tarihi",
+  "رقم مرجعي (اختياري)": "Referans numarası (isteğe bağlı)",
+  "حفظ فاتورة المصروف": "Gider faturasını kaydet",
+  "مصروف": "Gider",
+  "بضاعة": "Mal",
+  "مسجّلة": "Kaydedildi",
+  "اسم الفئة مطلوب.": "Kategori adı gerekli.",
+  "أضف مورداً أولاً.": "Önce bir tedarikçi ekleyin.",
+  "يُسجَّل المبلغ كذمة على المورد ولا يتأثر الصندوق.": "Tutar tedarikçiye borç olarak kaydedilir; kasa etkilenmez.",
+  "يُخصم المبلغ المدفوع من الصندوق ويلزم وردية مفتوحة.": "Ödenen tutar kasadan düşülür; açık bir vardiya gerekir.",
+  "يُسجَّل الدفع عبر البنك / البطاقة.": "Ödeme banka / kart üzerinden kaydedilir.",
+  "أدخل مبلغ المصروف.": "Gider tutarını girin.",
+  "تم تسجيل فاتورة المصروف.": "Gider faturası kaydedildi.",
+  "تعذر تسجيل المصروف: ": "Gider kaydedilemedi: ",
+  "إيجار المحل": "Dükkân kirası",
+  "كهرباء": "Elektrik",
+  "ماء": "Su",
+  "إنترنت / هاتف": "İnternet / telefon",
+  "صيانة": "Bakım",
+  "نظافة": "Temizlik",
+  "نقل وتوصيل": "Nakliye ve teslimat",
+  "رسوم حكومية / رخص": "Resmi harçlar / ruhsatlar",
+  "تسويق وإعلان": "Pazarlama ve reklam",
+  "أخرى": "Diğer"
+});
+
+// ترجمات علامة "تعديل الفواتير" في شاشة المستخدمين وقائمة المرتجعات
+Object.assign(STATIC_TRANSLATIONS.en, {
+  "تعديل الفواتير": "Invoice editing",
+  "بحكم الدور": "By role",
+  "المدير يملك هذه الصلاحية بحكم دوره.": "Managers have this permission by role.",
+  "لماذا؟ تسمح للكاشير بتعديل أصناف أو طريقة دفع فاتورة مكتملة (بدون ارتجاع). كل تعديل يُسجَّل باسمه في التدقيق ويتطلب سبباً.": "Why? Lets this cashier edit the items or payment method of a completed invoice (no refunds). Every edit is logged under their name and requires a reason.",
+  "منحها": "Granted by",
+  "السبب": "Reason",
+  "يسمح بتعديل الفواتير": "Allow invoice editing",
+  "سبب السماح لهذا الكاشير بتعديل الفواتير (يُحفظ في سجل التدقيق):": "Why is this cashier allowed to edit invoices? (saved in the audit log):",
+  "اكتب السبب (3 أحرف على الأقل).": "Enter a reason (at least 3 characters).",
+  "سحب صلاحية تعديل الفواتير من هذا المستخدم؟": "Remove invoice-editing permission from this user?",
+  "تم تفعيل تعديل الفواتير لهذا المستخدم.": "Invoice editing enabled for this user.",
+  "تم سحب صلاحية تعديل الفواتير.": "Invoice-editing permission removed.",
+  "مرتجعة جزئياً": "Partially refunded",
+  "مختلط": "Mixed",
+  "آجل": "On credit",
+  "نقدي": "Cash",
+  "بطاقة": "Card",
+});
+Object.assign(STATIC_TRANSLATIONS.tr, {
+  "تعديل الفواتير": "Fatura düzenleme",
+  "بحكم الدور": "Role gereği",
+  "المدير يملك هذه الصلاحية بحكم دوره.": "Yöneticiler bu izne rolleri gereği sahiptir.",
+  "لماذا؟ تسمح للكاشير بتعديل أصناف أو طريقة دفع فاتورة مكتملة (بدون ارتجاع). كل تعديل يُسجَّل باسمه في التدقيق ويتطلب سبباً.": "Neden? Bu kasiyerin tamamlanmış bir faturanın ürünlerini veya ödeme yöntemini düzenlemesine izin verir (iade yok). Her düzenleme adıyla denetim kaydına yazılır ve gerekçe ister.",
+  "منحها": "Veren",
+  "السبب": "Gerekçe",
+  "يسمح بتعديل الفواتير": "Fatura düzenlemeye izin ver",
+  "سبب السماح لهذا الكاشير بتعديل الفواتير (يُحفظ في سجل التدقيق):": "Bu kasiyerin faturaları düzenlemesine neden izin veriliyor? (denetim kaydına yazılır):",
+  "اكتب السبب (3 أحرف على الأقل).": "Bir gerekçe girin (en az 3 karakter).",
+  "سحب صلاحية تعديل الفواتير من هذا المستخدم؟": "Bu kullanıcıdan fatura düzenleme izni kaldırılsın mı?",
+  "تم تفعيل تعديل الفواتير لهذا المستخدم.": "Bu kullanıcı için fatura düzenleme etkinleştirildi.",
+  "تم سحب صلاحية تعديل الفواتير.": "Fatura düzenleme izni kaldırıldı.",
+  "مرتجعة جزئياً": "Kısmen iade edildi",
+  "مختلط": "Karma",
+  "آجل": "Vadeli",
+  "نقدي": "Nakit",
+  "بطاقة": "Kart",
+});
+
 function ts(arabicText) {
   const lang = document.documentElement.getAttribute('data-lang') || 'ar';
   if (lang === 'ar') return arabicText;
@@ -2409,6 +3062,11 @@ async function initI18n() {
     if (window.api && window.api.language) {
       lang = (await window.api.language.get()) || 'ar';
     }
+    // تفضيل اللغة على هذا الجهاز (يعمل قبل تسجيل الدخول ولغير المدير أيضاً)
+    try {
+      const localLang = window.localStorage && window.localStorage.getItem('nexora_ui_lang');
+      if (['ar', 'en', 'tr'].includes(localLang)) lang = localLang;
+    } catch (_) { /* التخزين المحلي غير متاح */ }
   } catch (err) {
     // نستمر باللغة الافتراضية إن تعذّر القراءة (مثلاً قبل تجهيز قاعدة البيانات)
   }
@@ -2420,8 +3078,14 @@ async function initI18n() {
     switcher.addEventListener('change', async () => {
       const newLang = switcher.value;
       applyTranslations(newLang);
+      try { window.localStorage && window.localStorage.setItem('nexora_ui_lang', newLang); } catch (_) { /* تجاهل */ }
+      // الحفظ كإعداد عام للنظام مسموح للمدير العام فقط؛ قبل الدخول أو لغيره يبقى التفضيل محلياً
+      // على هذا الجهاز بدل رمي خطأ 'language:set' في السجل.
       if (window.api && window.api.language) {
-        await window.api.language.set(newLang);
+        try {
+          const me = window.api.auth && window.api.auth.currentUser ? await window.api.auth.currentUser() : null;
+          if (me && me.role === 'admin') await window.api.language.set(newLang);
+        } catch (_) { /* لا نُظهر خطأ لتفضيل واجهة */ }
       }
     });
   }
