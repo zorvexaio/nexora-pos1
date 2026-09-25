@@ -9,6 +9,10 @@ let loggedInUser = null;
 // إعدادات الضريبة/العملة للمنشأة: نفس ما يستخدمه الكاشير (pos.js) حتى تتطابق المعاينة مع الباك-إند.
 let orgTaxMode = 'exclusive';
 let orgMinorUnit = 2;
+const MAX_QTY = 9999; // نفس السقف المستخدم في quick-cashier.js وpriceItemsFromDatabase/setOpenSaleItemsTx على الخادم
+function notifyQtyMax() {
+  showToast(tf('pos.qtyAccumulationMaximum', { max: MAX_QTY.toLocaleString() }), 'error');
+}
 // ضريبة الصنف كما يحسبها الباك-إند: ملف الضريبة إن وُجد، وإلا نسبة المنتج + وضع المنشأة.
 function productTaxInfo(p) {
   const hasProfile = p && p.tax_profile_rate != null;
@@ -171,7 +175,8 @@ async function openVariantPicker(parentProduct) {
 function addToCart(product) {
   const existing = cart.find((i) => i.productId === product.id && !i.notes);
   if (existing) {
-    existing.quantity += 1;
+    if (existing.quantity >= MAX_QTY) notifyQtyMax();
+    existing.quantity = Math.min(MAX_QTY, existing.quantity + 1);
   } else {
     cart.push({ lineId: nextLineId++, productId: product.id, name: product.name, price: product.price, ...productTaxInfo(product), quantity: 1, notes: '' });
   }
@@ -181,7 +186,8 @@ function addToCart(product) {
 function changeQty(lineId, delta) {
   const item = cart.find((i) => i.lineId === lineId);
   if (!item) return;
-  item.quantity += delta;
+  if (delta > 0 && item.quantity >= MAX_QTY) notifyQtyMax();
+  item.quantity = Math.min(MAX_QTY, item.quantity + delta);
   if (item.quantity <= 0) cart = cart.filter((i) => i.lineId !== lineId);
   renderCart();
 }

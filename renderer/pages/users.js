@@ -89,11 +89,11 @@ function renderTable(users) {
 
 // عمود "تعديل الفواتير": علامة صح يضعها المدير العام بجانب الكاشير، مع شرح لماذا/ماذا تسمح به، ومن منحها وسببها.
 function salesModifyCell(u) {
-  if (u.role === 'admin' || u.role === 'manager') return `<span class="status-active" title="${escapeHtml(ts('المدير يملك هذه الصلاحية بحكم دوره.'))}">${ts('بحكم الدور')}</span>`;
+  if (u.role === 'admin' || u.role === 'manager') return `<span class="status-active" title="${escAttr(ts('المدير يملك هذه الصلاحية بحكم دوره.'))}">${ts('بحكم الدور')}</span>`;
   const on = Number(u.can_modify_sales) === 1;
   const why = ts('لماذا؟ تسمح للكاشير بتعديل أصناف أو طريقة دفع فاتورة مكتملة (بدون ارتجاع). كل تعديل يُسجَّل باسمه في التدقيق ويتطلب سبباً.');
   const granted = on ? `<small class="field-hint">${escapeHtml(ts('منحها'))}: ${escapeHtml(u.modify_sales_granted_by_name || '—')} · ${escapeHtml(String(u.modify_sales_granted_at || '').slice(0, 16))}<br>${escapeHtml(ts('السبب'))}: ${escapeHtml(u.modify_sales_reason || '—')}</small>` : '';
-  return `<label title="${escapeHtml(why)}" style="display:flex;gap:6px;align-items:center;cursor:pointer;"><input type="checkbox" data-sales-modify ${on ? 'checked' : ''} ${u.is_active ? '' : 'disabled'} /> <span>${ts('يسمح بتعديل الفواتير')}</span></label>${granted}`;
+  return `<label title="${escAttr(why)}" style="display:flex;gap:6px;align-items:center;cursor:pointer;"><input type="checkbox" data-sales-modify ${on ? 'checked' : ''} ${u.is_active ? '' : 'disabled'} /> <span>${ts('يسمح بتعديل الفواتير')}</span></label>${granted}`;
 }
 async function toggleSalesModify(u, checkbox) {
   const enable = checkbox.checked;

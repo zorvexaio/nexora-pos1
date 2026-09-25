@@ -15,6 +15,9 @@ const dbPath = path.join(userDataPath, 'pos.db');
 const keyPath = path.join(userDataPath, 'pos.db.key');
 const databaseExistedBeforeOpen = fs.existsSync(dbPath) && fs.statSync(dbPath).size > 0;
 const CURRENT_SCHEMA_VERSION = 23;
+// الحد الأقصى للكمية بالبند الواحد، مطابق للحد المستخدم بواجهة الكاشير السريع (quick-cashier.js)
+// وquantity-buffer.js. يُفرض هنا على كل مسارات إنشاء/تعديل السلة (بيع عادي، تعديل فاتورة، طلب طاولة).
+const MAX_LINE_QUANTITY = 9999;
 
 function getEncryptionKey() {
   if (!safeStorage.isEncryptionAvailable()) {
@@ -1240,6 +1243,10 @@ function runMigrations() {
   // بيع بالوزن (خضار/فواكه): كود PLU + علامة "بيع بالوزن" لكل منتج
   tryAddColumn('products', `is_weighted INTEGER NOT NULL DEFAULT 0`);
   tryAddColumn('products', `plu_code TEXT`);
+  // إظهار المنتج على شاشة "الكاشير السريع" (شبكة الصور باللمس فقط) — اختياري ومطفأ
+  // افتراضياً لكل منتج، حتى يختار صاحب المحل بنفسه أصنافاً معدودة تظهر هناك (مثل
+  // الأكياس/الخبز التي لا باركود لها) بدل أن تظهر كل المنتجات مكدّسة فوق بعضها.
+  tryAddColumn('products', `quick_cashier_visible INTEGER NOT NULL DEFAULT 0`);
   db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_products_plu_code ON products(plu_code) WHERE plu_code IS NOT NULL`);
   // ترقية لمرة واحدة: كود PLU يجب أن يكون دائماً 5 خانات بأصفار بادئة (نفس صيغة الباركود
   // المطبوع من الميزان). منتجات أُنشئت قبل هذا الإصلاح قد يكون PLU إلها مُدخلاً بدون أصفار
@@ -1973,6 +1980,11 @@ function listProducts(filters = {}) {
     sql += ` AND p.category_id = ?`;
     params.push(filters.categoryId);
   }
+  if (filters.quickCashierOnly) {
+    // شاشة الكاشير السريع تعرض فقط الأصناف التي اختارها المدير صراحةً (حرية كاملة
+    // بالشاشة بدل ظهور كل منتجات المحل مكدّسة فوق بعضها).
+    sql += ` AND p.quick_cashier_visible = 1`;
+  }
   sql += ' ORDER BY CASE WHEN p.barcode = ? THEN 0 WHEN p.sku = ? THEN 1 ELSE 2 END, p.name LIMIT ?';
   params.push(search, search, limit);
   return db.prepare(sql).all(...params);
@@ -2116,8 +2128,8 @@ function createProduct(p) {
   const identifiers = assertUniqueProductIdentifiers({ sku: p?.sku, barcode: p?.barcode, pluCode: p?.pluCode });
   const info = db.transaction(() => {
     const result = db.prepare(
-      `INSERT INTO products (uuid, sku, barcode, name, category_id, price, cost, tax_rate, unit, track_inventory, image_path, variant_size, variant_color, parent_product_id, is_recipe, is_weighted, plu_code)
-       VALUES (@uuid, @sku, @barcode, @name, @category_id, @price, @cost, @tax_rate, @unit, @track_inventory, @image_path, @variant_size, @variant_color, @parent_product_id, @is_recipe, @is_weighted, @plu_code)`
+      `INSERT INTO products (uuid, sku, barcode, name, category_id, price, cost, tax_rate, unit, track_inventory, image_path, variant_size, variant_color, parent_product_id, is_recipe, is_weighted, plu_code, quick_cashier_visible)
+       VALUES (@uuid, @sku, @barcode, @name, @category_id, @price, @cost, @tax_rate, @unit, @track_inventory, @image_path, @variant_size, @variant_color, @parent_product_id, @is_recipe, @is_weighted, @plu_code, @quick_cashier_visible)`
     ).run({
       uuid: uuid(),
       sku: identifiers.sku,
@@ -2136,6 +2148,7 @@ function createProduct(p) {
       is_recipe: p.isRecipe ? 1 : 0,
       is_weighted: p.isWeighted ? 1 : 0,
       plu_code: identifiers.pluCode,
+      quick_cashier_visible: p.quickCashierVisible ? 1 : 0,
     });
     const branch = getCurrentBranch();
     db.prepare(`INSERT INTO inventory (branch_id, product_id, quantity, min_quantity, unit_cost) VALUES (?, ?, ?, ?, ?)`)
@@ -2188,6 +2201,7 @@ const updateProductTx = db.transaction((p) => {
       track_inventory=@track_inventory, image_path=@image_path,
       variant_size=@variant_size, variant_color=@variant_color, is_recipe=@is_recipe,
       parent_product_id=@parent_product_id, is_weighted=@is_weighted, plu_code=@plu_code,
+      quick_cashier_visible=@quick_cashier_visible,
       updated_at=datetime('now'), synced=0
      WHERE id=@id`
   ).run({
@@ -2196,6 +2210,7 @@ const updateProductTx = db.transaction((p) => {
     track_inventory: p.trackInventory === false ? 0 : 1, image_path: p.imagePath || null,
     variant_size: p.variantSize || null, variant_color: p.variantColor || null, is_recipe: p.isRecipe ? 1 : 0,
     parent_product_id: p.parentProductId || null, is_weighted: p.isWeighted ? 1 : 0, plu_code: identifiers.pluCode,
+    quick_cashier_visible: p.quickCashierVisible ? 1 : 0,
   });
 
   if (stock !== undefined || minQuantity !== undefined) {
@@ -2256,6 +2271,7 @@ const saveBundleItemsTx = db.transaction((bundleId, items) => {
   const insert = db.prepare(`INSERT INTO bundle_items (bundle_id, product_id, quantity) VALUES (?, ?, ?)`);
   for (const it of items) {
     if (!it.productId || !(it.quantity > 0)) continue;
+    if (it.quantity > MAX_LINE_QUANTITY) throw new Error(`الكمية المطلوبة تتجاوز الحد الأقصى المسموح (${MAX_LINE_QUANTITY}).`);
     insert.run(bundleId, it.productId, it.quantity);
   }
 });
@@ -2301,12 +2317,23 @@ function deleteBundle(id) {
 // مخزون كافٍ فقط للمنتجات "بكمية محددة" (track_inventory=1). المنتجات "المفتوحة" (بدون تتبع
 // كمية — خدمات، أصناف بلا حدّ مخزون) تُستثنى بالكامل من هذا التحقق مهما كانت الكمية المطلوبة.
 function priceItemsFromDatabase(items, branchId) {
-  const getPrice = db.prepare(`SELECT p.id, p.price, p.cost, COALESCE(i.unit_cost, p.cost, 0) AS branch_cost, p.tax_rate, p.tax_profile_id, p.name, p.track_inventory, COALESCE(i.quantity, 0) AS available, tp.code AS tax_profile_code, tp.rate AS profile_rate, tp.is_inclusive AS profile_inclusive FROM products p LEFT JOIN inventory i ON i.product_id=p.id AND i.branch_id=? LEFT JOIN tax_profiles tp ON tp.id=p.tax_profile_id AND tp.branch_id=? AND tp.is_active=1 WHERE p.id=?`);
+  const getPrice = db.prepare(`SELECT p.id, p.price, p.cost, COALESCE(i.unit_cost, p.cost, 0) AS branch_cost, p.tax_rate, p.tax_profile_id, p.name, p.track_inventory, COALESCE(i.quantity, 0) AS available, tp.code AS tax_profile_code, tp.rate AS profile_rate, tp.is_inclusive AS profile_inclusive FROM products p LEFT JOIN inventory i ON i.product_id=p.id AND i.branch_id=? LEFT JOIN tax_profiles tp ON tp.id=p.tax_profile_id AND tp.branch_id=? AND tp.is_active=1 WHERE p.id=? AND p.is_active=1`);
   const global=getGlobalProfile(); const minorUnit=Number(global?.currency_minor_unit ?? 2); let subtotalMinor=0; let taxTotalMinor=0; const priced=[]; const requestedByProduct=new Map();
-  for(const item of items||[]){ const productId=Number(item.productId); const quantity=Number(item.quantity); if(!Number.isInteger(productId)||productId<=0) throw new Error('معرّف المنتج غير صالح.'); if(!(Number.isFinite(quantity)&&quantity>0)) throw new Error('كمية غير صالحة في السلة'); requestedByProduct.set(productId,(requestedByProduct.get(productId)||0)+quantity); }
+  for(const item of items||[]){ const productId=Number(item.productId); const quantity=Number(item.quantity); if(!Number.isInteger(productId)||productId<=0) throw new Error('معرّف المنتج غير صالح.'); if(!(Number.isFinite(quantity)&&quantity>0)) throw new Error('كمية غير صالحة في السلة'); if(quantity>MAX_LINE_QUANTITY) throw new Error(`الكمية المطلوبة تتجاوز الحد الأقصى المسموح (${MAX_LINE_QUANTITY}).`); requestedByProduct.set(productId,(requestedByProduct.get(productId)||0)+quantity); }
   for(const [productId,requestedQty] of requestedByProduct){ const product=getPrice.get(branchId,branchId,productId); if(!product) throw new Error('منتج غير موجود ضمن السلة'); if(product.track_inventory&&product.available<requestedQty) throw new Error(`الكمية المتوفرة من "${product.name}" غير كافية (المتوفر: ${product.available}). فعّل "بيع مفتوح بدون تتبّع كمية" لهذا الصنف إن لم ترد التحقق من كميته.`); }
   for(const item of items||[]){ const product=getPrice.get(branchId,branchId,Number(item.productId)); const unitPriceMinor=money.toMinor(product.price,minorUnit); const unitCostMinor=money.toMinor(Math.max(0,Number(product.branch_cost??product.cost??0)),minorUnit); const taxRate=product.profile_rate==null?Number(product.tax_rate||0):Number(product.profile_rate); const inclusive=product.profile_rate!=null?Number(product.profile_inclusive)===1:global.tax_mode==='inclusive'; const lineGrossMinor=money.multiplyMinorQuantity(unitPriceMinor,Number(item.quantity)); const lineTaxMinor=money.taxMinor(lineGrossMinor,taxRate,inclusive); const lineNetMinor=inclusive?Math.max(0,lineGrossMinor-lineTaxMinor):lineGrossMinor; subtotalMinor+=lineNetMinor; taxTotalMinor+=lineTaxMinor; priced.push({productId:item.productId,quantity:Number(item.quantity),unitPrice:money.fromMinor(unitPriceMinor,minorUnit),unitPriceMinor,taxRate,taxProfileId:product.tax_profile_id||null,taxProfileCode:product.tax_profile_code||null,taxInclusive:inclusive,lineTotal:money.fromMinor(lineGrossMinor,minorUnit),lineTotalMinor:lineGrossMinor,notes:item.notes||null,costAtSale:money.fromMinor(unitCostMinor,minorUnit),costAtSaleMinor:unitCostMinor,trackInventory:Boolean(product.track_inventory)}); }
   return {priced,subtotalMinor,taxTotalMinor,subtotal:money.fromMinor(subtotalMinor,minorUnit),taxTotal:money.fromMinor(taxTotalMinor,minorUnit),minorUnit};
+}
+
+// تسعير مسبق (quote) قبل إنشاء البيع فعلياً — تستخدمه شاشة الكاشير السريع لعرض
+// نفس الإجمالي الذي سيحسبه createSaleTx بالضبط (بضريبته وتقريبه)، بدل أن تحسب
+// الواجهة إجمالياً تقريبياً محلياً قد لا يطابق ما يُحفظ فعلياً عند الدفع.
+function quoteSale(items, branchId) {
+  const branch = branchId || getCurrentBranch().id;
+  const { subtotal, taxTotal, subtotalMinor, taxTotalMinor, minorUnit, priced } = priceItemsFromDatabase(items, branch);
+  const grandTotalMinor = subtotalMinor + taxTotalMinor;
+  const grandTotal = money.fromMinor(grandTotalMinor, minorUnit);
+  return { subtotal, taxTotal, subtotalMinor, taxTotalMinor, grandTotal, grandTotalMinor, minorUnit, priced };
 }
 
 // يتحقق أن الخصم الإجمالي المطلوب لا يتجاوز حد الكاشير، إلا بموافقة مدير/مدير عام
@@ -2602,6 +2629,7 @@ function postSaleAccountingInTransaction(sale, saleId, branchId) {
 // عملية بيع كاملة داخل transaction واحدة: تسجيل الفاتورة + البنود + خصم المخزون
 const createSaleTx = db.transaction((sale) => {
   const branch = getCurrentBranch();
+  if (!Array.isArray(sale.items) || sale.items.length === 0) throw new Error('لا يمكن إنشاء عملية بيع بدون أصناف.');
   if (sale.customerId != null) {
     const customer = db.prepare('SELECT id FROM customers WHERE id=? AND branch_id=?').get(Number(sale.customerId), branch.id);
     if (!customer) throw new Error('العميل غير موجود في الفرع الحالي.');
@@ -2840,7 +2868,7 @@ const createSaleTx = db.transaction((sale) => {
     appendCustomerLedger({ customerId: sale.customerId, saleId, entryType: 'credit_sale', amount: dueAmount, balanceAfter, notes: `فاتورة ${invoiceNumber}` });
   }
 
-  return { id: saleId, uuid: saleUuid, invoiceNumber };
+  return { id: saleId, uuid: saleUuid, invoiceNumber, grandTotal, grandTotalMinor };
 });
 
 function createSale(sale) {
@@ -4230,6 +4258,7 @@ const setOpenSaleItemsTx = db.transaction((saleId, items) => {
     const productId=Number(raw.productId ?? raw.product_id);
     const quantity=Number(raw.quantity);
     if (!Number.isInteger(productId) || productId<=0 || !(Number.isFinite(quantity) && quantity>0)) throw new Error('بيانات صنف غير صالحة.');
+    if (quantity>MAX_LINE_QUANTITY) throw new Error(`الكمية المطلوبة تتجاوز الحد الأقصى المسموح (${MAX_LINE_QUANTITY}).`);
     const prior=takeExisting(productId,raw.saleItemUuid??raw.uuid);
     const product=getProductRow.get(branch.id,branch.id,productId);
     if (!prior && !product) throw new Error('منتج غير موجود أو غير نشط.');
@@ -5859,6 +5888,18 @@ function setReceiptBarcodeEnabled(enabled){
   return{success:true,enabled:!!enabled};
 }
 
+// إظهار/إخفاء رابط "الكاشير السريع" (شاشة بيع تعمل باللمس فقط: لوحة أرقام لإدخال
+// الباركود/الكود يدوياً + شبكة صور للأصناف الشائعة بلا كتابة اسم) — مخصّصة لمحلات
+// كالبقالة حيث الكاشير قد لا يملك لوحة مفاتيح أو لا يجيد القراءة/الكتابة. مطفأة
+// افتراضياً، ويُفعِّلها المدير لكل فرع يحتاجها من الإعدادات، ويُخفيها عن باقي المحلات.
+function getQuickCashierEnabled(){
+  return getSetting('quick_cashier_enabled','0') === '1';
+}
+function setQuickCashierEnabled(enabled){
+  setSetting('quick_cashier_enabled', enabled ? '1' : '0');
+  return{success:true,enabled:!!enabled};
+}
+
 // إظهار/إخفاء تبويب "العروض" (الحزم النشطة) في شاشة الكاشير — بعض المحلات لا
 // تستخدم نظام الحزم إطلاقاً وتفضّل شريط أقسام أبسط بدون هذا التبويب الإضافي.
 function getOffersCategoryEnabled(){
@@ -7448,6 +7489,10 @@ module.exports = {
   saveTaxDefaultRate,
   getReceiptBarcodeEnabled,
   setReceiptBarcodeEnabled,
+  getQuickCashierEnabled,
+  setQuickCashierEnabled,
+  priceItemsFromDatabase,
+  quoteSale,
   getOffersCategoryEnabled,
   setOffersCategoryEnabled,
   getOffersCategoryImage,

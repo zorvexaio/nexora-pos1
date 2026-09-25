@@ -61,36 +61,41 @@ function renderReceipt(sale, branding, currency = {}) {
   const receiptEl = document.getElementById('receipt');
   const storeName = (branding && branding.storeName) || (sale.branch ? sale.branch.name : t('receipt.defaultStoreName'));
   const logoUrl = branding && branding.logoPath ? 'file://' + branding.logoPath.replace(/\\/g, '/') : '';
+  const bundlesList = (Array.isArray(sale.bundles) ? sale.bundles : []).filter((b) => b && Array.isArray(b.items) && b.items.length);
+  // أي صنف مذكور داخل حزمة يأخذ شارة هدية 🎁 صغيرة على اسمه في السطر نفسه، بدل الصندوق
+  // الكبير القديم اللي كان يكرّر أسماء الأصناف من جديد ويطوّل الفاتورة بلا داعٍ.
+  const offerItemKeys = new Set();
+  for (const b of bundlesList) {
+    for (const oi of b.items) offerItemKeys.add(oi.product_id != null ? `id:${oi.product_id}` : `n:${oi.product_name}`);
+  }
+  const isOfferItem = (i) => offerItemKeys.has(i.product_id != null ? `id:${i.product_id}` : `n:${i.product_name}`);
+
+  // سطر واحد لكل صنف: الاسم (+الكمية إن زادت عن 1) في جهة، والمجموع في الجهة الأخرى —
+  // بدل سطرين منفصلين لكل صنف، فتختصر الفاتورة بمقدار النصف تقريباً في الطلبات الطويلة.
   const itemsHtml = sale.items
-    .map(
-      (i) => `
+    .map((i) => {
+      const qty = Number(i.quantity || 0);
+      const qtyPrefix = qty > 1 ? `<span class="receipt-item-qty">${qty}×</span> ` : '';
+      const unitNote = qty > 1 ? ` <span class="receipt-item-unit">(${fmt(i.unit_price)})</span>` : '';
+      const badge = isOfferItem(i) ? '<span class="receipt-item-offer-badge">🎁</span> ' : '';
+      return `
       <div class="receipt-item">
-        <div class="receipt-item-name">${escapeHtml(i.product_name)}</div>
-        <div class="receipt-item-row">
-          <span>${i.quantity} × ${fmt(i.unit_price)}</span>
-          <span>${fmt(i.line_total)}</span>
+        <div class="receipt-item-line">
+          <span class="receipt-item-name">${badge}${qtyPrefix}${escapeHtml(i.product_name)}${unitNote}</span>
+          <span class="receipt-item-total">${fmt(i.line_total)}</span>
         </div>
         ${i.notes ? `<div class="receipt-item-note">${escapeHtml(i.notes)}</div>` : ''}
-      </div>`
-    )
+      </div>`;
+    })
     .join('');
 
-  // العروض (Bundles) المطبَّقة: إطار واضح بكلمة "عرض" ومكوّنات كل عرض، ثم سطر خصم العروض في الإجمالي.
-  const offersHtml = (Array.isArray(sale.bundles) ? sale.bundles : [])
-    .filter((b) => b && Array.isArray(b.items) && b.items.length)
+  // العروض (Bundles) المطبَّقة: سطر واحد مختصر لكل عرض (🎁 اسم العرض + المبلغ الموفَّر) —
+  // أصناف الحزمة نفسها ظاهرة أعلاه في قائمة الأصناف مع شارة 🎁، فلا داعي لتكرارها هنا.
+  const offersHtml = bundlesList
     .map((b) => {
       const apps = Number(b.applications || 1);
-      const rows = b.items.map((oi) => `<div class="receipt-offer-item">${Number(oi.quantity || 0)} × ${escapeHtml(oi.product_name)}</div>`).join('');
-      // سعر العرض الفعلي = مجموع أسعار مكوّناته بأسعار الفاتورة − خصم العرض (يوضّح للزبون ما دفعه ومقدار التوفير).
-      const grossOffer = b.items.reduce((sum, oi) => {
-        const line = (sale.items || []).find((it) => (oi.product_id != null && Number(it.product_id) === Number(oi.product_id)) || String(it.product_name) === String(oi.product_name));
-        return sum + (line ? Number(line.unit_price || 0) * Number(oi.quantity || 0) : 0);
-      }, 0);
       const saved = Number(b.discount || 0);
-      const priceLine = grossOffer > 0 && saved > 0
-        ? `<div class="receipt-offer-price"><span>${t('receipt.offerPrice')}</span><span>${fmt(Math.max(0, grossOffer - saved))}</span></div><div class="receipt-offer-saved"><span>${t('receipt.offerSaved')}</span><span>${fmt(saved)}</span></div>`
-        : '';
-      return `<div class="receipt-offer"><div class="receipt-offer-title">*** ${t('receipt.offer')} *** ${escapeHtml(b.name)}${apps > 1 ? ` ×${apps}` : ''}</div>${rows}${priceLine}</div>`;
+      return `<div class="receipt-offer-line"><span>🎁 ${escapeHtml(b.name)}${apps > 1 ? ` ×${apps}` : ''}</span>${saved > 0 ? `<span>${t('receipt.offerSaved')} ${fmt(saved)}</span>` : ''}</div>`;
     })
     .join('');
 
@@ -111,7 +116,7 @@ function renderReceipt(sale, branding, currency = {}) {
 
   receiptEl.innerHTML = `
     <div class="receipt-header">
-      ${logoUrl ? `<img id="receiptLogo" class="receipt-logo" src="${escapeHtml(logoUrl)}" alt="" />` : ''}
+      ${logoUrl ? `<img id="receiptLogo" class="receipt-logo" src="${escAttr(logoUrl)}" alt="" />` : ''}
       <div class="receipt-brand">${escapeHtml(storeName)}</div>
       <div class="receipt-meta">${t('receipt.invoiceNumber')} ${escapeHtml(sale.invoice_number || String(sale.id))}${sale.table_name ? ` — ${escapeHtml(sale.table_name)}` : ''}</div>
       ${currency.taxNumber ? `<div class="receipt-meta">${t('receipt.taxNumber')}: ${escapeHtml(currency.taxNumber)}</div>` : ''}

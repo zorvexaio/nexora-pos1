@@ -252,7 +252,7 @@ label { display: block; font-size: 12.5px; font-weight: 700; color: var(--text-s
    إحساساً "متجاوباً" احترافياً يليق بشاشة بيع سريعة. */
 .product-card {
   background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
-  padding: 9px 10px; cursor: pointer; transition: transform .14s ease, box-shadow .14s ease, border-color .14s ease;
+  padding: 10px 11px; cursor: pointer; transition: transform .14s ease, box-shadow .14s ease, border-color .14s ease;
   display: flex; flex-direction: column; gap: 6px; box-shadow: var(--shadow-sm);
   position: relative; text-align: start; min-height: 88px; overflow: hidden;
 }
@@ -263,30 +263,27 @@ label { display: block; font-size: 12.5px; font-weight: 700; color: var(--text-s
 .product-card:hover { transform: translateY(-3px); box-shadow: var(--shadow-lg); border-color: var(--primary-border); }
 .product-card:hover::after { box-shadow: inset 0 0 0 1px var(--primary-border); }
 .product-card:active { transform: translateY(-1px) scale(.97); box-shadow: var(--shadow); }
-.card-icon {
-  width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center;
-  font-size: 15px; color: #fff; box-shadow: inset 0 0 0 1px rgba(255,255,255,.22), 0 3px 8px rgba(23,26,46,.14); flex-shrink: 0;
-}
+/* لا رمز/حرف أعلى البطاقة بعد الآن — اسم المنتج هو العنصر الأساسي والأوضح على الزر،
+   خصوصاً على شاشات اللمس الصغيرة حيث كانت الأيقونة تشغل مساحة والاسم يضيع. */
 .product-card .name {
-  font-weight: 800; font-size: 12.5px; color: var(--text); line-height: 1.3; flex: 1; letter-spacing: -.005em;
-  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  font-weight: 900; font-size: 15.5px; color: var(--text); line-height: 1.28; flex: 1; letter-spacing: -.005em;
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
 }
 .card-meta-row { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-top: auto; flex-wrap: wrap; }
 .price-badge {
-  background: var(--primary-light); color: var(--primary); font-weight: 900; font-size: 12px;
+  background: var(--primary-light); color: var(--primary); font-weight: 900; font-size: 13px;
   padding: 3px 9px; border-radius: 999px; white-space: nowrap; font-variant-numeric: tabular-nums;
 }
-.product-card .stock { font-size: 9.5px; color: var(--text-faint); font-weight: 700; white-space: nowrap; }
+.product-card .stock { font-size: 10px; color: var(--text-faint); font-weight: 700; white-space: nowrap; }
 .product-card .stock.low { color: var(--danger); }
-.variant-badge { background: var(--brand-gold-soft); color: var(--brand-gold); font-size: 9px; font-weight: 800; padding: 1px 5px; border-radius: 6px; }
+.variant-badge { background: var(--brand-gold-soft); color: var(--brand-gold); font-size: 9.5px; font-weight: 800; padding: 1px 5px; border-radius: 6px; }
 
-/* بطاقة الحزمة (العرض): نفس شكل بطاقة المنتج العادية + شارة "عرض" صغيرة في الزاوية
-   وحدّ علوي ذهبي دقيق، فتبقى مفهومة كخيار إضافي جذّاب لا كحالة استثنائية. */
+/* بطاقة الحزمة (العرض): بلا أيقونة صندوق كبيرة أيضاً — شارة "🎁 عرض" صغيرة في الزاوية
+   وحدّ علوي ذهبي دقيق تكفي لتمييزها، والاسم يبقى هو الأبرز كباقي البطاقات. */
 .bundle-card { border-color: var(--brand-gold); border-top: 3px solid var(--brand-gold); padding-top: 7px; }
-.bundle-card .card-icon { background: linear-gradient(135deg, var(--brand-gold), #e6c876); }
 .bundle-offer-badge {
   position: absolute; top: -1px; inset-inline-end: 10px; background: var(--brand-gold); color: #fff;
-  font-size: 9px; font-weight: 800; padding: 3px 8px 4px; border-radius: 0 0 7px 7px;
+  font-size: 9.5px; font-weight: 800; padding: 3px 8px 4px; border-radius: 0 0 7px 7px;
   box-shadow: 0 3px 10px rgba(200,162,74,.4); letter-spacing: .02em;
 }
 .bundle-card .price-badge { background: var(--brand-gold-soft); color: var(--brand-gold); }
@@ -821,8 +818,11 @@ table.products-table, table.audit-table {
 .receipt-customer-name { font-size: 20px; font-weight: 800; color: #111827; margin: 4px 0; word-break: break-word; }
 .receipt-divider { border-top: 1px dashed #d1d5db; margin: 10px 0; }
 .receipt-items { display: flex; flex-direction: column; gap: 8px; }
-.receipt-item-name { font-weight: 600; }
-.receipt-item-row { display: flex; justify-content: space-between; color: #4b5563; font-size: 14px; }
+.receipt-item-line { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.receipt-item-name { font-weight: 700; flex: 1; min-width: 0; }
+.receipt-item-qty, .receipt-item-unit { font-weight: 500; color: #4b5563; }
+.receipt-item-total { font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.receipt-item-offer-badge { font-weight: 400; }
 .receipt-item-note { color: #4b5563; font-size: 14px; font-style: italic; }
 /* ملاحظة الطلب العامة على الفاتورة — أبرز من ملاحظة الصنف لأنها تخص الطلب كله. */
 .receipt-order-note { margin: 8px 0; padding: 7px 9px; background: var(--warning-light); border: 1.5px solid var(--warning-border); border-radius: 6px; color: var(--warning); font-weight: 700; font-size: 14.5px; line-height: 1.5; }
@@ -845,9 +845,10 @@ table.products-table, table.audit-table {
 .kitchen-order-note { margin: 8px 0; padding: 8px 10px; background: var(--warning-light); border: 2px solid var(--warning-border); border-radius: 6px; color: var(--warning); font-weight: 800; font-size: 15px; line-height: 1.5; }
 /* العروض (Bundles) على تذكرة المطبخ والفاتورة: إطار أسود سميك وعنوان بكلمة "عرض" يظهر على الطابعات الحرارية
    (نستخدم نجوماً نصية بدل الرموز التعبيرية لأن بعض الطابعات لا تطبعها). */
-.kitchen-offer, .receipt-offer { margin: 6px 0; padding: 4px 6px; border: 2px solid #000; border-radius: 4px; }
-.kitchen-offer-title, .receipt-offer-title { text-align: center; font-weight: 800; padding-bottom: 3px; margin-bottom: 4px; border-bottom: 1.5px dashed #000; }
-.receipt-offer-item { font-weight: 700; }
+.kitchen-offer { margin: 6px 0; padding: 4px 6px; border: 2px solid #000; border-radius: 4px; }
+.kitchen-offer-title { text-align: center; font-weight: 800; padding-bottom: 3px; margin-bottom: 4px; border-bottom: 1.5px dashed #000; }
+/* سطر العرض المختصر على فاتورة الزبون: 🎁 اسم العرض + المبلغ الموفَّر، بلا صندوق. */
+.receipt-offer-line { display: flex; justify-content: space-between; gap: 8px; font-weight: 700; margin: 2px 0; }
 .kitchen-delivery-time { margin: 6px 0; padding: 5px 10px; background: var(--info-light); border: 1px solid var(--info-border); border-radius: 6px; color: var(--info); font-weight: 700; font-size: 13.5px; }
 
 /* تصحيح طريقة الدفع (مودال تفاصيل الفاتورة بالتقارير) — ميزة حساسة، لذا بتصميم
@@ -1100,21 +1101,142 @@ table.sticky-head thead th{position:sticky;top:0;background:var(--surface-soft);
 @media print{.receipt-body[data-paper-width='58'] .receipt{width:58mm!important}.receipt-body[data-paper-width='80'] .receipt{width:80mm!important}.receipt-body[data-paper-width='58'] .kitchen-ticket{width:58mm!important}.receipt-body[data-paper-width='80'] .kitchen-ticket{width:80mm!important}.kitchen-ticket{padding-bottom:0!important;margin-bottom:0!important}.kitchen-ticket .receipt-footer{display:none!important}.kitchen-ticket .receipt-divider:last-child{display:none!important}}
 
 /* ===== فاتورة أوضح: خطوط أكبر + إبراز العروض (v0.52.18) ===== */
-.receipt-body .receipt { font-size: 17px; line-height: 1.45; }
-.receipt-body .receipt-brand { font-size: 22px; }
-.receipt-body .receipt-meta { font-size: 15.5px; }
-.receipt-body .receipt-item-name { font-size: 17.5px; font-weight: 800; }
-.receipt-body .receipt-item-row { font-size: 16.5px; font-weight: 600; }
-.receipt-body .receipt-item-note { font-size: 15.5px; }
-.receipt-body .receipt-row { font-size: 16.5px; }
-.receipt-body .receipt-total { font-size: 23px; }
-.receipt-body .receipt-footer { font-size: 17px; }
-.receipt-body[data-paper-width='58'] .receipt { font-size: 15px; }
-.receipt-body[data-paper-width='58'] .receipt-item-name { font-size: 15.5px; }
-.receipt-body[data-paper-width='58'] .receipt-item-row, .receipt-body[data-paper-width='58'] .receipt-row { font-size: 14.5px; }
-.receipt-body[data-paper-width='58'] .receipt-total { font-size: 19px; }
-.receipt-body .receipt-offer { margin: 10px 0; padding: 6px 8px; border: 3px double #000; border-radius: 4px; }
-.receipt-body .receipt-offer-title { font-size: 18.5px; font-weight: 900; text-align: center; padding-bottom: 4px; margin-bottom: 5px; border-bottom: 2px dashed #000; }
-.receipt-body .receipt-offer-item { font-size: 16.5px; font-weight: 700; }
-.receipt-body .receipt-offer-price, .receipt-body .receipt-offer-saved { display: flex; justify-content: space-between; font-size: 17px; font-weight: 800; margin-top: 4px; padding-top: 3px; border-top: 1px solid #000; }
-.receipt-body .receipt-offer-saved { border-top: 0; margin-top: 0; padding-top: 0; font-weight: 700; }
+.receipt-body .receipt { font-size: 19px; line-height: 1.45; }
+.receipt-body .receipt-brand { font-size: 25px; }
+.receipt-body .receipt-meta { font-size: 17.5px; }
+.receipt-body .receipt-item-name { font-size: 20px; font-weight: 800; }
+.receipt-body .receipt-item-qty, .receipt-body .receipt-item-unit { font-size: 17.5px; }
+.receipt-body .receipt-item-offer-badge { font-size: 17px; }
+.receipt-body .receipt-item-total { font-size: 20px; font-weight: 800; }
+.receipt-body .receipt-item-note { font-size: 17.5px; }
+.receipt-body .receipt-offer-line { font-size: 18.5px; }
+.receipt-body .receipt-row { font-size: 19px; }
+.receipt-body .receipt-total { font-size: 26px; }
+.receipt-body .receipt-footer { font-size: 19px; }
+.receipt-body[data-paper-width='58'] .receipt { font-size: 16.5px; }
+.receipt-body[data-paper-width='58'] .receipt-item-name { font-size: 17.5px; }
+.receipt-body[data-paper-width='58'] .receipt-item-total { font-size: 17.5px; }
+.receipt-body[data-paper-width='58'] .receipt-item-qty, .receipt-body[data-paper-width='58'] .receipt-item-unit { font-size: 15.5px; }
+.receipt-body[data-paper-width='58'] .receipt-row { font-size: 16px; }
+.receipt-body[data-paper-width='58'] .receipt-offer-line { font-size: 16px; }
+.receipt-body[data-paper-width='58'] .receipt-total { font-size: 21px; }
+
+.kitchen-ticket { font-size: 19px; line-height: 1.4; }
+.kitchen-ticket .kitchen-item-name { font-size: 20px; font-weight: 800; }
+.kitchen-ticket .kitchen-item-qty { font-size: 22px; font-weight: 900; }
+.kitchen-ticket .kitchen-item-note { font-size: 16.5px; }
+.kitchen-ticket .kitchen-order-note { font-size: 18px; }
+.kitchen-ticket .kitchen-delivery-time { font-size: 17px; }
+.kitchen-ticket .receipt-meta, .kitchen-ticket .receipt-brand { font-size: 19px; }
+.kitchen-ticket .kitchen-offer-title { font-size: 21px; font-weight: 900; }
+.receipt-body[data-paper-width='58'] .kitchen-ticket { font-size: 16.5px; }
+.receipt-body[data-paper-width='58'] .kitchen-ticket .kitchen-item-name { font-size: 17.5px; }
+.receipt-body[data-paper-width='58'] .kitchen-ticket .kitchen-item-qty { font-size: 19px; }
+
+/* ===================================================================
+   شاشة "الكاشير السريع" — بيع باللمس فقط بلا كيبورد (زبون بقالة/سوبرماركت):
+   لوحة أرقام كبيرة لإدخال الكود يدوياً + شبكة صور للأصناف + سلة + دفع.
+   كل الأزرار هنا أكبر من المعتاد لأنها مصمَّمة لأصابع تلمس شاشة مباشرة،
+   لا لمؤشر فأرة دقيق. =================================================== */
+.qc-page { padding: 14px 18px; height: calc(100vh - 56px); overflow: hidden; }
+.qc-layout { display: flex; gap: 14px; height: 100%; }
+
+.qc-keypad-panel {
+  width: 260px; flex-shrink: 0; background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 14px; display: flex; flex-direction: column; gap: 12px;
+  box-shadow: var(--shadow-sm); overflow-y: auto;
+}
+.qc-code-display-wrap { display: flex; flex-direction: column; gap: 6px; }
+.qc-code-display-wrap label { font-size: 13px; font-weight: 700; color: var(--text-soft); }
+.qc-code-display {
+  width: 100%; box-sizing: border-box; font-size: 24px; font-weight: 900; text-align: center;
+  padding: 12px 8px; border-radius: 12px; border: 2px solid var(--line-strong); background: var(--surface-soft);
+  color: var(--text); font-variant-numeric: tabular-nums; letter-spacing: .02em;
+}
+.qc-keypad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.qc-key {
+  height: 58px; border-radius: 12px; border: 1px solid var(--line-strong); background: var(--surface-soft);
+  font-size: 22px; font-weight: 800; color: var(--text); cursor: pointer; box-shadow: var(--shadow-sm);
+  transition: transform .08s ease, background .12s ease;
+}
+.qc-key:active { transform: scale(.94); background: var(--primary-light); }
+.qc-key-clear { font-size: 15px; color: var(--danger); }
+.qc-key-back { font-size: 20px; }
+.qc-qty-row { display: flex; align-items: center; justify-content: space-between; font-weight: 800; font-size: 14px; }
+.qc-qty-stepper { display: flex; align-items: center; gap: 10px; background: var(--surface-soft); border: 1px solid var(--line-strong); border-radius: 999px; padding: 4px 6px; }
+.qc-qty-stepper-sm { padding: 2px 4px; gap: 6px; }
+.qc-qty-btn {
+  width: 40px; height: 40px; border-radius: 50%; border: 0; background: var(--primary); color: #fff;
+  font-size: 20px; font-weight: 900; cursor: pointer; display: grid; place-items: center; line-height: 1;
+}
+.qc-qty-stepper-sm .qc-qty-btn { width: 28px; height: 28px; font-size: 15px; }
+.qc-qty-btn:active { transform: scale(.9); }
+.qc-qty-value { min-width: 28px; text-align: center; font-weight: 900; font-size: 17px; font-variant-numeric: tabular-nums; }
+.qc-add-btn {
+  height: 62px; border-radius: 14px; border: 0; background: var(--success, #16a34a); color: #fff;
+  font-size: 18px; font-weight: 900; cursor: pointer; box-shadow: 0 10px 24px rgba(22,163,74,.35);
+}
+.qc-add-btn:active { transform: scale(.97); }
+.qc-code-msg { text-align: center; font-weight: 800; padding: 8px; border-radius: 10px; }
+.qc-code-msg.error { background: #fef2f2; color: var(--danger); }
+.qc-code-msg.hidden { display: none; }
+
+.qc-products-panel { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 10px; overflow: hidden; }
+.qc-category-tabs .category-tab { font-size: 14.5px; padding: 10px 18px; }
+.qc-products-grid {
+  flex: 1; overflow-y: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 10px; align-content: start;
+}
+.qc-tile { cursor: pointer; padding: 0; overflow: hidden; }
+.qc-tile-image { display: flex; flex-direction: column; gap: 0; }
+.qc-tile-img { width: 100%; aspect-ratio: 1 / 1; object-fit: cover; display: block; }
+.qc-tile-price {
+  position: absolute; top: 8px; inset-inline-end: 8px; box-shadow: 0 4px 10px rgba(0,0,0,.18);
+}
+.qc-tile-image { position: relative; }
+.qc-tile-caption { padding: 8px 9px; font-size: 14px; text-align: center; }
+.qc-empty-hint { grid-column: 1 / -1; text-align: center; color: var(--text-faint); font-weight: 700; padding: 30px 0; }
+
+.qc-cart-panel { width: 280px; flex-shrink: 0; }
+.qc-cart-item { padding: 8px 10px; }
+.qc-cart-item-name, .cart-item-name { font-weight: 800; font-size: 14px; margin-bottom: 6px; }
+.qc-cart-item-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.qc-cart-item-total { font-weight: 900; font-variant-numeric: tabular-nums; }
+.qc-cart-remove { background: transparent; border: 0; font-size: 17px; cursor: pointer; padding: 4px 6px; }
+.qc-cart-summary { padding-top: 6px; }
+.qc-total-row { display: flex; justify-content: space-between; align-items: baseline; font-size: 18px; font-weight: 900; margin-bottom: 10px; }
+.qc-total-row span:last-child { font-size: 24px; color: var(--primary); }
+
+/* شاشة الدفع: تظهر فوق كل شيء، وتُبنى بنفس منطق لوحة الأرقام حتى الدفع أيضاً بلا كيبورد. */
+.qc-payment-overlay {
+  position: fixed; inset: 0; background: rgba(15,17,32,.55); display: flex; align-items: center; justify-content: center; z-index: 60;
+}
+.qc-payment-overlay.hidden { display: none; }
+.qc-payment-box {
+  width: 360px; max-width: 92vw; background: var(--surface); border-radius: 18px; padding: 18px;
+  box-shadow: var(--shadow-lg); display: flex; flex-direction: column; gap: 12px; max-height: 92vh; overflow-y: auto;
+}
+.qc-payment-back { align-self: flex-start; background: transparent; border: 0; font-weight: 800; font-size: 14px; color: var(--text-soft); cursor: pointer; }
+.qc-payment-total-row { display: flex; justify-content: space-between; align-items: baseline; font-size: 16px; font-weight: 800; }
+.qc-payment-total-row span:last-child { font-size: 28px; color: var(--primary); font-variant-numeric: tabular-nums; }
+.qc-method-tabs { display: flex; gap: 8px; }
+.qc-method-tab {
+  flex: 1; height: 48px; border-radius: 12px; border: 2px solid var(--line-strong); background: var(--surface-soft);
+  font-size: 15px; font-weight: 800; color: var(--text-soft); cursor: pointer;
+}
+.qc-method-tab.active { border-color: var(--primary); color: var(--primary); background: var(--primary-light); }
+.qc-change-row { display: flex; justify-content: space-between; font-size: 15px; font-weight: 800; padding-top: 4px; }
+.qc-change-row span:last-child { color: var(--success, #16a34a); font-size: 18px; }
+.qc-confirm-pay-btn { margin-top: 4px; }
+
+@media (prefers-color-scheme: dark) {
+  .qc-code-msg.error { background: rgba(220,38,38,.12); }
+}
+
+/* شاشة صغيرة (تابلت 10 إنش وما دونه): الأعمدة الثلاثة تضيق قليلاً بدل أن تفيض. */
+@media (max-width: 900px) {
+  .qc-layout { flex-direction: column; height: auto; overflow: visible; }
+  .qc-page { height: auto; overflow: visible; }
+  .qc-keypad-panel, .qc-cart-panel { width: 100%; }
+  .qc-products-grid { max-height: 50vh; }
+}

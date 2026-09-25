@@ -136,7 +136,7 @@ async function loadDeliveryPersonSuggestions() {
   try {
     const names = await window.api.sales.knownDeliveryPersons();
     const list = document.getElementById('deliveryPersonList');
-    if (list) list.innerHTML = names.map((n) => `<option value="${escapeHtml(n)}"></option>`).join('');
+    if (list) list.innerHTML = names.map((n) => `<option value="${escAttr(n)}"></option>`).join('');
   } catch (_) { /* اقتراح تكميلي فقط، لا نزعج المستخدم لو فشل */ }
 }
 
@@ -443,7 +443,7 @@ async function initCategoryTabs() {
       <button type="button" class="category-tab category-tab-offers" data-cat="${OFFERS_CATEGORY_ID}">
         <span class="category-tab-thumb-wrap">
           ${offersImagePath
-            ? `<img class="category-tab-thumb" src="${escapeHtml(offersImagePath)}" alt="" loading="lazy" draggable="false" />`
+            ? `<img class="category-tab-thumb" src="${escAttr(offersImagePath)}" alt="" loading="lazy" draggable="false" />`
             : `<span class="category-tab-icon" style="background:linear-gradient(135deg, var(--brand-gold), #e6c876)">📦</span>`}
           ${hasUnseenOffer ? '<span class="offer-new-dot" title="عرض جديد"></span>' : ''}
         </span>
@@ -453,7 +453,7 @@ async function initCategoryTabs() {
     const tabs = categories.map((c) => `
       <button type="button" class="category-tab" data-cat="${c.id}">
         ${c.image_path
-          ? `<img class="category-tab-thumb" src="${escapeHtml(c.image_path)}" alt="" loading="lazy" draggable="false" />`
+          ? `<img class="category-tab-thumb" src="${escAttr(c.image_path)}" alt="" loading="lazy" draggable="false" />`
           : `<span class="category-tab-icon" style="background:${categoryChipGradient(c.id ?? c.name)}">${escapeHtml(guessItemIcon(c.name))}</span>`}
         <span class="category-tab-label">${escapeHtml(c.name)}</span>
       </button>
@@ -717,12 +717,11 @@ function renderProducts() {
     card.dataset.bundleId = String(b.id);
     const itemsSummary = b.items.map((i) => `${i.product_name} ×${i.quantity}`).join('، ');
     card.innerHTML = `
-      <span class="bundle-offer-badge">${ts('عرض')}</span>
-      <div class="card-icon" style="background:linear-gradient(135deg, var(--brand-gold), #e6c876)">📦</div>
+      <span class="bundle-offer-badge">🎁 ${ts('عرض')}</span>
       <div class="name">${escapeHtml(b.name)}</div>
       <div class="card-meta-row">
         <span class="price-badge">${bundleUnitPrice(b).toFixed(2)}</span>
-        <span class="stock" title="${escapeHtml(itemsSummary)}">${escapeHtml(itemsSummary)}</span>
+        <span class="stock" title="${escAttr(itemsSummary)}">${escapeHtml(itemsSummary)}</span>
       </div>
     `;
     fragment.appendChild(card);
@@ -736,7 +735,6 @@ function renderProducts() {
     card.dataset.productId = String(p.id);
     const lowStock = p.track_inventory && p.stock <= (p.min_quantity || 0);
     card.innerHTML = `
-      <div class="card-icon" style="background:${categoryChipGradient(p.category_id ?? p.name)}">${escapeHtml(guessItemIcon(p.name))}</div>
       <div class="name">${escapeHtml(p.name)}${p.variant_count ? ` <span class="variant-badge">${t('pos.selectBadge')}</span>` : ''}</div>
       <div class="card-meta-row">
         <span class="price-badge">${p.price.toFixed(2)}</span>
@@ -757,6 +755,22 @@ function bundleUnitPrice(bundle) {
 }
 
 function addBundleToCart(bundle) {
+  // نتحقق أولاً من كل أصناف الحزمة دون تعديل السلة — إذا كان أي صنف سيتجاوز
+  // 9999 (سواء بسبب كمية موجودة مسبقاً أو تكرار الصنف داخل الحزمة نفسها)
+  // نرفض الإضافة بالكامل بدل بناء سلة جزئية يرفضها الخادم لاحقاً عند الدفع.
+  const pendingQuantities = new Map();
+  for (const item of bundle.items) {
+    const existing = cart.find((i) => i.productId === item.product_id && !i.notes);
+    const currentQuantity = pendingQuantities.has(item.product_id)
+      ? pendingQuantities.get(item.product_id)
+      : (existing?.quantity ?? 0);
+    if (!canAccumulateQuantity(currentQuantity, item.quantity)) {
+      showToast(quantityBufferText('pos.qtyAccumulationMaximum', { max: MAX_QUANTITY.toLocaleString() }), 'error');
+      return;
+    }
+    pendingQuantities.set(item.product_id, currentQuantity + item.quantity);
+  }
+
   for (const item of bundle.items) {
     const product = products.find((p) => p.id === item.product_id);
     const existing = cart.find((i) => i.productId === item.product_id && !i.notes);

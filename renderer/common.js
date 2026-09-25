@@ -36,6 +36,14 @@ function escapeHtml(str) {
   return div.innerHTML;
 }
 
+// escapeHtml() يضمن الأمان داخل عقدة نص فقط (بين وسمين). لا يضمن الأمان داخل قيمة attribute
+// (مثل src="${...}") لأنه لا يهرّب علامة الاقتباس نفسها ("). استخدم هذي الدالة تحديداً كل ما
+// كانت القيمة الهاربة موضوعة داخل attribute بقالب HTML string، حتى لو المصدر يبدو موثوقاً
+// حالياً (مسار ملف من النظام، معرّف رقمي) — دفاعاً عن أي تغيير مستقبلي بمصدر القيمة.
+function escAttr(str) {
+  return escapeHtml(str).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
 // دالة عامة لتأخير تنفيذ الاستدعاءات المتكررة (مثال: البحث أثناء الكتابة)
 // كانت معرّفة بنفس السطور حرفياً داخل 6 ملفات مختلفة — وُحّدت هنا.
 function debounce(fn, ms) {
@@ -102,8 +110,16 @@ async function guardPage(allowedRoles, redirectPath, options = {}) {
 
   const branch = await window.api.branches.current();
   applyBusinessVisibility(branch);
+  await applyQuickCashierVisibility();
 
   return user;
+}
+
+// يُخفي رابط "الكاشير السريع" عن أي محل لم يُفعِّله المدير من الإعدادات (مطفأ افتراضياً).
+async function applyQuickCashierVisibility() {
+  let enabled = false;
+  try { enabled = (await window.api.posMode.quickCashierEnabled()).enabled === true; } catch (_) { /* نتعامل معه كمطفأ إن تعذّرت القراءة */ }
+  document.querySelectorAll('[data-setting="quickCashier"]').forEach((el) => { el.style.display = enabled ? '' : 'none'; });
 }
 
 // Electron لا يدعم window.prompt() إطلاقاً (يرمي دائماً خطأ "prompt() is not

@@ -1,0 +1,65 @@
+<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: file:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-src 'none';"><meta charset="UTF-8"><title data-i18n="quickCashier.title">الكاشير السريع</title><link rel="stylesheet" href="../style.css"></head><body><div class="app"><header class="topbar"><div class="brand" data-i18n="app.brand">Nexora POS</div><nav class="nav-links"><a href="../index.html" data-i18n="nav.pos">الكاشير</a><a href="quick-cashier.html" class="active" data-setting="quickCashier" data-i18n="nav.quickCashier">الكاشير السريع</a><a href="tables.html" data-business="restaurant" data-i18n="nav.tables">الطاولات</a><a href="shift.html" data-i18n="nav.cashSession">الصندوق</a><a href="returns.html" data-roles="admin,manager" data-i18n="nav.returns">مرتجعات</a><a href="products.html" data-roles="admin,manager" data-i18n="nav.products">المنتجات</a><a href="bundles.html" data-roles="admin,manager" data-i18n="nav.bundles">العروض</a><a href="inventory.html" data-roles="admin,manager" data-i18n="nav.inventory">المخزون</a><a href="customers.html" data-roles="admin,manager" data-i18n="nav.customers">العملاء</a><a href="suppliers.html" data-roles="admin,manager" data-i18n="nav.suppliers">الموردون والشراء</a><a href="reports.html" data-roles="admin,manager" data-i18n="nav.reports">التقارير</a><a href="accounting.html" data-roles="admin" data-i18n="nav.accounting">المحاسبة</a><a href="audit.html" data-roles="admin" data-i18n="nav.audit">سجل التدقيق</a><a href="payroll.html" data-roles="admin" data-i18n="nav.payroll">الرواتب</a><a href="users.html" data-roles="admin" data-i18n="nav.users">المستخدمون</a><a href="settings.html" data-roles="admin" data-i18n="nav.settings">الإعدادات</a></nav><div class="topbar-right"><select id="langSwitcher" class="lang-switcher"><option value="ar">AR</option><option value="tr">TR</option><option value="en">EN</option></select><div class="branch-name" id="branchName">—</div><div class="user-info"><span id="currentUserName"></span><span id="currentUserRoleBadge" class="role-badge"></span><button id="logoutBtn" class="btn btn-secondary btn-sm" data-i18n="common.logout">خروج</button></div></div></header><div class="qc-page"><div class="qc-layout">
+  <aside class="qc-keypad-panel">
+    <div class="qc-code-display-wrap">
+      <label for="qcCodeInput" data-i18n="quickCashier.codeLabel">أدخل كود الصنف</label>
+      <input id="qcCodeInput" class="qc-code-display" type="text" inputmode="none" autocomplete="off" data-i18n-placeholder="quickCashier.codePlaceholder" placeholder="اكتب الرقم أو امسح الباركود...">
+    </div>
+    <div id="qcKeypad" class="qc-keypad">
+      <button type="button" class="qc-key" data-key="1">1</button>
+      <button type="button" class="qc-key" data-key="2">2</button>
+      <button type="button" class="qc-key" data-key="3">3</button>
+      <button type="button" class="qc-key" data-key="4">4</button>
+      <button type="button" class="qc-key" data-key="5">5</button>
+      <button type="button" class="qc-key" data-key="6">6</button>
+      <button type="button" class="qc-key" data-key="7">7</button>
+      <button type="button" class="qc-key" data-key="8">8</button>
+      <button type="button" class="qc-key" data-key="9">9</button>
+      <button type="button" class="qc-key qc-key-clear" data-key="clear" data-i18n="quickCashier.clearBtn">مسح</button>
+      <button type="button" class="qc-key" data-key="0">0</button>
+      <button type="button" class="qc-key qc-key-back" data-key="back">⌫</button>
+    </div>
+    <div class="qc-qty-row">
+      <span data-i18n="quickCashier.qtyLabel">الكمية</span>
+      <div class="qc-qty-stepper">
+        <button type="button" id="qcQtyMinus" class="qc-qty-btn">−</button>
+        <span id="qcQtyValue" class="qc-qty-value">1</span>
+        <button type="button" id="qcQtyPlus" class="qc-qty-btn">+</button>
+      </div>
+    </div>
+    <button type="button" id="qcAddBtn" class="qc-add-btn" data-i18n="quickCashier.addBtn">➕ إضافة للسلة</button>
+    <div id="qcCodeMsg" class="qc-code-msg hidden"></div>
+  </aside>
+
+  <main class="qc-products-panel">
+    <div id="qcCategoryTabs" class="category-tabs qc-category-tabs"></div>
+    <div id="qcProductsGrid" class="products-grid qc-products-grid" aria-live="polite"></div>
+  </main>
+
+  <aside class="cart-panel qc-cart-panel" aria-label="السلة">
+    <div id="qcCartItems" class="cart-items qc-cart-items" aria-live="polite"></div>
+    <div class="qc-cart-summary">
+      <div class="qc-total-row"><span data-i18n="quickCashier.total">الإجمالي</span><span id="qcCartTotal">0.00</span></div>
+      <button type="button" id="qcCheckoutBtn" class="checkout-btn" disabled data-i18n="quickCashier.confirmPay">تأكيد الدفع</button>
+    </div>
+  </aside>
+</div>
+
+<div id="qcPaymentOverlay" class="qc-payment-overlay hidden">
+  <div class="qc-payment-box">
+    <button type="button" id="qcPaymentBack" class="qc-payment-back" data-i18n="quickCashier.back">← رجوع</button>
+    <div class="qc-payment-total-row"><span data-i18n="quickCashier.total">الإجمالي</span><span id="qcPayTotal">0.00</span></div>
+    <div class="qc-method-tabs">
+      <button type="button" id="qcCashTab" class="qc-method-tab active" data-i18n="quickCashier.cashBtn">نقداً</button>
+      <button type="button" id="qcCardTab" class="qc-method-tab" data-i18n="quickCashier.cardBtn">بطاقة</button>
+    </div>
+    <div id="qcCashSection">
+      <div class="qc-code-display-wrap">
+        <label for="qcCashInput" data-i18n="quickCashier.received">المبلغ المستلم</label>
+        <input id="qcCashInput" class="qc-code-display" type="text" inputmode="none" autocomplete="off">
+      </div>
+      <div id="qcPayKeypad" class="qc-keypad"></div>
+      <div class="qc-change-row"><span data-i18n="quickCashier.change">الباقي</span><span id="qcChangeValue">0.00</span></div>
+    </div>
+    <button type="button" id="qcConfirmPayBtn" class="qc-add-btn qc-confirm-pay-btn" data-i18n="quickCashier.confirmPay">تأكيد الدفع</button>
+  </div>
+</div></div></div><script src="../i18n.js"></script><script src="../common.js"></script><script src="quick-cashier.js"></script></body></html>

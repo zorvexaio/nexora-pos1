@@ -52,7 +52,7 @@ function fillActionFilter() {
   const uniqueActions = [...new Set(allLogs.map((l) => l.action))].sort();
   actionFilter.innerHTML =
     '<option value="">كل أنواع العمليات</option>' +
-    uniqueActions.map((a) => `<option value="${escapeHtml(a)}">${escapeHtml(actionLabel(a))}</option>`).join('');
+    uniqueActions.map((a) => `<option value="${escAttr(a)}">${escapeHtml(actionLabel(a))}</option>`).join('');
   actionFilter.value = currentValue;
 }
 
@@ -61,7 +61,7 @@ function fillUserFilter() {
   const uniqueUsers = [...new Set(allLogs.map((l) => l.user_name).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'ar'));
   userFilter.innerHTML =
     '<option value="">كل الموظفين</option>' +
-    uniqueUsers.map((u) => `<option value="${escapeHtml(u)}">${escapeHtml(u)}</option>`).join('');
+    uniqueUsers.map((u) => `<option value="${escAttr(u)}">${escapeHtml(u)}</option>`).join('');
   userFilter.value = currentValue;
 }
 

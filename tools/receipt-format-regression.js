@@ -67,7 +67,7 @@ ok(!html.includes('receipt.pricesIncludeTax'), 'no tax -> no inclusive note');
 // Minor units
 html = render({ ...base, subtotal: 2997, tax_total: 150, grand_total: 3147, cash_amount: 3200, change_due: 53,
   items: [{ product_name: 'A', quantity: 3, unit_price: 999, line_total: 2997, tax_rate: 5, tax_inclusive: 0 }] }, { minorUnit: 0, base: 'JPY' });
-ok(html.includes('3 × 999<') && row(html, 'common.tax', '150') && html.includes('3147 JPY') && !/\d\.00/.test(html), '0-decimal currency prints whole numbers (no .00)');
+ok(html.includes('3×') && html.includes('(999)') && row(html, 'common.tax', '150') && html.includes('3147 JPY') && !/\d\.00/.test(html), '0-decimal currency prints whole numbers (no .00)');
 html = render({ ...base, subtotal: 93.303, tax_total: 4.665, grand_total: 97.968, cash_amount: 97.968,
   items: [{ product_name: 'A', quantity: 3, unit_price: 31.101, line_total: 93.303, tax_rate: 5, tax_inclusive: 0 }] }, { minorUnit: 3, base: 'KWD' });
 ok(row(html, 'common.subtotal', '93.303') && row(html, 'common.tax', '4.665') && html.includes('97.968 KWD'), '3-decimal currency prints 3 decimals');

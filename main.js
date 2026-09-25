@@ -1934,6 +1934,13 @@ ipcMain.handle('receipt:barcodeEnabled', (_event, payload) => {
   return { enabled: db.getReceiptBarcodeEnabled() };
 });
 
+ipcMain.handle('posMode:quickCashierEnabled', (_event, payload) => {
+  if (payload && payload.save != null) { requireAdmin(); return db.setQuickCashierEnabled(payload.save); }
+  requireAccountReady();
+  return { enabled: db.getQuickCashierEnabled() };
+});
+
+
 ipcMain.handle('pos:offersCategoryEnabled', (_event, payload) => {
   if (payload && payload.save != null) { requireAdmin(); return db.setOffersCategoryEnabled(payload.save); }
   requireAccountReady();
@@ -1956,6 +1963,13 @@ function consumeApprovalGrant(grantId) {
   return grant;
 }
 
+// تسعير مسبق قبل الدفع (بلا إنشاء بيع فعلي) — تستخدمه شاشة الكاشير السريع لتعرف
+// الإجمالي الحقيقي شامل الضريبة قبل فتح شاشة الدفع، فيتطابق مع ما سيُحفظ فعلياً.
+ipcMain.handle('sale:quote', (_event, payload) => {
+  requireAccountReady();
+  return db.quoteSale((payload && payload.items) || [], db.getCurrentBranch().id);
+});
+
 // نُلحق هوية المستخدم الحالي من العملية الرئيسية دائماً (لا نثق بأي userId قادم من الواجهة)
 ipcMain.handle('sale:create', (_event, sale) => {
   requireAccountReady();
@@ -1969,7 +1983,7 @@ ipcMain.handle('sale:create', (_event, sale) => {
     creditApprovedBy: creditGrant?.approverId || (['admin', 'manager'].includes(currentUser.role) && sale.paymentMethod === 'credit' ? currentUser.id : null),
   };
   const result = db.createSale(trustedSale);
-  db.logAudit({ userId: currentUser.id, action: 'sale_created', entityType: 'sale', entityId: result.id, details: { orderType: sale.orderType, total: sale.grandTotal } });
+  db.logAudit({ userId: currentUser.id, action: 'sale_created', entityType: 'sale', entityId: result.id, details: { orderType: sale.orderType, total: result.grandTotal ?? sale.grandTotal } });
   // 'delivery' كانت مستبعدة من هذه القائمة سابقاً، فطلبات التوصيل المُنشأة من شاشة
   // الكاشير مباشرة (مش عبر الطاولات) ما كانت توصل للمطبخ تلقائياً أبداً — طلب توصيل
   // لازم يوصل للمطبخ زي أي طلب تاني عشان يتحضّر أصلاً.
@@ -2196,7 +2210,7 @@ ipcMain.handle('printing:saveConfig', (_event, config) => {
 ipcMain.handle('printing:testNetworkPrinter', async (_event, { ip, port, dotsWidth }) => {
   requireManagerOrAdmin();
   if (!ip || !String(ip).trim()) throw new Error(mt('من فضلك أدخل عنوان IP الطابعة أولاً.', "Please enter the printer's IP address first.", 'Lütfen önce yazıcının IP adresini girin.'));
-  const win = new BrowserWindow({ show: false, width: 320, height: 260, webPreferences: { sandbox: true } });
+  const win = new BrowserWindow({ show: false, width: 320, height: 260, webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true } });
   try {
     await win.loadURL('data:text/html,' + encodeURIComponent(`
       <html dir="${mt('rtl','ltr','ltr')}"><body style="margin:0;padding:16px;font-family:sans-serif;text-align:center;width:288px;box-sizing:border-box;">

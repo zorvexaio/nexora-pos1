@@ -104,6 +104,7 @@ contextBridge.exposeInMainWorld('api', {
   },
   sales: {
     create: (sale) => ipcRenderer.invoke('sale:create', sale),
+    quote: (payload) => ipcRenderer.invoke('sale:quote', payload),
     list: (filters) => ipcRenderer.invoke('sales:list', filters),
     get: (id) => ipcRenderer.invoke('sales:get', id),
     correctPaymentMethod: (payload) => ipcRenderer.invoke('sales:correctPaymentMethod', payload),
@@ -161,6 +162,9 @@ contextBridge.exposeInMainWorld('api', {
     print: () => ipcRenderer.invoke('receipt:print'),
     qr: (saleId) => ipcRenderer.invoke('receipt:qr', saleId),
     barcodeEnabled: (payload) => ipcRenderer.invoke('receipt:barcodeEnabled', payload),
+  },
+  posMode: {
+    quickCashierEnabled: (payload) => ipcRenderer.invoke('posMode:quickCashierEnabled', payload),
   },
   pos: {
     offersCategoryEnabled: (payload) => ipcRenderer.invoke('pos:offersCategoryEnabled', payload),

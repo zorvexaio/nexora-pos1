@@ -26,6 +26,7 @@ const fieldSku = document.getElementById('fieldSku');
 const fieldTrackInventory = document.getElementById('fieldTrackInventory');
 const stockModeTabs = document.getElementById('stockModeTabs');
 const fieldIsWeighted = document.getElementById('fieldIsWeighted');
+const fieldQuickCashierVisible = document.getElementById('fieldQuickCashierVisible');
 const fieldPluCode = document.getElementById('fieldPluCode');
 const pluField = document.getElementById('pluField');
 const fieldStock = document.getElementById('fieldStock');
@@ -110,7 +111,7 @@ function renderTable(products) {
     if (!p.barcode && !p.is_weighted) noBarcodeCount += 1;
     const tr = document.createElement('tr');
     tr.innerHTML = `
-      <td><img class="thumb" src="${escapeHtml(p.image_path || PLACEHOLDER_IMG)}" alt="" /></td>
+      <td><img class="thumb" src="${escAttr(p.image_path || PLACEHOLDER_IMG)}" alt="" /></td>
       <td>${escapeHtml(p.name)}${p.variant_count ? ` <span class="variant-badge">${p.variant_count} ${ts('متغيّر')}</span>` : ''}</td>
       <td>${category ? escapeHtml(category.name) : '—'}</td>
       <td>${p.price.toFixed(2)}</td>
@@ -144,6 +145,7 @@ async function openModal(productId = null) {
   fieldTrackInventory.checked = true;
   setStockMode(true);
   fieldIsWeighted.checked = false;
+  fieldQuickCashierVisible.checked = false;
   toggleStockFields();
   toggleWeightedField();
 
@@ -166,6 +168,7 @@ async function openModal(productId = null) {
     fieldTrackInventory.checked = !!p.track_inventory;
     setStockMode(!!p.track_inventory);
     fieldIsWeighted.checked = !!p.is_weighted;
+    fieldQuickCashierVisible.checked = !!p.quick_cashier_visible;
     fieldPluCode.value = p.plu_code || '';
     toggleWeightedField();
     fieldStock.value = p.stock ?? '';
@@ -268,6 +271,7 @@ async function saveProduct(e) {
       parentProductId: fieldParentProduct.value ? parseInt(fieldParentProduct.value, 10) : null,
       isRecipe: fieldIsRecipe.checked,
       isWeighted: fieldIsWeighted.checked,
+      quickCashierVisible: fieldQuickCashierVisible.checked,
       pluCode: fieldIsWeighted.checked ? fieldPluCode.value.trim() : null,
     };
 

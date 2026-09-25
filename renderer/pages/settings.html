@@ -11,7 +11,7 @@
     <header class="topbar">
       <div class="brand" data-i18n="app.brand">نقطة البيع</div>
       <nav class="nav-links">
-        <a href="../index.html" data-i18n="nav.pos">الكاشير</a>
+        <a href="../index.html" data-i18n="nav.pos">الكاشير</a><a href="quick-cashier.html" data-setting="quickCashier" data-i18n="nav.quickCashier">الكاشير السريع</a>
         <a href="tables.html" data-business="restaurant" data-i18n="nav.tables">الطاولات</a>
         <a href="shift.html" data-i18n="nav.cashSession">الصندوق</a>
         <a href="returns.html" data-roles="admin,manager" data-i18n="nav.returns">مرتجعات</a>
@@ -227,13 +227,37 @@
 
       <div class="report-panel settings-panel">
         <h2>النسخ الاحتياطي والاستعادة</h2>
-        <p class="field-hint">يُنشئ نسخة كاملة من قاعدة البيانات الحالية، أو يستعيد نسخة سابقة (سيُعاد تشغيل التطبيق بعد الاستعادة).</p>
+        <p class="field-hint">يُنشئ نسخة كاملة من قاعدة البيانات الحالية، أو يستعيد نسخة سابقة (سيُعاد تشغيل التطبيق بعد الاستعادة). <strong>هذه النسخة مرتبطة بهذا الجهاز تحديداً</strong> — لن تعمل لو أعدت تثبيت النظام أو نقلتها لجهاز آخر. لنقل بياناتك بين الأجهزة استخدم "النسخة المحمولة" أدناه.</p>
         <div class="form-field full" style="display:flex; gap:10px;">
           <button type="button" id="createBackupBtn" class="btn btn-secondary">إنشاء نسخة احتياطية</button>
           <button type="button" id="restoreBackupBtn" class="btn btn-secondary">استعادة نسخة احتياطية</button>
         </div>
         <div id="backupStatus" class="field-hint"></div>
         <div id="autoBackupStatus" class="field-hint" style="margin-top:8px; font-weight:700;"></div>
+
+        <h2 style="margin-top:22px;">النسخة المحمولة (لنقلها بين الأجهزة)</h2>
+        <p class="field-hint">نسخة مشفّرة بكلمة مرور تختارها أنت بدل مفتاح الجهاز، فتصلح للاستعادة على أي جهاز آخر — مفيدة عند تغيير الحاسوب أو إعادة تثبيت النظام.</p>
+        <div class="form-field full" style="display:flex; gap:10px;">
+          <button type="button" id="createPortableBackupBtn" class="btn btn-secondary">إنشاء نسخة محمولة</button>
+          <button type="button" id="restorePortableBackupBtn" class="btn btn-secondary">استعادة نسخة محمولة</button>
+        </div>
+        <div id="portableBackupStatus" class="field-hint"></div>
+      </div>
+
+      <div class="modal-overlay hidden" id="portableBackupModal">
+        <div class="modal">
+          <h2 id="portableBackupTitle">النسخة المحمولة</h2>
+          <p id="portableBackupHint" class="field-hint"></p>
+          <form id="portableBackupForm">
+            <div class="form-field"><label>كلمة المرور</label><input id="portableBackupPassphrase" type="password" minlength="12" required /></div>
+            <div class="form-field hidden" id="portableBackupConfirmField"><label>تأكيد كلمة المرور</label><input id="portableBackupConfirm" type="password" minlength="12" /></div>
+            <div id="portableBackupError" class="payment-error hidden"></div>
+            <div class="modal-actions">
+              <button type="button" id="portableBackupCancel" class="btn btn-secondary">إلغاء</button>
+              <button type="submit" id="portableBackupSubmit" class="btn btn-primary">متابعة</button>
+            </div>
+          </form>
+        </div>
       </div>
 
       <div class="report-panel settings-panel">
@@ -348,6 +372,15 @@
         <label class="switch-row">
           <input type="checkbox" id="fieldReceiptBarcodeEnabled" />
           <span data-i18n="settings.receiptBarcode.toggleLabel">إظهار رمز QR على فاتورة العميل</span>
+        </label>
+      </div>
+
+      <div class="report-panel settings-panel">
+        <h2 data-i18n="settings.quickCashier.title">الكاشير السريع (بدون لوحة مفاتيح)</h2>
+        <p class="field-hint" data-i18n="settings.quickCashier.description">شاشة بيع بديلة تعمل باللمس فقط: لوحة أرقام لإدخال كود الصنف يدوياً + شبكة صور للأصناف الشائعة. مناسبة لمحل كالبقالة حيث لا يوجد كيبورد أو لا يحتاج الكاشير القراءة والكتابة.</p>
+        <label class="switch-row">
+          <input type="checkbox" id="fieldQuickCashierEnabled" />
+          <span data-i18n="settings.quickCashier.toggleLabel">إظهار رابط "الكاشير السريع" في القائمة العلوية</span>
         </label>
       </div>
 

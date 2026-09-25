@@ -11,7 +11,7 @@
     <header class="topbar">
       <div class="brand" data-i18n="app.brand">نقطة البيع</div>
       <nav class="nav-links">
-        <a href="../index.html" data-i18n="nav.pos">الكاشير</a>
+        <a href="../index.html" data-i18n="nav.pos">الكاشير</a><a href="quick-cashier.html" data-setting="quickCashier" data-i18n="nav.quickCashier">الكاشير السريع</a>
         <a href="tables.html" data-business="restaurant" data-i18n="nav.tables">الطاولات</a>
         <a href="shift.html" data-i18n="nav.cashSession">الصندوق</a>
         <a href="returns.html" data-roles="admin,manager" data-i18n="nav.returns">مرتجعات</a>
@@ -158,6 +158,10 @@
           <div class="form-field checkbox full" data-business="restaurant,supermarket">
             <input id="fieldIsWeighted" type="checkbox" />
             <label for="fieldIsWeighted">بيع بالوزن (خضار/فواكه) — يُوزن على ميزان يطبع باركوداً، والسعر يُحسب تلقائياً عند المسح</label>
+          </div>
+          <div class="form-field checkbox full">
+            <input id="fieldQuickCashierVisible" type="checkbox" />
+            <label for="fieldQuickCashierVisible" data-i18n="products.quickCashierVisibleLabel">إظهار كصورة في شاشة "الكاشير السريع" (مفيد للأصناف بلا باركود مثل الأكياس)</label>
           </div>
           <div class="form-field full" id="pluField" hidden data-business="restaurant,supermarket">
             <label>كود الصنف (PLU) — نفس الكود المُدخَل بالميزان لهذا الصنف</label>

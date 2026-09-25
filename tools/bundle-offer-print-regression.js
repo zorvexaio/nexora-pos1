@@ -94,7 +94,10 @@ function renderReceipt(sale) {
 
     // ---- receipt ----
     const r = renderReceipt(db.getSale(sale.id));
-    ok(r.includes('receipt-offer') && r.includes('*** عرض ***') && r.includes('وجبة العرض'), 'receipt shows a framed "عرض" block');
+    // الفاتورة (بعكس تذكرة المطبخ) لم تعد تكرّر أصنافها داخل صندوق كبير — سطر مختصر "🎁 اسم العرض"
+    // فقط، وشارة 🎁 صغيرة على كل صنف ينتمي للعرض ضمن قائمة الأصناف العادية.
+    ok(r.includes('receipt-offer-line') && r.includes('🎁') && r.includes('وجبة العرض'), 'receipt shows a compact 🎁 offer line with the offer name (no repeated box)');
+    ok((r.match(/receipt-item-offer-badge/g) || []).length === 2, 'the 2 offer items (برجر × بطاطا) are each marked with a small 🎁 badge on their normal line');
     ok(/خصم العروض<\/span><span>-8\.00/.test(r), 'receipt shows the offer discount row -8.00 so the arithmetic adds up (43.00 - 8.00 = 35.00)');
 
     // sale without offers: nothing extra

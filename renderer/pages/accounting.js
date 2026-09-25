@@ -192,8 +192,8 @@ async function loadPeriods() {
     const locked = p.status === 'locked';
     const actionBtn = isAdminUser
       ? (locked
-          ? `<button class="btn btn-secondary btn-sm" data-reopen="${escapeHtml(p.period_key)}">${t('accounting.reopen')}</button>`
-          : `<button class="btn btn-danger btn-sm" data-lock="${escapeHtml(p.period_key)}">${t('accounting.lock')}</button>`)
+          ? `<button class="btn btn-secondary btn-sm" data-reopen="${escAttr(p.period_key)}">${t('accounting.reopen')}</button>`
+          : `<button class="btn btn-danger btn-sm" data-lock="${escAttr(p.period_key)}">${t('accounting.lock')}</button>`)
       : '';
     return `<tr><td>${escapeHtml(p.period_key)}</td><td class="${locked ? 'period-locked' : 'period-open'}">${locked ? t('accounting.periodLocked') : t('accounting.periodOpen')}</td><td>${escapeHtml(String(p.locked_at || '—'))}</td><td>${actionBtn}</td></tr>`;
   }).join('') || `<tr><td colspan="4" class="empty-state">${t('accounting.noLockedPeriodsYet')}</td></tr>`;
@@ -260,7 +260,7 @@ function renderManualLines() {
   body.innerHTML = manualLines.map((line) => `
     <tr data-row="${line.rowId}">
       <td><select class="manual-line-account" data-row="${line.rowId}">${accountOptionsHtml(line.accountId)}</select></td>
-      <td><input class="manual-line-memo" data-row="${line.rowId}" type="text" value="${escapeHtml(line.memo)}" /></td>
+      <td><input class="manual-line-memo" data-row="${line.rowId}" type="text" value="${escAttr(line.memo)}" /></td>
       <td><input class="manual-line-debit num" data-row="${line.rowId}" type="text" inputmode="decimal" value="${line.debit}" /></td>
       <td><input class="manual-line-credit num" data-row="${line.rowId}" type="text" inputmode="decimal" value="${line.credit}" /></td>
       <td><button class="btn btn-secondary btn-sm manual-line-remove" data-row="${line.rowId}" type="button">${t('common.delete', 'حذف')}</button></td>

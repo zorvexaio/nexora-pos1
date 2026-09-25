@@ -7,6 +7,7 @@ let modifyCategoryId = null;
 let modifyGlobalTaxMode = 'exclusive';
 let modifyMinorUnit = 2;
 let modifyProductCatalog = [];
+const MAX_QTY = 9999; // نفس السقف المستخدم في quick-cashier.js وtable-order.js وpriceItemsFromDatabase على الخادم
 
 const $ = (id) => document.getElementById(id);
 const saleIdInput = $('saleIdInput');
@@ -105,7 +106,7 @@ function renderModifyCategoryTabs(){
 function addModifyProduct(productId,name,fallbackPrice=0){
   const p=modifyProductCatalog.find(x=>Number(x.id)===productId)||null;
   const x=modifyCart.find(i=>i.productId===productId);
-  if(x){x.quantity+=1;}
+  if(x){x.quantity=Math.min(MAX_QTY,x.quantity+1);}
   else modifyCart.push({productId,name,quantity:1,price:Number(p?.price ?? fallbackPrice ?? 0),taxRate:Number((p?.tax_profile_rate ?? p?.tax_rate ?? 0)),taxInclusive:p?.tax_profile_rate!=null?Number(p.tax_profile_inclusive)===1:modifyGlobalTaxMode==='inclusive',notes:'',categoryId:p?.category_id||null});
   renderModifyCart();
 }
@@ -135,8 +136,8 @@ function renderModifyCart(){
   const type=modifyDiscountType.value;const value=Number(modifyDiscountValue.value||0);const discount=type==='percent'?netSubtotal*(Math.min(value,100)/100):type==='fixed'?Math.min(value,netSubtotal):0;
   const bundleDiscount=bundleDiscountPreview();
   const total=Math.max(0,netSubtotal+taxTotal-discount-bundleDiscount+Number(modifySale?.delivery_fee||0)-Number(modifySale?.loyalty_redeemed_value||0));
-  $('modifyCart').innerHTML=modifyCart.length?modifyCart.map((i,idx)=>`<div class="modify-cart-row"><div><strong>${escapeHtml(i.name)}</strong><small>${Number(i.price||0).toFixed(2)}</small></div><input type="number" min="0" step="0.001" value="${i.quantity}" data-qty="${idx}"><button class="btn btn-danger btn-sm" data-del="${idx}">×</button></div>`).join(''):'<div class="drawer-empty">—</div>';
-  $('modifyCart').querySelectorAll('[data-qty]').forEach(e=>e.addEventListener('change',()=>{const i=modifyCart[Number(e.dataset.qty)];i.quantity=Math.max(0,Number(e.value)||0);renderModifyCart();}));
+  $('modifyCart').innerHTML=modifyCart.length?modifyCart.map((i,idx)=>`<div class="modify-cart-row"><div><strong>${escapeHtml(i.name)}</strong><small>${Number(i.price||0).toFixed(2)}</small></div><input type="number" min="0" max="${MAX_QTY}" step="0.001" value="${i.quantity}" data-qty="${idx}"><button class="btn btn-danger btn-sm" data-del="${idx}">×</button></div>`).join(''):'<div class="drawer-empty">—</div>';
+  $('modifyCart').querySelectorAll('[data-qty]').forEach(e=>e.addEventListener('change',()=>{const i=modifyCart[Number(e.dataset.qty)];i.quantity=Math.min(MAX_QTY,Math.max(0,Number(e.value)||0));renderModifyCart();}));
   $('modifyCart').querySelectorAll('[data-del]').forEach(e=>e.addEventListener('click',()=>{modifyCart.splice(Number(e.dataset.del),1);renderModifyCart();}));
   $('modifyTotals').innerHTML=`<div>${escapeHtml(M('returns.netItems','صافي الأصناف'))}: <b>${netSubtotal.toFixed(2)}</b></div><div>${escapeHtml(M('returns.tax','الضريبة'))}: <b>${taxTotal.toFixed(2)}</b></div><div>${escapeHtml(M('returns.modifyDiscount','الخصم'))}: <b>-${(discount+bundleDiscount).toFixed(2)}</b></div><div class="strong">${escapeHtml(M('returns.total','الإجمالي'))}: <b>${total.toFixed(2)}</b></div>`;
 }

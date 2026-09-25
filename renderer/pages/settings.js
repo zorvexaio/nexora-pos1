@@ -23,6 +23,7 @@ const discountForm = document.getElementById('discountForm');
 const fieldMaxDiscountPercent = document.getElementById('fieldMaxDiscountPercent');
 const taxDefaultForm = document.getElementById('taxDefaultForm');
 const fieldReceiptBarcodeEnabled = document.getElementById('fieldReceiptBarcodeEnabled');
+const fieldQuickCashierEnabled = document.getElementById('fieldQuickCashierEnabled');
 const fieldOffersCategoryEnabled = document.getElementById('fieldOffersCategoryEnabled');
 const fieldTaxDefaultRate = document.getElementById('fieldTaxDefaultRate');
 const loyaltyForm = document.getElementById('loyaltyForm');
@@ -38,6 +39,20 @@ const createBackupBtn = document.getElementById('createBackupBtn');
 const restoreBackupBtn = document.getElementById('restoreBackupBtn');
 const backupStatus = document.getElementById('backupStatus');
 const autoBackupStatus = document.getElementById('autoBackupStatus');
+
+const createPortableBackupBtn = document.getElementById('createPortableBackupBtn');
+const restorePortableBackupBtn = document.getElementById('restorePortableBackupBtn');
+const portableBackupStatus = document.getElementById('portableBackupStatus');
+const portableBackupModal = document.getElementById('portableBackupModal');
+const portableBackupTitle = document.getElementById('portableBackupTitle');
+const portableBackupHint = document.getElementById('portableBackupHint');
+const portableBackupForm = document.getElementById('portableBackupForm');
+const portableBackupPassphrase = document.getElementById('portableBackupPassphrase');
+const portableBackupConfirmField = document.getElementById('portableBackupConfirmField');
+const portableBackupConfirm = document.getElementById('portableBackupConfirm');
+const portableBackupError = document.getElementById('portableBackupError');
+const portableBackupSubmit = document.getElementById('portableBackupSubmit');
+const portableBackupCancel = document.getElementById('portableBackupCancel');
 
 const brandingForm = document.getElementById('brandingForm');
 const fieldStoreName = document.getElementById('fieldStoreName');
@@ -101,6 +116,8 @@ async function init() {
   renderOffersImageCard();
   fieldReceiptBarcodeEnabled.checked = (await window.api.receipt.barcodeEnabled()).enabled !== false;
   fieldReceiptBarcodeEnabled.addEventListener('change', saveReceiptBarcodeEnabled);
+  fieldQuickCashierEnabled.checked = (await window.api.posMode.quickCashierEnabled()).enabled === true;
+  fieldQuickCashierEnabled.addEventListener('change', saveQuickCashierEnabled);
   fieldOffersCategoryEnabled.checked = (await window.api.pos.offersCategoryEnabled()).enabled !== false;
   fieldOffersCategoryEnabled.addEventListener('change', saveOffersCategoryEnabled);
   currentBranch = await window.api.branches.current();
@@ -153,6 +170,10 @@ async function init() {
   weighingForm.addEventListener('submit', saveWeighingPrefix);
   createBackupBtn.addEventListener('click', createBackup);
   restoreBackupBtn.addEventListener('click', restoreBackup);
+  createPortableBackupBtn.addEventListener('click', () => openPortableBackupModal('create'));
+  restorePortableBackupBtn.addEventListener('click', () => openPortableBackupModal('restore'));
+  portableBackupCancel.addEventListener('click', closePortableBackupModal);
+  portableBackupForm.addEventListener('submit', submitPortableBackup);
   brandingForm.addEventListener('submit', saveBranding);
   selectLogoBtn.addEventListener('click', selectLogo);
   const syncConfig = await window.api.sync.getConfig();
@@ -454,7 +475,7 @@ async function renderOffersImageCard() {
   try { imagePath = (await window.api.pos.offersCategoryImage()).imagePath || null; } catch { imagePath = null; }
   holder.innerHTML = `
     <div class="category-image-card" data-offers="1">
-      <img src="${escapeHtml(imagePath || PLACEHOLDER_IMG)}" alt="" class="thumb" />
+      <img src="${escAttr(imagePath || PLACEHOLDER_IMG)}" alt="" class="thumb" />
       <div class="category-image-name">${t('settings.categoryImages.offersTabName')}</div>
       <button type="button" class="btn btn-secondary btn-sm" id="pickOffersImageBtn">${imagePath ? t('settings.categoryImages.changeImage') : t('settings.categoryImages.chooseImage')}</button>
       ${imagePath ? `<button type="button" class="btn btn-danger btn-sm" id="removeOffersImageBtn">${t('settings.categoryImages.removeImage')}</button>` : ''}
@@ -483,7 +504,7 @@ async function renderCategoryImagesPanel() {
   const categories = await window.api.categories.list();
   list.innerHTML = categories.map((c, idx) => `
     <div class="category-image-card ${c.pos_hidden ? 'is-hidden-cat' : ''}" data-id="${c.id}">
-      <img src="${escapeHtml(c.image_path || PLACEHOLDER_IMG)}" alt="" class="thumb" />
+      <img src="${escAttr(c.image_path || PLACEHOLDER_IMG)}" alt="" class="thumb" />
       <div class="category-image-name">${escapeHtml(c.name)}${c.pos_hidden ? ` <span class="hidden-cat-badge">${t('settings.categoryImages.hiddenBadge')}</span>` : ''}</div>
       <div class="category-order-row">
         <button type="button" class="btn btn-secondary btn-sm" data-move="up" data-id="${c.id}" ${idx === 0 ? 'disabled' : ''}>▲</button>
@@ -549,6 +570,17 @@ async function saveReceiptBarcodeEnabled() {
   } catch (err) {
     showToast(t('settings.toast.saveErrorGeneric') + err.message, 'error');
     fieldReceiptBarcodeEnabled.checked = !fieldReceiptBarcodeEnabled.checked;
+  }
+}
+
+async function saveQuickCashierEnabled() {
+  try {
+    await window.api.posMode.quickCashierEnabled({ save: fieldQuickCashierEnabled.checked });
+    showToast(fieldQuickCashierEnabled.checked ? 'تم تفعيل الكاشير السريع.' : 'تم إخفاء الكاشير السريع.');
+    document.querySelectorAll('[data-setting="quickCashier"]').forEach((el) => { el.style.display = fieldQuickCashierEnabled.checked ? '' : 'none'; });
+  } catch (err) {
+    showToast(t('settings.toast.saveErrorGeneric') + err.message, 'error');
+    fieldQuickCashierEnabled.checked = !fieldQuickCashierEnabled.checked;
   }
 }
 
@@ -678,6 +710,79 @@ async function restoreBackup() {
     backupStatus.textContent = ts('حدث خطأ: ') + err.message;
   } finally {
     restoreBackupBtn.disabled = false;
+  }
+}
+
+// النسخة المحمولة تستخدم كلمة مرور يختارها المستخدم بدل مفتاح الجهاز، فتصلح
+// للاستعادة على أي جهاز آخر (بعكس الزرين أعلاه المرتبطين بمفتاح هذا الجهاز تحديداً).
+let portableBackupMode = 'create';
+
+function openPortableBackupModal(mode) {
+  portableBackupMode = mode;
+  portableBackupForm.reset();
+  portableBackupError.classList.add('hidden');
+  if (mode === 'create') {
+    portableBackupTitle.textContent = 'إنشاء نسخة محمولة';
+    portableBackupHint.textContent = 'اختر كلمة مرور لا تقل عن 12 محرفاً واحفظها في مكان آمن — بدونها لن تستطيع استعادة هذه النسخة لاحقاً.';
+    portableBackupConfirmField.classList.remove('hidden');
+    portableBackupConfirm.required = true;
+  } else {
+    portableBackupTitle.textContent = 'استعادة نسخة محمولة';
+    portableBackupHint.textContent = 'أدخل كلمة المرور التي استُخدمت عند إنشاء هذه النسخة المحمولة.';
+    portableBackupConfirmField.classList.add('hidden');
+    portableBackupConfirm.required = false;
+  }
+  portableBackupModal.classList.remove('hidden');
+  portableBackupPassphrase.focus();
+}
+
+function closePortableBackupModal() {
+  portableBackupModal.classList.add('hidden');
+  portableBackupForm.reset();
+  portableBackupError.classList.add('hidden');
+}
+
+async function submitPortableBackup(e) {
+  e.preventDefault();
+  const passphrase = portableBackupPassphrase.value;
+  if (portableBackupMode === 'create' && passphrase !== portableBackupConfirm.value) {
+    portableBackupError.textContent = 'كلمتا المرور غير متطابقتين.';
+    portableBackupError.classList.remove('hidden');
+    return;
+  }
+  portableBackupSubmit.disabled = true;
+  portableBackupError.classList.add('hidden');
+  try {
+    if (portableBackupMode === 'create') {
+      const result = await window.api.backup.createPortable(passphrase);
+      if (result.canceled) {
+        closePortableBackupModal();
+        return;
+      }
+      if (result.success) {
+        closePortableBackupModal();
+        portableBackupStatus.textContent = `${ts('تم إنشاء النسخة المحمولة: ')}${result.path}`;
+      } else {
+        portableBackupError.textContent = ts('تعذّر إنشاء النسخة المحمولة.');
+        portableBackupError.classList.remove('hidden');
+      }
+    } else {
+      const result = await window.api.backup.restorePortable(passphrase);
+      if (result.canceled) {
+        closePortableBackupModal();
+        return;
+      }
+      if (!result.success) {
+        portableBackupError.textContent = result.message || ts('تعذّرت الاستعادة.');
+        portableBackupError.classList.remove('hidden');
+      }
+      // في حال النجاح، سيُعاد تشغيل التطبيق نفسه (تُدار العملية من main.js)
+    }
+  } catch (err) {
+    portableBackupError.textContent = ts('حدث خطأ: ') + err.message;
+    portableBackupError.classList.remove('hidden');
+  } finally {
+    portableBackupSubmit.disabled = false;
   }
 }
 

@@ -11,7 +11,7 @@ const products=fs.readFileSync(path.join(root,'renderer','pages','products.js'),
 function versionAtLeast(v, min) { const a=v.split('.').map(Number), b=min.split('.').map(Number); for(let i=0;i<3;i++){ if((a[i]||0)!==(b[i]||0)) return (a[i]||0)>(b[i]||0); } return true; }
 ok('version metadata is at least 0.41.3', /^\d+\.\d+\.\d+$/.test(pkg.version) && pkg.version===lock.version && pkg.version===lock.packages[''].version && versionAtLeast(pkg.version,'0.41.3'));
 ok('account-ready requires authenticated user',/function requireAccountReady\(\)\s*\{\s*if \(!currentUser\)/.test(main));
-ok('product image path is escaped',/escapeHtml\(p\.image_path \|\| PLACEHOLDER_IMG\)/.test(products));
+ok('product image path is escaped',/esc(?:apeHtml|Attr)\(p\.image_path \|\| PLACEHOLDER_IMG\)/.test(products));
 ok('bundle update is branch-scoped',/UPDATE bundles SET[\s\S]{0,500}WHERE id = \? AND branch_id = \?/.test(db));
 ok('bundle delete is branch-scoped',/DELETE FROM bundles WHERE id = \? AND branch_id = \?/.test(db));
 ok('sync timestamps reject invalid values',/Invalid timestamp for/.test(sync));
