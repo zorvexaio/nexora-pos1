@@ -338,9 +338,23 @@ function setupTopbar(user) {
   }
 
   applyNavVisibility(user);
+  applyNavIcons();
+  // بعد اكتمال ترجمة اللغة غير المتزامنة (قد تسبق أو تلحق setupTopbar)
+  setTimeout(() => { try { applyNavIcons(); } catch (_) {} }, 0);
+  setTimeout(() => { try { applyNavIcons(); } catch (_) {} }, 100);
   setupThemeToggle();
   setupChangePasswordButton(user);
   applyRuntimeBranding();
+  // توحيد علامة N المميزة على كل الصفحات (بعض الصفحات كانت نصاً عادياً بلا brand-mark)
+  document.querySelectorAll('.brand:not(.brand-premium)').forEach((el) => {
+    if (el.querySelector('.brand-mark')) return;
+    const mark = document.createElement('span');
+    mark.className = 'brand-mark';
+    mark.setAttribute('aria-hidden', 'true');
+    mark.textContent = 'N';
+    el.classList.add('brand-premium');
+    el.prepend(mark);
+  });
 }
 
 // زر "تغيير كلمة المرور" يُضاف مرة واحدة بجانب زر الخروج في كل الصفحات (بدون
@@ -441,18 +455,156 @@ async function setupThemeToggle() {
   const render = () => { button.textContent = theme === 'dark' ? '☀️' : '🌙'; button.title = theme === 'dark' ? t('common.lightMode') : t('common.darkMode'); };
   render();
   button.addEventListener('click', async () => { theme = theme === 'dark' ? 'light' : 'dark'; document.body.dataset.theme = theme; render(); await window.api.theme.set(theme); });
-  host.prepend(button);
+  // صف أدوات مضغوط: وضع الليل + اللغة جنب بعض بدل عمود طويل
+  let tools = host.querySelector('.sidebar-tools');
+  if (!tools) {
+    tools = document.createElement('div');
+    tools.className = 'sidebar-tools';
+    const lang = host.querySelector('#langSwitcher, .lang-switcher');
+    host.prepend(tools);
+    tools.appendChild(button);
+    if (lang) tools.appendChild(lang);
+  } else {
+    tools.prepend(button);
+  }
 }
 
 // يُخفي روابط شريط التنقّل التي لا تناسب دور المستخدم الحالي
 // (كل رابط محمي يحمل data-roles="admin,manager" مثلاً في الـ HTML)
+// للكاشير: يبقى فقط كاشير / سريع / طاولات / صندوق (+ مرتجعات إن فُوِّض) — بدون محاسبة ورواتب.
 function applyNavVisibility(user) {
-  document.querySelectorAll('.nav-links a[data-roles]').forEach((a) => {
-    const roles = a.getAttribute('data-roles').split(',');
-    // رابط المرتجعات يظهر للكاشير المفوَّض بتعديل الفواتير (صفحة التعديل نفسها تخفي الارتجاع عنه).
-    const delegatedReturns = /(^|\/)returns\.html$/.test(a.getAttribute('href') || '') && Number(user.can_modify_sales) === 1;
-    if (!roles.includes(user.role) && !delegatedReturns) a.style.display = 'none';
+  const role = (user && user.role) || 'cashier';
+  const cashierAllowed = new Set(['nav.pos', 'nav.quickCashier', 'nav.tables', 'nav.cashSession']);
+  document.querySelectorAll('.nav-links a').forEach((a) => {
+    const key = a.getAttribute('data-i18n') || '';
+    const rolesAttr = a.getAttribute('data-roles');
+    if (rolesAttr) {
+      const roles = rolesAttr.split(',');
+      const delegatedReturns = /(^|\/)returns\.html$/.test(a.getAttribute('href') || '') && Number(user.can_modify_sales) === 1;
+      if (!roles.includes(role) && !delegatedReturns) {
+        a.style.display = 'none';
+        return;
+      }
+    }
+    // كاشير: أخفِ أي رابط إداري حتى لو نُسي data-roles في صفحة ما
+    if (role === 'cashier' && key && !cashierAllowed.has(key)) {
+      const isDelegatedReturns = key === 'nav.returns' && Number(user.can_modify_sales) === 1;
+      if (!isDelegatedReturns) a.style.display = 'none';
+    }
   });
+}
+
+// أيقونات نصية بجانب روابط الشريط الجانبي — على كل الصفحات (كاشير / سريع / إعدادات…)
+function applyNavIcons() {
+  // مُصدَّرة لـ i18n.js حتى لا تُمسَح الأيقونات بعد applyTranslations
+  const map = {
+    'nav.pos': '◉',
+    'nav.quickCashier': '⚡',
+    'nav.tables': '⊞',
+    'nav.cashSession': '▣',
+    'nav.returns': '↺',
+    'nav.products': '▦',
+    'nav.bundles': '✦',
+    'nav.inventory': '▤',
+    'nav.customers': '☺',
+    'nav.suppliers': '⇄',
+    'nav.reports': '▤',
+    'nav.accounting': '¤',
+    'nav.audit': '☰',
+    'nav.payroll': '₽',
+    'nav.users': '◎',
+    'nav.settings': '⚙'
+  };
+  // مطابقة احتياطية بالمسار لو اختفى data-i18n
+  const hrefMap = [
+    [/index\.html|^\.?\/?$|pos/i, '◉'],
+    [/quick-cashier/i, '⚡'],
+    [/tables/i, '⊞'],
+    [/shift/i, '▣'],
+    [/returns/i, '↺'],
+    [/products/i, '▦'],
+    [/bundles/i, '✦'],
+    [/inventory/i, '▤'],
+    [/customers/i, '☺'],
+    [/suppliers/i, '⇄'],
+    [/reports/i, '▤'],
+    [/accounting/i, '¤'],
+    [/audit/i, '☰'],
+    [/payroll/i, '₽'],
+    [/users/i, '◎'],
+    [/settings/i, '⚙'],
+  ];
+  document.querySelectorAll('.nav-links a').forEach((a) => {
+    const key = a.getAttribute('data-i18n') || '';
+    let symbol = map[key];
+    if (!symbol) {
+      const href = a.getAttribute('href') || '';
+      for (const [re, sym] of hrefMap) {
+        if (re.test(href)) { symbol = sym; break; }
+      }
+    }
+    symbol = symbol || '•';
+
+    let ico = a.querySelector(':scope > .nav-ico');
+    if (!ico) {
+      ico = document.createElement('span');
+      ico.className = 'nav-ico';
+      ico.setAttribute('aria-hidden', 'true');
+      a.prepend(ico);
+    }
+    ico.textContent = symbol;
+
+    // نص الرابط في span منفصل حتى لا تمسح الترجمة الأيقونة
+    let label = a.querySelector(':scope > .nav-label');
+    if (!label) {
+      label = document.createElement('span');
+      label.className = 'nav-label';
+      // اجمع النص الحالي (بدون الأيقونة) ثم انقله للتسمية
+      let text = '';
+      Array.from(a.childNodes).forEach((n) => {
+        if (n === ico || n === label) return;
+        if (n.nodeType === 3) {
+          text += n.nodeValue;
+          n.remove();
+        } else if (n.nodeType === 1 && !n.classList.contains('nav-ico')) {
+          text += n.textContent;
+          n.remove();
+        }
+      });
+      if (text.trim()) label.textContent = text.trim();
+      a.appendChild(label);
+    }
+  });
+}
+
+window.applyNavIcons = applyNavIcons;
+
+/** يمرّر الرابط النشط إلى منتصف الشريط الجانبي حتى لا يحتاج المستخدم للنزول يدوياً */
+function scrollActiveNavIntoView() {
+  const nav = document.querySelector('.nav-links');
+  const active = nav && nav.querySelector('a.active');
+  if (!active || !nav) return;
+  try {
+    const navRect = nav.getBoundingClientRect();
+    const itemRect = active.getBoundingClientRect();
+    const offset = (itemRect.top + itemRect.bottom) / 2 - (navRect.top + navRect.bottom) / 2;
+    nav.scrollTop += offset;
+  } catch (_) { /* ignore */ }
+}
+window.scrollActiveNavIntoView = scrollActiveNavIntoView;
+
+// ضمان ظهور الأيقونات حتى لو تأخر guardPage أو لم يُستدعَ setupTopbar
+if (typeof document !== 'undefined') {
+  const runIcons = () => {
+    try { applyNavIcons(); } catch (_) {}
+    try { scrollActiveNavIntoView(); } catch (_) {}
+  };
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', runIcons);
+  } else {
+    runIcons();
+  }
+  window.addEventListener('load', runIcons);
 }
 
 // يُخفي أي عنصر خاص بقطاع معيّن، وليس روابط القائمة فقط.

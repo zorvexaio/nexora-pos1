@@ -1,0 +1,47 @@
+Nexora POS (by Zorvexa) — Proprietary Software License
+
+Copyright © 2026. All rights reserved.
+
+This software, including its source code, documentation, and all associated
+files (collectively, the "Software"), is proprietary and confidential. It is
+NOT open-source and is NOT licensed under MIT, GPL, or any other open-source
+license, notwithstanding any prior metadata to the contrary.
+
+1. Grant of use
+   A customer who has been issued a valid, signed license file (".lic") by
+   the copyright holder is granted a limited, non-exclusive, non-transferable
+   right to install and run the Software, strictly on the single device
+   identified by that license file's device fingerprint, for the customer's
+   own internal business operations.
+
+2. Restrictions
+   Except as expressly permitted in writing by the copyright holder, the
+   licensed customer may NOT:
+     a. resell, sublicense, rent, lease, or otherwise redistribute the
+        Software or any copy of it to any third party;
+     b. share, publish, or transfer the Software's source code;
+     c. remove, disable, or attempt to circumvent the license verification,
+        device-fingerprint check, or any other license-enforcement mechanism;
+     d. use the Software on any device other than the one for which the
+        license file was issued, or transfer the license to another device
+        without the copyright holder's written consent;
+     e. reverse-engineer, decompile, or create derivative products intended
+        for distribution or resale based on the Software.
+
+3. No warranty
+   The Software is provided "AS IS", without warranty of any kind, express
+   or implied, including but not limited to warranties of merchantability,
+   fitness for a particular purpose, and non-infringement.
+
+4. Limitation of liability
+   In no event shall the copyright holder be liable for any claim, damages,
+   or other liability arising from, out of, or in connection with the
+   Software or its use.
+
+5. Termination
+   Any breach of the restrictions in Section 2 automatically terminates the
+   license grant in Section 1. Upon termination, the customer must cease all
+   use of the Software and destroy all copies in their possession.
+
+For licensing inquiries, reselling rights, or any use beyond the scope of
+Section 1, contact the copyright holder directly.

@@ -9,7 +9,12 @@ const tableOrder = read('renderer/pages/table-order.js');
 const pos = read('renderer/pos.js');
 const pkg = JSON.parse(read('package.json'));
 const checks = [
- ['version is 0.45.5', pkg.version === '0.45.5'],
+ ['version is >= 0.45.5 (no accidental downgrade)', (() => {
+   const toNum = (v) => v.split('.').map(Number);
+   const [a1,a2,a3] = toNum(pkg.version);
+   const [b1,b2,b3] = toNum('0.45.5');
+   return /^\d+\.\d+\.\d+/.test(pkg.version) && (a1 !== b1 ? a1 > b1 : a2 !== b2 ? a2 > b2 : a3 >= b3);
+ })()],
  ['sales schema has inventory_committed', /inventory_committed INTEGER NOT NULL DEFAULT 0/.test(schema)],
  ['migration adds inventory_committed', /tryAddColumn\('sales', `inventory_committed INTEGER NOT NULL DEFAULT 0`\)/.test(db)],
  ['table save reads applied table-order movements', /reason='table_order' GROUP BY product_id/.test(db)],
@@ -21,9 +26,9 @@ const checks = [
  ['split does not double-deduct committed stock', /if \(!sourceInventoryCommitted\)/.test(db)],
  ['merge transfers table-order movements', /UPDATE inventory_movements SET ref_id=.*reason='table_order'/.test(db)],
  ['table UI does not print kitchen twice', !/window\.api\.kitchen\.open\(currentSaleId\)/.test(tableOrder)],
- ['table save triggers kitchen automatically', /void autoSendKitchen\(saleId\)/.test(main)],
+ ['table save triggers kitchen automatically', /printJobs\.push\(autoSendKitchen\(result\.id\)/.test(main)],
  ['kitchen auto-print defaults to on', /db\.getSetting\('kitchen_auto_print', '1'\) === '1'/.test(main)],
- ['credit approval is marked as credit', /approvalPurpose = 'credit'/.test(pos)],
+ ['credit approval is marked as credit', /openApprovalModal\('credit', 'pos\.approveCreditSale'\)/.test(pos)],
  ['credit sale backend enforces customer and manager approval', /sale\.paymentMethod !== 'credit'/.test(db) && /creditApprovedBy/.test(main)],
 ];
 let failed=0; for (const [name,ok] of checks) { console.log(`${ok?'PASS':'FAIL'}: ${name}`); if(!ok) failed++; }

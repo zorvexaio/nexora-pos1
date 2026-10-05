@@ -45,6 +45,12 @@
     <div class="main">
       <!-- عمود المنتجات -->
       <section class="products-panel">
+        <!-- البحث فوق الفئات والأصناف -->
+        <div class="search-row">
+          <svg class="search-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/><path d="M8 11h6M11 8v6"/></svg>
+          <input id="searchInput" type="text" data-i18n-placeholder="pos.searchPlaceholder" placeholder="ابحث بالاسم أو امسح الباركود..." aria-label="البحث عن منتج أو مسح الباركود" autocomplete="off" spellcheck="false" autofocus />
+          <div id="barcodeError" class="barcode-error hidden"></div>
+        </div>
         <div id="categoryTabsWrap" class="category-tabs-wrap hidden">
           <button type="button" id="catScrollLeft" class="cat-scroll-btn cat-scroll-left hidden" aria-label="السابق" tabindex="-1">
             <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
@@ -54,15 +60,14 @@
             <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18l6-6-6-6"/></svg>
           </button>
         </div>
-        <div class="search-row">
-          <svg class="search-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/><path d="M8 11h6M11 8v6"/></svg>
-          <input id="searchInput" type="text" data-i18n-placeholder="pos.searchPlaceholder" placeholder="ابحث بالاسم أو امسح الباركود..." aria-label="البحث عن منتج أو مسح الباركود" autocomplete="off" spellcheck="false" autofocus />
-          <div class="qty-buffer-box" title="اكتب رقم قبل الضغط على المنتج لإضافته بهذه الكمية دفعة واحدة">
+        <!-- الكمية السريعة ملاصقة لشبكة الأصناف (وليس داخل شريط البحث) -->
+        <div class="qty-buffer-bar" title="اكتب رقم قبل الضغط على المنتج لإضافته بهذه الكمية دفعة واحدة">
+          <div class="qty-buffer-box">
             <label for="qtyBufferInput" data-i18n="pos.qty">الكمية</label>
             <input id="qtyBufferInput" type="text" inputmode="numeric" value="1" aria-describedby="qtyBufferStatus" autocomplete="off" />
             <span id="qtyBufferStatus" class="qty-buffer-status" aria-live="polite"></span>
           </div>
-          <div id="barcodeError" class="barcode-error hidden"></div>
+          <span class="qty-buffer-hint" data-i18n="pos.qtyHint">اكتب الكمية ثم اضغط على الصنف</span>
         </div>
         <div id="productsGrid" class="products-grid" aria-live="polite" aria-busy="false"></div>
       </section>
@@ -73,50 +78,7 @@
         <div id="cartItems" class="cart-items" aria-live="polite"></div>
 
         <details id="extraOptionsSection" class="extra-options">
-          <summary data-i18n="pos.extraOptions">خيارات إضافية (توصيل، وقت، ملاحظة، خصم)</summary>
-        <div class="order-type-row">
-          <label class="method-option">
-            <input type="radio" name="orderType" value="takeaway" checked />
-            <span>سفري / استلام</span>
-          </label>
-          <label class="method-option">
-            <input type="radio" name="orderType" value="delivery" />
-            <span data-i18n="pos.delivery">توصيل</span>
-          </label>
-        </div>
-        <div id="deliveryFields" class="hidden" style="margin-bottom:10px;">
-          <div class="form-field">
-            <label data-i18n="pos.deliveryDistance">المسافة (كم)</label>
-            <input id="deliveryDistanceInput" type="text" inputmode="numeric" step="0.1" min="0" placeholder="مثال: 13" />
-            <div class="field-hint" id="deliveryDistanceHint" style="font-size:11px; color:#8b94a2; margin-top:3px;"></div>
-          </div>
-          <div class="form-field">
-            <label data-i18n="pos.deliveryFee">رسوم التوصيل</label>
-            <input id="deliveryFeeInput" type="text" inputmode="numeric" step="0.01" min="0" value="0" />
-          </div>
-          <div class="form-field">
-            <label data-i18n="pos.deliveryPerson">مندوب التوصيل (اختياري)</label>
-            <input id="deliveryPersonInput" type="text" list="deliveryPersonList" data-i18n-placeholder="pos.deliveryPersonPlaceholder" placeholder="اسم/رقم المندوب" />
-            <datalist id="deliveryPersonList"></datalist>
-          </div>
-        </div>
-        <!-- وقت الطلب متاح لأي نوع طلب (سفري/استلام أو توصيل) - أحياناً الزبون
-             هيجي يستلم في وقت معيّن، مش بس التوصيل محتاج وقت محدد. -->
-        <div id="orderTimeField" class="form-field" style="margin-bottom:10px;">
-          <label data-i18n="pos.deliveryTimeLabel">وقت الطلب</label>
-          <div class="order-type-row" style="margin-bottom:6px;">
-            <label class="method-option">
-              <input type="radio" name="deliveryTimeMode" value="now" checked />
-              <span data-i18n="pos.deliveryNow">الآن</span>
-            </label>
-            <label class="method-option">
-              <input type="radio" name="deliveryTimeMode" value="custom" />
-              <span data-i18n="pos.deliveryCustomTime">تحديد وقت</span>
-            </label>
-          </div>
-          <input id="deliveryCustomTimeInput" type="time" class="hidden" />
-        </div>
-
+          <summary data-i18n="pos.extraOptionsNoteDiscount">خيارات إضافية (ملاحظة، خصم)</summary>
         <div class="form-field" style="margin-bottom:10px;">
           <label data-i18n="pos.orderNoteLabel">ملاحظة على الطلب كله (اختياري)</label>
           <textarea id="orderNoteInput" rows="2" maxlength="500" data-i18n-placeholder="pos.orderNotePlaceholder" placeholder="مثال: بدون بصل خالص، اترك الطلب عند الباب..." style="width:100%; resize:vertical; font-family:inherit;"></textarea>
@@ -224,17 +186,22 @@
     </div>
   </div>
 
-  <!-- نافذة الدفع -->
-  <div id="paymentModal" class="modal-overlay hidden">
-    <div class="modal payment-modal">
-      <h2 data-i18n="pos.completePayment">إتمام الدفع</h2>
+  <!-- صفحة إتمام الدفع الكاملة (بدون تمرير) -->
+  <div id="paymentModal" class="payment-page hidden" role="dialog" aria-modal="true" aria-labelledby="paymentPageTitle">
+    <div class="payment-page-inner">
+      <header class="payment-page-header">
+        <h2 id="paymentPageTitle" data-i18n="pos.completePayment">إتمام الدفع</h2>
+        <button type="button" id="cancelPaymentBtn" class="btn btn-secondary payment-page-close" data-i18n="common.cancel">إلغاء</button>
+      </header>
 
-      <div class="form-field full customer-field">
-        <label data-i18n="pos.customerOptional">العميل (اختياري — لنقاط الولاء)</label>
+      <!-- اسم الزبون في أعلى الصفحة -->
+      <div class="form-field full customer-field payment-customer-top">
+        <label data-i18n="pos.customerNameLabel">اسم الزبون</label>
         <div class="customer-picker">
-          <input id="customerSearchInput" type="text" data-i18n-placeholder="pos.searchCustomerPlaceholder" placeholder="ابحث بالاسم أو الهاتف..." autocomplete="off" />
+          <input id="customerNameInput" type="text" maxlength="120" autocomplete="off" data-i18n-placeholder="pos.customerNamePlaceholder" placeholder="اكتب الاسم مرة واحدة — للفاتورة والآجل والولاء" />
           <div id="customerResults" class="customer-results hidden"></div>
         </div>
+        <div class="field-hint" data-i18n="pos.customerNameHint">يُحفظ على الفاتورة. اختر من القائمة أو اتركه ليُنشأ تلقائياً عند الآجل — مرة واحدة فقط.</div>
         <div id="selectedCustomerBox" class="selected-customer hidden">
           <span id="selectedCustomerLabel"></span>
           <button type="button" id="clearCustomerBtn">✕</button>
@@ -249,59 +216,111 @@
         </div>
       </div>
 
-      <div class="payment-total">
-        <span data-i18n="pos.amountDue">المطلوب</span>
-        <span id="paymentTotalDisplay">0.00</span>
-      </div>
+      <div class="payment-page-grid">
+        <!-- العمود الأيمن: بيانات الطلب -->
+        <section class="payment-col payment-col-order" aria-label="بيانات الطلب">
+          <div class="payment-order-info">
+            <div class="order-type-row">
+              <label class="method-option">
+                <input type="radio" name="orderType" value="takeaway" checked />
+                <span>سفري / استلام</span>
+              </label>
+              <label class="method-option">
+                <input type="radio" name="orderType" value="delivery" />
+                <span data-i18n="pos.delivery">توصيل</span>
+              </label>
+            </div>
+            <div id="deliveryFields" class="hidden delivery-fields-grid">
+              <div class="form-field">
+                <label data-i18n="pos.deliveryDistance">المسافة (كم)</label>
+                <input id="deliveryDistanceInput" type="text" inputmode="numeric" step="0.1" min="0" placeholder="مثال: 13" />
+                <div class="field-hint" id="deliveryDistanceHint"></div>
+              </div>
+              <div class="form-field">
+                <label data-i18n="pos.deliveryFee">رسوم التوصيل</label>
+                <input id="deliveryFeeInput" type="text" inputmode="numeric" step="0.01" min="0" value="0" />
+              </div>
+              <div class="form-field delivery-person-field">
+                <label data-i18n="pos.deliveryPerson">مندوب التوصيل (اختياري)</label>
+                <input id="deliveryPersonInput" type="text" list="deliveryPersonList" data-i18n-placeholder="pos.deliveryPersonPlaceholder" placeholder="اسم/رقم المندوب" />
+                <datalist id="deliveryPersonList"></datalist>
+              </div>
+            </div>
+            <div id="orderTimeField" class="form-field">
+              <label data-i18n="pos.deliveryTimeLabel">وقت الطلب</label>
+              <div class="order-type-row">
+                <label class="method-option">
+                  <input type="radio" name="deliveryTimeMode" value="now" checked />
+                  <span data-i18n="pos.deliveryNow">الآن</span>
+                </label>
+                <label class="method-option">
+                  <input type="radio" name="deliveryTimeMode" value="custom" />
+                  <span data-i18n="pos.deliveryCustomTime">تحديد وقت</span>
+                </label>
+              </div>
+              <input id="deliveryCustomTimeInput" type="time" class="hidden" />
+            </div>
+          </div>
+        </section>
 
-      <div class="payment-methods">
-        <label class="method-option">
-          <input type="radio" name="paymentMethod" value="cash" checked />
-          <span data-i18n="common.cash">نقدي</span>
-        </label>
-        <label class="method-option">
-          <input type="radio" name="paymentMethod" value="card" />
-          <span data-i18n="common.card">بطاقة / تحويل</span>
-        </label>
-        <label class="method-option">
-          <input type="radio" name="paymentMethod" value="mixed" />
-          <span data-i18n="common.mixed">مختلط</span>
-        </label>
-        <label class="method-option">
-          <input type="radio" name="paymentMethod" value="credit" />
-          <span>دين / آجل</span>
-        </label>
-        <label class="method-option">
-          <input type="radio" name="paymentMethod" value="store_credit" />
-          <span>رصيد متجر</span>
-        </label>
-      </div>
+        <!-- العمود الأيسر: المبلغ وطريقة الدفع -->
+        <section class="payment-col payment-col-pay" aria-label="الدفع">
+          <div class="payment-total">
+            <span data-i18n="pos.amountDue">المطلوب</span>
+            <span id="paymentTotalDisplay">0.00</span>
+          </div>
 
-      <div id="cashFields" class="payment-fields">
-        <div class="form-field">
-          <label data-i18n="pos.cashReceived">المبلغ المستلم نقداً</label>
-          <input id="cashReceivedInput" type="text" inputmode="decimal" autocomplete="off" />
-        </div>
-        <div class="payment-row"><span data-i18n="pos.changeDue">الباقي للعميل</span><span id="changeDueDisplay">0.00</span></div>
-      </div>
+          <div class="payment-methods">
+            <label class="method-option">
+              <input type="radio" name="paymentMethod" value="cash" checked />
+              <span data-i18n="common.cash">نقدي</span>
+            </label>
+            <label class="method-option">
+              <input type="radio" name="paymentMethod" value="card" />
+              <span data-i18n="common.card">بطاقة / تحويل</span>
+            </label>
+            <label class="method-option">
+              <input type="radio" name="paymentMethod" value="mixed" />
+              <span data-i18n="common.mixed">مختلط</span>
+            </label>
+            <label class="method-option">
+              <input type="radio" name="paymentMethod" value="credit" />
+              <span>دين / آجل</span>
+            </label>
+            <label class="method-option">
+              <input type="radio" name="paymentMethod" value="store_credit" />
+              <span>رصيد متجر</span>
+            </label>
+          </div>
 
-      <div id="mixedFields" class="payment-fields hidden">
-        <div class="form-field">
-          <label data-i18n="pos.cashAmount">المبلغ نقداً</label>
-          <input id="mixedCashInput" type="text" inputmode="decimal" autocomplete="off" min="0" />
-        </div>
-        <div class="form-field">
-          <label data-i18n="pos.cardAmount">المبلغ بالبطاقة</label>
-          <input id="mixedCardInput" type="text" inputmode="decimal" autocomplete="off" min="0" />
-        </div>
-        <div class="payment-row" id="mixedRemainingRow"><span data-i18n="pos.remainingAmount">المتبقي لإكمال المبلغ</span><span id="mixedRemainingDisplay">0.00</span></div>
-      </div>
+          <div id="cashFields" class="payment-fields">
+            <div class="form-field">
+              <label data-i18n="pos.cashReceived">المبلغ المستلم نقداً</label>
+              <input id="cashReceivedInput" type="text" inputmode="decimal" autocomplete="off" />
+            </div>
+            <div class="payment-row"><span data-i18n="pos.changeDue">الباقي للعميل</span><span id="changeDueDisplay">0.00</span></div>
+          </div>
 
-      <div id="paymentError" class="payment-error hidden"></div>
+          <div id="mixedFields" class="payment-fields hidden">
+            <div class="mixed-fields-grid">
+              <div class="form-field">
+                <label data-i18n="pos.cashAmount">المبلغ نقداً</label>
+                <input id="mixedCashInput" type="text" inputmode="decimal" autocomplete="off" min="0" />
+              </div>
+              <div class="form-field">
+                <label data-i18n="pos.cardAmount">المبلغ بالبطاقة</label>
+                <input id="mixedCardInput" type="text" inputmode="decimal" autocomplete="off" min="0" />
+              </div>
+            </div>
+            <div class="payment-row" id="mixedRemainingRow"><span data-i18n="pos.remainingAmount">المتبقي لإكمال المبلغ</span><span id="mixedRemainingDisplay">0.00</span></div>
+          </div>
 
-      <div class="modal-actions">
-        <button type="button" id="cancelPaymentBtn" class="btn btn-secondary" data-i18n="common.cancel">إلغاء</button>
-        <button type="button" id="confirmPaymentBtn" class="btn btn-primary" data-i18n="pos.confirmPayment">تأكيد الدفع</button>
+          <div id="paymentError" class="payment-error hidden"></div>
+
+          <div class="payment-page-actions">
+            <button type="button" id="confirmPaymentBtn" class="btn btn-primary" data-i18n="pos.confirmPayment">تأكيد الدفع</button>
+          </div>
+        </section>
       </div>
     </div>
   </div>

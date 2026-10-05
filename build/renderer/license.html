@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: file:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-src 'none';">
+  <title>تفعيل الترخيص</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body class="login-body">
+  <div class="login-card">
+    <div class="login-brand" data-i18n="license.activateTitle">تفعيل البرنامج</div>
+    <p style="color:#6b7280; font-size:14px; margin:-8px 0 16px;" data-i18n="license.activateSubtitle">
+      هذا الجهاز غير مفعَّل بعد. أرسل بصمة الجهاز أدناه للمورّد للحصول على ملف ترخيص.
+    </p>
+
+    <div class="form-field full">
+      <label data-i18n="license.fingerprintLabel">بصمة هذا الجهاز</label>
+      <div style="display:flex; gap:8px;">
+        <input id="fingerprintInput" type="text" readonly style="flex:1; text-align:center; letter-spacing:1px;" />
+        <button type="button" id="copyFingerprintBtn" class="btn" data-i18n="license.copyBtn">نسخ</button>
+      </div>
+    </div>
+
+    <div id="statusReason" class="payment-error hidden" style="margin-top:8px;"></div>
+
+    <form id="licenseForm" style="margin-top:16px;">
+      <div class="form-field full">
+        <label data-i18n="license.fileLabel">ملف الترخيص (.lic)</label>
+        <input id="licenseFileInput" type="file" accept=".lic,.json,text/plain" required />
+      </div>
+      <div id="licenseError" class="payment-error hidden"></div>
+      <button type="submit" id="activateBtn" class="btn btn-primary login-btn" data-i18n="license.activateBtn">تفعيل</button>
+    </form>
+  </div>
+
+  <script src="i18n.js"></script>
+  <script src="license.js"></script>
+</body>
+</html>

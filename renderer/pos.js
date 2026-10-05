@@ -11,6 +11,13 @@ let activeBundles = []; // الحزم الفعّالة، تُجلب مرة وا�
 let currencyConfig = { base: 'USD', secondary: '', rate: 1 };
 let organizationTaxMode = 'exclusive';
 let organizationMinorUnit = 2;
+// كل عرض مبلغ بهذه الشاشة يجب أن يمر من هنا بدل toFixed(2) المباشر — عملة بخانة
+// عشرية صفر (مثل الين) أو ثلاث خانات (كالدينار) كانت تُعرض دائماً بخانتين بالشاشة
+// الرئيسية رغم أن الرقم المخزّن والمُرحَّل محاسبياً صحيح فعلاً (المشكلة كانت بالعرض
+// فقط). نفس الفكرة المستخدمة أصلاً بـquick-cashier.js.
+function fmt(n) {
+  return Number(n || 0).toFixed(organizationMinorUnit);
+}
 let currentBranchType = 'general';
 let productSearchRequestSeq = 0;
 let customerSearchRequestSeq = 0;
@@ -36,6 +43,7 @@ function persistDraftCartNow() {
     deliveryFee: deliveryFeeInput.value,
     deliveryDistanceKm: deliveryDistanceInput.value,
     deliveryPerson: deliveryPersonInput.value,
+    customerName: customerNameInput ? customerNameInput.value : '',
     deliveryTimeMode: selectedDeliveryTimeMode(),
     deliveryCustomTime: deliveryCustomTimeInput.value,
     orderNote: orderNoteInput.value,
@@ -79,6 +87,7 @@ function restoreDraftIfAny() {
   deliveryDistanceInput.value = draft.deliveryDistanceKm || '';
   deliveryFeeInput.value = draft.deliveryFee || 0;
   deliveryPersonInput.value = draft.deliveryPerson || '';
+  if (customerNameInput) customerNameInput.value = draft.customerName || '';
   const savedTimeMode = document.querySelector(`input[name="deliveryTimeMode"][value="${draft.deliveryTimeMode === 'custom' ? 'custom' : 'now'}"]`);
   if (savedTimeMode) savedTimeMode.checked = true;
   deliveryCustomTimeInput.value = draft.deliveryCustomTime || '';
@@ -120,6 +129,7 @@ const deliveryDistanceInput = document.getElementById('deliveryDistanceInput');
 const deliveryDistanceHint = document.getElementById('deliveryDistanceHint');
 const deliveryFeeInput = document.getElementById('deliveryFeeInput');
 const deliveryPersonInput = document.getElementById('deliveryPersonInput');
+const customerNameInput = document.getElementById('customerNameInput');
 const deliveryCustomTimeInput = document.getElementById('deliveryCustomTimeInput');
 const orderNoteInput = document.getElementById('orderNoteInput');
 let deliveryPricingConfig = { defaultFee: 0, pricePerKm: 0 };
@@ -156,14 +166,14 @@ function computeDeliveryTimeIso() {
 // بعد الحساب لو الكاشير عايز يستثني حالة معينة.
 function applyDeliveryDistancePricing() {
   const km = parseLocaleNumber(deliveryDistanceInput.value);
-  if (km > 0) deliveryFeeInput.value = (Math.round(km * deliveryPricingConfig.pricePerKm * 100) / 100).toFixed(2);
-  else deliveryFeeInput.value = deliveryPricingConfig.defaultFee.toFixed(2);
+  if (km > 0) deliveryFeeInput.value = fmt(Math.round(km * deliveryPricingConfig.pricePerKm * 100) / 100);
+  else deliveryFeeInput.value = fmt(deliveryPricingConfig.defaultFee);
   updateDeliveryDistanceHint();
   renderCart();
 }
 function updateDeliveryDistanceHint() {
   if (!deliveryDistanceHint) return;
-  deliveryDistanceHint.textContent = `سعر الكيلومتر: ${deliveryPricingConfig.pricePerKm.toFixed(2)} — السعر الثابت بدون مسافة: ${deliveryPricingConfig.defaultFee.toFixed(2)}`;
+  deliveryDistanceHint.textContent = `سعر الكيلومتر: ${fmt(deliveryPricingConfig.pricePerKm)} — السعر الثابت بدون مسافة: ${fmt(deliveryPricingConfig.defaultFee)}`;
 }
 const discountTypeSelect = document.getElementById('discountTypeSelect');
 const discountValueInput = document.getElementById('discountValueInput');
@@ -226,12 +236,14 @@ async function init() {
       const isDelivery = selectedOrderType() === 'delivery';
       deliveryFields.classList.toggle('hidden', !isDelivery);
       // فور فتح "توصيل" لأول مرة (مفيش مسافة متسجلة)، نظهر السعر الثابت الافتراضي فوراً.
-      if (isDelivery && !deliveryDistanceInput.value) deliveryFeeInput.value = deliveryPricingConfig.defaultFee.toFixed(2);
+      if (isDelivery && !deliveryDistanceInput.value) deliveryFeeInput.value = fmt(deliveryPricingConfig.defaultFee);
       renderCart();
     })
   );
   deliveryDistanceInput.addEventListener('input', applyDeliveryDistancePricing);
   deliveryFeeInput.addEventListener('input', renderCart);
+  if (customerNameInput) customerNameInput.addEventListener('input', saveDraftCart);
+  deliveryPersonInput.addEventListener('input', saveDraftCart);
   document.querySelectorAll('input[name="deliveryTimeMode"]').forEach((el) =>
     el.addEventListener('change', () => {
       deliveryCustomTimeInput.classList.toggle('hidden', selectedDeliveryTimeMode() !== 'custom');
@@ -720,7 +732,7 @@ function renderProducts() {
       <span class="bundle-offer-badge">🎁 ${ts('عرض')}</span>
       <div class="name">${escapeHtml(b.name)}</div>
       <div class="card-meta-row">
-        <span class="price-badge">${bundleUnitPrice(b).toFixed(2)}</span>
+        <span class="price-badge">${fmt(bundleUnitPrice(b))}</span>
         <span class="stock" title="${escAttr(itemsSummary)}">${escapeHtml(itemsSummary)}</span>
       </div>
     `;
@@ -737,7 +749,7 @@ function renderProducts() {
     card.innerHTML = `
       <div class="name">${escapeHtml(p.name)}${p.variant_count ? ` <span class="variant-badge">${t('pos.selectBadge')}</span>` : ''}</div>
       <div class="card-meta-row">
-        <span class="price-badge">${p.price.toFixed(2)}</span>
+        <span class="price-badge">${fmt(p.price)}</span>
         ${p.track_inventory ? `<span class="stock ${lowStock ? 'low' : ''}">${t('pos.stockLabel')}${p.stock}</span>` : ''}
       </div>
     `;
@@ -745,6 +757,7 @@ function renderProducts() {
   }
   productsGrid.appendChild(fragment);
 }
+
 
 // السعر الظاهر على زر الحزمة = مجموع أسعار أصنافها بعد تطبيق خصم الحزمة (نفس منطق
 // computeBundleDiscount تماماً لكن لتطبيق واحد فقط، ليعرض للكاشير السعر النهائي الحقيقي).
@@ -837,7 +850,7 @@ async function openVariantPicker(parentProduct) {
     const label = [v.variant_size, v.variant_color].filter(Boolean).join(' / ') || v.name;
     row.innerHTML = `
       <span>${escapeHtml(label)}</span>
-      <span>${v.price.toFixed(2)}${v.track_inventory ? ` · ${t('pos.remainingStock')}${v.stock}` : ''}</span>
+      <span>${fmt(v.price)}${v.track_inventory ? ` · ${t('pos.remainingStock')}${v.stock}` : ''}</span>
     `;
     row.addEventListener('click', () => {
       addToCart(v);
@@ -1044,44 +1057,61 @@ function currentDeliveryFee() {
 // الأمثل رياضياً لو تداخلت حزم كثيرة على نفس المنتجات — كافٍ لأغلب الحالات العملية.
 function computeBundleDiscount() {
   if (activeBundles.length === 0 || cart.length === 0) {
-    return { totalDiscount: 0, appliedNames: [] };
+    return { totalDiscount: 0, appliedNames: [], appliedBundleIds: [] };
   }
 
-  const remaining = {};
-  for (const item of cart) remaining[item.productId] = item.quantity;
+  // مجموع الكمية لكل صنف (قد يظهر الصنف بأكثر من سطر، مثلاً سطر بملاحظة)
+  const qtyByProduct = {};
+  for (const item of cart) qtyByProduct[item.productId] = (qtyByProduct[item.productId] || 0) + item.quantity;
 
-  let totalDiscount = 0;
-  const appliedNames = [];
-  const appliedBundleIds = [];
-
-  const orderedBundles = [...activeBundles].sort((a, b) => a.id - b.id);
-  for (const bundle of orderedBundles) {
+  // الحزم المرشّحة مع خصم التطبيق الواحد لكل منها
+  const candidates = [];
+  for (const bundle of [...activeBundles].sort((a, b) => a.id - b.id)) {
     if (!bundle.items || bundle.items.length === 0) continue;
-
-    let maxApplications = Infinity;
-    for (const item of bundle.items) {
-      const available = remaining[item.product_id] || 0;
-      maxApplications = Math.min(maxApplications, Math.floor(available / item.quantity));
-    }
-    if (!isFinite(maxApplications) || maxApplications < 1) continue;
-
-    const bundleSubtotalPerApp = bundle.items.reduce((s, i) => s + i.price * i.quantity, 0);
-    const discountPerApp =
+    const perAppSubtotal = bundle.items.reduce((s, i) => s + i.price * i.quantity, 0);
+    const perApp =
       bundle.discount_type === 'fixed_price'
-        ? Math.max(0, bundleSubtotalPerApp - bundle.discount_value)
-        : bundleSubtotalPerApp * (Math.min(bundle.discount_value, 100) / 100);
-
-    if (discountPerApp <= 0) continue;
-
-    for (const item of bundle.items) {
-      remaining[item.product_id] -= item.quantity * maxApplications;
-    }
-    totalDiscount += discountPerApp * maxApplications;
-    appliedBundleIds.push(bundle.id);
-    appliedNames.push(maxApplications > 1 ? `${bundle.name} ×${maxApplications}` : bundle.name);
+        ? Math.max(0, perAppSubtotal - bundle.discount_value)
+        : perAppSubtotal * (Math.min(bundle.discount_value, 100) / 100);
+    if (perApp > 0) candidates.push({ bundle, perApp });
   }
 
-  return { totalDiscount, appliedNames, appliedBundleIds };
+  // تطبيق الحزم بترتيب معيّن: كل حزمة تستهلك أصنافها من الرصيد المتبقي.
+  function runOrder(order) {
+    const remaining = { ...qtyByProduct };
+    let total = 0;
+    const applied = [];
+    for (const { bundle, perApp } of order) {
+      let maxApplications = Infinity;
+      for (const item of bundle.items) {
+        maxApplications = Math.min(maxApplications, Math.floor((remaining[item.product_id] || 0) / item.quantity));
+      }
+      if (!isFinite(maxApplications) || maxApplications < 1) continue;
+      for (const item of bundle.items) remaining[item.product_id] -= item.quantity * maxApplications;
+      total += perApp * maxApplications;
+      applied.push({ bundle, applications: maxApplications });
+    }
+    return { total, applied };
+  }
+
+  // سابقاً كانت الحزم تُطبَّق بترتيب الإنشاء فقط، فإذا وُجد عرض أقدم بنفس الأصناف
+  // (مثلاً شاورما+لبن بكمية 1) كان يستهلك الأصناف أولاً ويمنع العرض الأفضل (5+5 بسعر ثابت).
+  // الآن نجرّب كل الترتيبات (حتى 6 حزم) ونختار ما يعطي أكبر خصم للزبون.
+  let best = null;
+  if (candidates.length <= 6) {
+    const permute = (arr, cur = []) => {
+      if (!arr.length) { const r = runOrder(cur); if (!best || r.total > best.total + 1e-9) best = r; return; }
+      arr.forEach((x, i) => permute([...arr.slice(0, i), ...arr.slice(i + 1)], [...cur, x]));
+    };
+    permute(candidates);
+  } else {
+    best = runOrder([...candidates].sort((a, b) => b.perApp - a.perApp));
+  }
+  if (!best) return { totalDiscount: 0, appliedNames: [], appliedBundleIds: [] };
+
+  const appliedNames = best.applied.map(({ bundle, applications }) => (applications > 1 ? `${bundle.name} ×${applications}` : bundle.name));
+  const appliedBundleIds = best.applied.map(({ bundle }) => bundle.id);
+  return { totalDiscount: best.total, appliedNames, appliedBundleIds };
 }
 
 /* كل ما زاد عدد الأصناف بالسلة، تتصاغر المسافات والخط تلقائياً حتى تظهر أكبر عدد
@@ -1119,7 +1149,7 @@ function renderCart() {
           : (window.currentPosUser?.role === 'cashier'
             ? `<span title="${t('pos.qtyLockedTooltip')}">${item.quantity}</span>`
             : `<button data-action="minus">−</button><span>${item.quantity}</span><button data-action="plus">+</button>`)}</div>
-        <span>${(item.price * item.quantity).toFixed(2)}</span>
+        <span>${fmt(item.price * item.quantity)}</span>
         <button type="button" class="remove-line-btn" data-action="${window.currentPosUser?.role === 'cashier' ? 'request-remove' : 'remove'}" title="${window.currentPosUser?.role === 'cashier' ? t('pos.removeLineTooltip') : t('pos.removeLineTooltipDirect')}">🗑</button>
         <button type="button" class="note-btn ${item.notes ? 'has-note' : ''}" data-action="note" title="${t('pos.addNoteTooltip')}">📝</button>
       </div>
@@ -1141,14 +1171,14 @@ function renderCart() {
   const delivery = currentDeliveryFee();
   const total = subtotal + tax - discount - bundleDiscount + delivery;
 
-  sumSubtotal.textContent = subtotal.toFixed(2);
-  sumTax.textContent = tax.toFixed(2);
+  sumSubtotal.textContent = fmt(subtotal);
+  sumTax.textContent = fmt(tax);
 
   discountRow.classList.toggle('hidden', discount <= 0);
-  sumDiscount.textContent = discount.toFixed(2);
+  sumDiscount.textContent = fmt(discount);
 
   bundleDiscountRow.classList.toggle('hidden', bundleDiscount <= 0);
-  sumBundleDiscount.textContent = bundleDiscount.toFixed(2);
+  sumBundleDiscount.textContent = fmt(bundleDiscount);
   // اسم الحزمة (كما كتبه المدير عند إنشائها) يظهر كنص ظاهر بجانب الخصم مباشرة —
   // سابقاً كان يُوضع فقط داخل title (تلميح hover)، وهذا غير مرئي على شاشة كاشير باللمس.
   const namesJoined = bundleResult.appliedNames.join('، ');
@@ -1156,14 +1186,14 @@ function renderCart() {
   bundleDiscountRow.title = namesJoined;
 
   deliveryRow.classList.toggle('hidden', delivery <= 0);
-  sumDelivery.textContent = delivery.toFixed(2);
+  sumDelivery.textContent = fmt(delivery);
 
-  sumTotal.textContent = total.toFixed(2);
+  sumTotal.textContent = fmt(total);
   const secondaryRow = document.getElementById('secondaryTotalRow');
   const secondary = document.getElementById('secondaryTotal');
   const hasSecondary = currencyConfig.secondary && currencyConfig.secondary !== currencyConfig.base;
   secondaryRow.classList.toggle('hidden', !hasSecondary);
-  if (hasSecondary) secondary.textContent = `${(total * currencyConfig.rate).toFixed(2)} ${currencyConfig.secondary}`;
+  if (hasSecondary) secondary.textContent = `${fmt(total * currencyConfig.rate)} ${currencyConfig.secondary}`;
 
   const needsApproval = discountExceedsLimit(discount, subtotal);
   discountApprovalNote.classList.toggle('hidden', !needsApproval);
@@ -1171,6 +1201,7 @@ function renderCart() {
   checkoutBtn.disabled = cart.length === 0;
 
   saveDraftCart();
+  refreshOpenPayment();
 }
 
 cartItemsEl.addEventListener('click', (event) => {
@@ -1238,7 +1269,7 @@ function resetLoyaltyState() {
 
 function updateLoyaltyHint() {
   if (!loyaltyQuote) { loyaltyRedeemHint.textContent = ''; return; }
-  loyaltyRedeemHint.textContent = `الرصيد المتاح: ${loyaltyQuote.availablePoints} نقطة — أقصى استبدال ممكن بهذه الفاتورة: ${loyaltyQuote.maxRedeemablePoints} نقطة (خصم ${loyaltyQuote.maxRedeemableValue.toFixed(2)})`;
+  loyaltyRedeemHint.textContent = `الرصيد المتاح: ${loyaltyQuote.availablePoints} نقطة — أقصى استبدال ممكن بهذه الفاتورة: ${loyaltyQuote.maxRedeemablePoints} نقطة (خصم ${fmt(loyaltyQuote.maxRedeemableValue)})`;
 }
 
 async function refreshLoyaltyQuote() {
@@ -1272,7 +1303,7 @@ function onLoyaltyRedeemChange() {
   // بافتراض الدفع نقداً بالمبلغ المضبوط تماماً: نحدّث الاستلام النقدي تلقائياً كل ما
   // تغيّرت قيمة الاستبدال، طالما الكاشير لسا ما عدّل الاستلام يدوياً (يبقى قابلاً للتعديل بعدها بحرية).
   if (selectedPaymentMethod() === 'cash' && document.activeElement !== cashReceivedInput) {
-    cashReceivedInput.value = effectiveGrandTotal().toFixed(2);
+    cashReceivedInput.value = fmt(effectiveGrandTotal());
   }
   updatePaymentView();
 }
@@ -1284,31 +1315,37 @@ loyaltyMaxBtn.addEventListener('click', () => {
   onLoyaltyRedeemChange();
 });
 
-/* ---------------- اختيار العميل داخل نافذة الدفع ---------------- */
-const customerSearchInput = document.getElementById('customerSearchInput');
+/* ---------------- اسم الزبون موحّد: فاتورة + بحث عميل + آجل — إدخال مرة واحدة ---------------- */
 const customerResults = document.getElementById('customerResults');
 const selectedCustomerBox = document.getElementById('selectedCustomerBox');
 const selectedCustomerLabel = document.getElementById('selectedCustomerLabel');
 const clearCustomerBtn = document.getElementById('clearCustomerBtn');
 
-customerSearchInput.addEventListener(
-  'input',
-  debounce(async () => {
-    const term = customerSearchInput.value.trim();
-    const seq = ++customerSearchRequestSeq;
-    if (!term) {
-      customerResults.classList.add('hidden');
-      return;
-    }
-    try {
-      const results = await window.api.customers.list({ search: term, limit: 40 });
-      if (seq !== customerSearchRequestSeq || customerSearchInput.value.trim() !== term) return;
-      renderCustomerResults(results, term);
-    } catch (err) {
-      if (seq === customerSearchRequestSeq) console.error('Customer search failed', err);
-    }
-  }, 250)
-);
+// نفس حقل الاسم يبحث في العملاء ويُحفظ على الفاتورة — لا حقلين منفصلين
+if (customerNameInput) {
+  customerNameInput.addEventListener(
+    'input',
+    debounce(async () => {
+      const term = customerNameInput.value.trim();
+      const seq = ++customerSearchRequestSeq;
+      // إن غيّر الاسم يدوياً بعد اختيار عميل، نفك الربط حتى لا يبقى عميل قديم بالخطأ
+      if (selectedCustomerId && selectedCustomerLabel && !selectedCustomerLabel.textContent.startsWith(term)) {
+        // لا نفك تلقائياً عند كل حرف — فقط عند البحث النشط
+      }
+      if (!term) {
+        customerResults.classList.add('hidden');
+        return;
+      }
+      try {
+        const results = await window.api.customers.list({ search: term, limit: 40 });
+        if (seq !== customerSearchRequestSeq || customerNameInput.value.trim() !== term) return;
+        renderCustomerResults(results, term);
+      } catch (err) {
+        if (seq === customerSearchRequestSeq) console.error('Customer search failed', err);
+      }
+    }, 250)
+  );
+}
 
 function renderCustomerResults(results, term = '') {
   if (results.length === 0) {
@@ -1352,14 +1389,15 @@ function renderCustomerResults(results, term = '') {
 
 function selectCustomer(c) {
   selectedCustomerId = c.id;
-  selectedCustomerLabel.textContent = `${c.name || t('common.noName')} — ${c.loyalty_points} ${t('common.points')}`;
+  // الاسم يُكتب مرة واحدة في نفس الحقل ويُحفظ على الفاتورة + يربط سجل العميل للآجل/الولاء
+  if (customerNameInput) customerNameInput.value = c.name || '';
+  selectedCustomerLabel.textContent = `${c.name || t('common.noName')}${c.phone ? ' — ' + c.phone : ''} — ${c.loyalty_points || 0} ${t('common.points')}`;
   selectedCustomerBox.classList.remove('hidden');
-  customerSearchInput.value = '';
   customerResults.classList.add('hidden');
-  // اختيار العميل هو الشرط الذي يفتح مسار الآجل. سابقاً لا يُحدَّث نموذج الدفع
-  // بعد الاختيار، فتظل العملية وكأن العميل غير محدد إلى أن يغيّر المستخدم الطريقة.
+  if (customerNameInput) customerNameInput.classList.remove('input-error');
   updatePaymentView();
   refreshLoyaltyQuote().then(updatePaymentView);
+  saveDraftCart();
 }
 
 clearCustomerBtn.addEventListener('click', () => {
@@ -1367,18 +1405,56 @@ clearCustomerBtn.addEventListener('click', () => {
   selectedCustomerBox.classList.add('hidden');
   creditApproval = null;
   resetLoyaltyState();
+  // نبقي الاسم المكتوب في الحقل — فقط نفك ربط سجل العميل
   updatePaymentView();
+  saveDraftCart();
 });
 
-function checkout() {
-  if (cart.length === 0) return;
+function computeSaleTotals() {
   const { subtotal, tax: taxTotal } = sumCartTax(cart, organizationMinorUnit);
   const discountTotal = computeDiscountAmount(subtotal);
   const bundleResult = computeBundleDiscount();
   const bundleDiscountTotal = bundleResult.totalDiscount;
   const deliveryFee = currentDeliveryFee();
   const grandTotal = subtotal + taxTotal - discountTotal - bundleDiscountTotal + deliveryFee;
-  currentSaleTotals = { subtotal, taxTotal, discountTotal, bundleDiscountTotal, bundleIds: bundleResult.appliedBundleIds, deliveryFee, grandTotal };
+  return { subtotal, taxTotal, discountTotal, bundleDiscountTotal, bundleIds: bundleResult.appliedBundleIds, deliveryFee, grandTotal };
+}
+
+// حقول التوصيل صارت داخل نافذة الدفع: لو تغيّر نوع الطلب/المسافة/الرسوم والنافذة مفتوحة،
+// نعيد حساب الإجمالي فوراً حتى لا يُسجَّل البيع بالرسوم القديمة.
+function refreshOpenPayment() {
+  if (!paymentModal || paymentModal.classList.contains('hidden') || !currentSaleTotals) return;
+  const prevEffective = effectiveGrandTotal();
+  const fresh = computeSaleTotals();
+  if (Math.abs(fresh.grandTotal - currentSaleTotals.grandTotal) < 0.0001 && fresh.deliveryFee === currentSaleTotals.deliveryFee) return;
+  currentSaleTotals = fresh;
+  if (selectedCustomerId) refreshLoyaltyQuote().then(updatePaymentView);
+  const received = parseLocaleNumber(cashReceivedInput.value);
+  if (!cashReceivedInput.value || Math.abs((received || 0) - prevEffective) < 0.001) cashReceivedInput.value = fmt(effectiveGrandTotal());
+  mixedCashInput.value = '';
+  mixedCardInput.value = '';
+  updatePaymentView();
+}
+
+// اسم الزبون إلزامي عند تأكيد الدفع فقط (الحقل داخل نافذة الدفع بعد التوحيد).
+// لا نمنع فتح النافذة — وإلا لن يظهر حقل الاسم ولا طرق الدفع أصلاً.
+function requireCustomerName() {
+  const name = customerNameInput ? customerNameInput.value.trim() : '';
+  if (name) return true;
+  showToast(t('pos.customerNameRequired'), 'error');
+  if (customerNameInput) {
+    customerNameInput.classList.add('input-error');
+    customerNameInput.focus();
+    customerNameInput.addEventListener('input', () => customerNameInput.classList.remove('input-error'), { once: true });
+  }
+  return false;
+}
+
+function checkout() {
+  if (cart.length === 0) return;
+  // لا نتحقق من الاسم هنا: الحقل موجود داخل نافذة الدفع
+  currentSaleTotals = computeSaleTotals();
+  const { subtotal, discountTotal } = currentSaleTotals;
 
   if (discountExceedsLimit(discountTotal, subtotal) && !discountApproval) {
     openApprovalModal();
@@ -1488,21 +1564,26 @@ async function runApproval(callApi) {
 
 function openPaymentModal() {
   if (!pendingSaleRequestId) pendingSaleRequestId = (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`);
-  paymentTotalDisplay.textContent = currentSaleTotals.grandTotal.toFixed(2);
+  paymentTotalDisplay.textContent = fmt(currentSaleTotals.grandTotal);
   document.querySelector('input[name="paymentMethod"][value="cash"]').checked = true;
-  cashReceivedInput.value = currentSaleTotals.grandTotal.toFixed(2);
+  cashReceivedInput.value = fmt(currentSaleTotals.grandTotal);
   mixedCashInput.value = '';
   mixedCardInput.value = '';
   paymentError.classList.add('hidden');
+  // لا نمسح اسم الزبون هنا — يُستعاد من المسودة إن وُجد؛ الربط بسجل العميل يُعاد عند الاختيار
   selectedCustomerId = null;
   selectedCustomerBox.classList.add('hidden');
-  customerSearchInput.value = '';
-  customerResults.classList.add('hidden');
+  if (customerResults) customerResults.classList.add('hidden');
   resetLoyaltyState();
   updatePaymentView();
   paymentModal.classList.remove('hidden');
-  cashReceivedInput.focus();
-  cashReceivedInput.select();
+  // ركّز على اسم الزبون إن كان فارغاً (إلزامي)، وإلا على المبلغ المستلم
+  if (customerNameInput && !customerNameInput.value.trim()) {
+    customerNameInput.focus();
+  } else {
+    cashReceivedInput.focus();
+    cashReceivedInput.select();
+  }
 }
 
 function closePaymentModal() {
@@ -1518,20 +1599,20 @@ function updatePaymentView() {
   cashFields.classList.toggle('hidden', method !== 'cash');
   mixedFields.classList.toggle('hidden', method !== 'mixed');
   paymentError.classList.add('hidden');
-  paymentTotalDisplay.textContent = effectiveGrandTotal().toFixed(2);
+  paymentTotalDisplay.textContent = fmt(effectiveGrandTotal());
 
   if (method === 'credit' || method === 'store_credit') {
     if (!selectedCustomerId) showPaymentError(t('pos.selectCustomerFirst'));
   } else if (method === 'cash') {
     const received = parseLocaleNumber(cashReceivedInput.value) || 0;
     const change = received - effectiveGrandTotal();
-    changeDueDisplay.textContent = Math.max(change, 0).toFixed(2);
+    changeDueDisplay.textContent = fmt(Math.max(change, 0));
   } else if (method === 'mixed') {
     const cashPart = parseLocaleNumber(mixedCashInput.value) || 0;
     const remaining = effectiveGrandTotal() - cashPart;
-    mixedRemainingDisplay.textContent = remaining.toFixed(2);
+    mixedRemainingDisplay.textContent = fmt(remaining);
     if (!mixedCardInput.value && document.activeElement !== mixedCardInput) {
-      mixedCardInput.value = Math.max(remaining, 0).toFixed(2);
+      mixedCardInput.value = fmt(Math.max(remaining, 0));
     }
   }
 
@@ -1553,19 +1634,41 @@ document.querySelectorAll('input[name="paymentMethod"]').forEach((el) => {
 cashReceivedInput.addEventListener('input', updatePaymentView);
 mixedCashInput.addEventListener('input', updatePaymentView);
 mixedCardInput.addEventListener('input', () => {
-  mixedRemainingDisplay.textContent = (
+  mixedRemainingDisplay.textContent = fmt(
     effectiveGrandTotal() - (parseLocaleNumber(mixedCashInput.value) || 0) - (parseLocaleNumber(mixedCardInput.value) || 0)
-  ).toFixed(2);
+  );
 });
 cancelPaymentBtn.addEventListener('click', closePaymentModal);
 confirmPaymentBtn.addEventListener('click', confirmPayment);
 
 async function confirmPayment() {
+  // الحقل داخل نافذة الدفع — نبقي النافذة مفتوحة ونركّز على حقل الاسم
+  if (!requireCustomerName()) {
+    return;
+  }
   const method = selectedPaymentMethod();
   const total = effectiveGrandTotal();
   let cashAmount = 0;
   let cardAmount = 0;
   let changeDue = 0;
+
+  // آجل / رصيد متجر: إن كُتب الاسم مرة واحدة دون اختيار من القائمة — ننشئ/نربط العميل تلقائياً
+  if ((method === 'credit' || method === 'store_credit') && !selectedCustomerId) {
+    const name = customerNameInput ? customerNameInput.value.trim() : '';
+    try {
+      const matches = await window.api.customers.list({ search: name, limit: 5 });
+      const exact = (matches || []).find((c) => (c.name || '').trim() === name);
+      if (exact) {
+        selectCustomer(exact);
+      } else {
+        const created = await window.api.customers.create({ name });
+        selectCustomer({ id: created.id, name, loyalty_points: 0, phone: '' });
+      }
+    } catch (err) {
+      showPaymentError(t('pos.createCustomerFailed', 'تعذّر حفظ العميل') + ': ' + (err.message || err));
+      return;
+    }
+  }
 
   if (method === 'credit') {
     if (!selectedCustomerId) {
@@ -1590,6 +1693,11 @@ async function confirmPayment() {
       showPaymentError(t('pos.insufficientCash'));
       return;
     }
+    // ضمن هامش التسامح أعلاه لكن أقل حرفياً من الإجمالي (مثلاً أقل بـ0.0005) — لو
+    // أُرسل كما هو لكان changeDue سالباً، والخادم يرفض أي مبلغ دفع سالب فوراً بخطأ
+    // "بيانات الدفع غير صالحة" رغم أن هذه الشاشة وافقت على المبلغ للتو. نقرّبه
+    // للإجمالي بالضبط حتى يتطابق الطرفان دائماً.
+    if (cashAmount < total) cashAmount = total;
     changeDue = cashAmount - total;
     // cashAmount هو ما استلمه الكاشير فعلياً. لا نستبدله بصافي الفاتورة، لأن
     // الخلفية تحفظ الاستلام والباقي كقيمتين منفصلتين وتتحقق من تطابقهما.
@@ -1630,6 +1738,7 @@ async function confirmPayment() {
     deliveryFee: currentSaleTotals.deliveryFee,
     deliveryPerson: orderType === 'delivery' ? deliveryPersonInput.value.trim() || null : null,
     deliveryTime: computeDeliveryTimeIso(),
+    customerName: customerNameInput ? customerNameInput.value.trim() || null : null,
     notes: orderNoteInput.value.trim() || null,
     grandTotal: total,
     paymentMethod: method,
@@ -1680,6 +1789,7 @@ function resetOrderExtras() {
   deliveryDistanceInput.value = '';
   deliveryFeeInput.value = 0;
   deliveryPersonInput.value = '';
+  if (customerNameInput) customerNameInput.value = '';
   document.querySelector('input[name="deliveryTimeMode"][value="now"]').checked = true;
   deliveryCustomTimeInput.value = '';
   deliveryCustomTimeInput.classList.add('hidden');
