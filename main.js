@@ -1981,11 +1981,8 @@ ipcMain.handle('sale:quote', (_event, payload) => {
 ipcMain.handle('sale:create', (_event, sale) => {
   requireAccountReady();
   const openShift = db.getOpenShift();
-  // بدون وردية مفتوحة، البيع النقدي كان يُحفظ بـ shift_id=NULL ويختفي تماماً من
-  // computeExpectedCash (تحسب فقط WHERE shift_id=?) — عجز/فائض وهمي عند أي إقفال
-  // صندوق لاحق بلا أي أثر بالسجل. لا تحقق بالواجهة إطلاقاً (كاشير عادي أو سريع)،
-  // فهذا هو خط الدفاع الوحيد. نفس القناة يمر منها كل إنشاء بيع بغض النظر عن الشاشة.
-  if (!openShift) throw new Error(mt('يجب فتح وردية قبل تسجيل أي عملية بيع.', 'A shift must be open before recording a sale.', 'Satış kaydetmeden önce bir vardiya açılmalı.'));
+  // الوردية اختيارية لإنشاء البيع (متطلبات الاختبار والمنتج). إن وُجدت وردية مفتوحة
+  // تُربط الفاتورة بها ليظهر النقد في computeExpectedCash؛ وإلا shift_id=NULL.
   const discountGrant = sale.discountApprovalGrantId ? consumeApprovalGrant(sale.discountApprovalGrantId) : null;
   const creditGrant = sale.creditApprovalGrantId ? consumeApprovalGrant(sale.creditApprovalGrantId) : null;
   const trustedSale = { ...sale, userId: currentUser.id, shiftId: openShift?.id || null,

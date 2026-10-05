@@ -191,9 +191,8 @@ function renderReceipt(sale, branding, currency = {}) {
 
     <div class="receipt-divider"></div>
 
-    <div class="receipt-row"><span>${t('common.subtotal')}</span><span>${fmt(sale.subtotal)}</span></div>
-    ${(Number(sale.tax_total) > 0 || computedTaxFromItems > 0) ? `<div class="receipt-row"><span>${t('common.tax')}</span><span>${fmt(Number(sale.tax_total) > 0 ? sale.tax_total : computedTaxFromItems)}</span></div>` : ''}
-    ${taxDetailHtml}
+    <div class="receipt-row"><span>${t('common.subtotal')}</span><span><bdi>${fmt(sale.subtotal)}</bdi> ${cur}</span></div>
+    ${(Number(sale.tax_total) > 0 || computedTaxFromItems > 0) ? (taxDetailHtml || `<div class="receipt-row"><span>${t('common.tax')}</span><span><bdi>${fmt(sale.tax_total || computedTaxFromItems)}</bdi> ${cur}</span></div>`) : ''}
     ${taxModeNote && (Number(sale.tax_total) > 0 || computedTaxFromItems > 0) ? `<div class="receipt-item-note">${escapeHtml(taxModeNote)}</div>` : ''}
     ${
       sale.discount_total
@@ -207,7 +206,7 @@ function renderReceipt(sale, branding, currency = {}) {
         ? `<div class="receipt-row"><span>${t('receipt.loyaltyRedeemed')} (${sale.loyalty_points_redeemed} ${t('common.points')})</span><span>-<bdi>${fmt(sale.loyalty_redeemed_value || 0)}</bdi></span></div>`
         : ''
     }
-    <div class="receipt-row receipt-total"><span>${t('receipt.total')}</span><span>${fmt(sale.grand_total)}${cur ? ` ${cur}` : ''}</span></div>
+    <div class="receipt-row receipt-total"><span>${t('receipt.total')}</span><span><bdi>${fmt(sale.grand_total)}</bdi> ${cur}</span></div>
     ${currency.showSecondaryOnReceipt && currency.secondary && currency.secondary !== currency.base ? `<div class="receipt-row"><span>${t('receipt.secondaryCurrency')}</span><span><bdi>${(sale.grand_total * (sale.exchange_rate || currency.rate || 1)).toFixed(2)}</bdi> ${escapeHtml(currency.secondary)}</span></div>` : ''}
     ${sale.due_amount ? `<div class="receipt-row"><span>${t('receipt.dueAmount')}</span><span><bdi>${fmt(sale.due_amount)}</bdi></span></div>` : ''}
 

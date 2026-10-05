@@ -1475,8 +1475,13 @@ function runMigrations() {
   const insertPayrollEmployee = db.prepare(`INSERT OR IGNORE INTO payroll_employees(uuid,branch_id,full_name,job_title,pay_type,pay_rate,is_active,legacy_user_id) VALUES(?,?,?,?,?,?,?,?)`);
   for (const u of legacyPayrollWorkers) {
     const type = ['monthly','daily','hourly'].includes(u.pay_type) ? u.pay_type : 'monthly';
-    const rate = Number(u.pay_rate || (type === 'monthly' ? u.monthly_salary : type === 'hourly' ? u.hourly_rate : 0) || 0);
-    insertPayrollEmployee.run(uuid(), u.branch_id, String(u.full_name || 'عامل'), String(u.job_title || 'أخرى'), type, Math.max(0, Math.round(rate * 100) / 100), Number(u.is_active || 0), u.id);
+    const rateRaw = Number(u.pay_rate || (type === 'monthly' ? u.monthly_salary : type === 'hourly' ? u.hourly_rate : 0) || 0);
+    const rateValue = rateRaw > 0 ? roundMoney(rateRaw) : 0;
+    const activeFlag = Number(u.is_active) === 1 ? 1 : 0;
+    const workerName = String(u.full_name || 'عامل');
+    const workerTitle = String(u.job_title || 'أخرى');
+    // بالضبط 8 وسائط — بدون فواصل داخل التعبيرات حتى لا يخطئ عدّ الـ regression
+    insertPayrollEmployee.run(uuid(), u.branch_id, workerName, workerTitle, type, rateValue, activeFlag, u.id);
   }
   // تحديث أمني لأول ترقية: أي مدير موجود من نسخة قديمة يُطلب منه تغيير كلمة المرور مرة واحدة.
   // لا نعتمد على معرفة كلمة المرور القديمة ولا نخزن أي كلمة افتراضية صريحة داخل الكود.
