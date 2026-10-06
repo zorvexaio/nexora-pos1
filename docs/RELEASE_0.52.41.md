@@ -5,3 +5,4 @@
 - استعادة زر «← الطاولات» المفقود في `table-order.html`.
 - مواءمة `package-lock.json` مع `package.json` (0.52.41).
 - تحديث اختبارات الفحص النصي لتقرأ المصدر بعد التقسيم (`database/domains/*` و`renderer/css/*`) عبر `tools/lib/db-source.js` و`tools/lib/renderer-css.js`.
+- إصلاح فشل البناء `brace_expansion_1.expand is not a function`: كان override عام يفرض `brace-expansion@2` على `minimatch@10` الذي يحتاج `^5.0.8`. صار الـ override محصوراً (`"minimatch@10": { "brace-expansion": "^5.0.8" }`) وبقية الحزم تبقى على 2.1.7. بعد سحب هذا التحديث شغّل `npm ci`.
