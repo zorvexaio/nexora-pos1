@@ -6,7 +6,7 @@ const assert = require('assert');
 const root = path.resolve(__dirname, '..');
 const sync = fs.readFileSync(path.join(root,'core','sync-engine.js'),'utf8');
 const client = fs.readFileSync(path.join(root,'database','sync-client.js'),'utf8');
-const db = fs.readFileSync(path.join(root,'database','db.js'),'utf8');
+const db = require('./lib/db-source').read();
 let n=0;
 function ok(name, condition){ assert.ok(condition,name); n++; console.log('PASS:',name); }
 ok('remote sync validates monotonic cursor', /nextCursor < before/.test(sync));

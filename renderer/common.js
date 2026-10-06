@@ -258,7 +258,12 @@ function confirmDialog(message, options = {}) {
     overlay.addEventListener('click', (e) => { if (e.target === overlay) cleanup(false); });
     function onKeydown(e) {
       if (e.key === 'Escape') { e.preventDefault(); cleanup(false); }
-      else if (e.key === 'Enter') { e.preventDefault(); cleanup(true); }
+      else if (e.key === 'Enter') {
+        e.preventDefault();
+        // في إجراءات الخطر لا نؤكد بـ Enter العارض — التركيز على الإلغاء أصلاً
+        if (tone === 'danger') cleanup(false);
+        else cleanup(true);
+      }
     }
     document.addEventListener('keydown', onKeydown);
     setTimeout(() => (tone === 'danger' ? cancelBtn : okBtn).focus(), 0);
@@ -878,3 +883,41 @@ function showErrorToast(message) {
   container.appendChild(toast);
   setTimeout(() => toast.remove(), 7000);
 }
+
+
+/* ---- Keyboard shortcuts help (? key) ---- */
+function showKeyboardHelp() {
+  if (document.getElementById('nexora-keys-overlay')) return;
+  const overlay = document.createElement('div');
+  overlay.id = 'nexora-keys-overlay';
+  overlay.className = 'nexora-keys-overlay';
+  overlay.setAttribute('role', 'dialog');
+  overlay.setAttribute('aria-modal', 'true');
+  overlay.setAttribute('aria-label', 'Keyboard shortcuts');
+  overlay.innerHTML = `
+    <div class="nexora-keys-card">
+      <h2>اختصارات لوحة المفاتيح</h2>
+      <ul>
+        <li><kbd>F2</kbd> التركيز على البحث / الباركود</li>
+        <li><kbd>F4</kbd> إتمام البيع</li>
+        <li><kbd>Ctrl</kbd>+<kbd>Enter</kbd> إتمام البيع</li>
+        <li><kbd>Esc</kbd> مسح البحث / إغلاق</li>
+        <li><kbd>?</kbd> هذه المساعدة</li>
+      </ul>
+      <button type="button" class="btn btn-primary" id="nexora-keys-close">إغلاق</button>
+    </div>`;
+  document.body.appendChild(overlay);
+  const close = () => overlay.remove();
+  overlay.querySelector('#nexora-keys-close').onclick = close;
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+  document.addEventListener('keydown', function onEsc(e) {
+    if (e.key === 'Escape') { close(); document.removeEventListener('keydown', onEsc); }
+  });
+}
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === '?' && !e.ctrlKey && !e.metaKey && !['INPUT','TEXTAREA','SELECT'].includes(e.target?.tagName)) {
+    e.preventDefault();
+    showKeyboardHelp();
+  }
+});

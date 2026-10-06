@@ -2,7 +2,7 @@
 'use strict';
 const fs=require('fs');const path=require('path');const assert=require('assert');
 const root=path.resolve(__dirname,'..');
-const db=fs.readFileSync(path.join(root,'database','db.js'),'utf8');
+const db=require('./lib/db-source').read();
 const main=fs.readFileSync(path.join(root,'main.js'),'utf8');
 const preload=fs.readFileSync(path.join(root,'preload.js'),'utf8');
 // كان هذا يطابق =15 حرفياً فيفشل تلقائياً بمجرد أي ترحيلة لاحقة (فشل فعلياً منذ v16)

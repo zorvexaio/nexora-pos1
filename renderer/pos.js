@@ -227,8 +227,11 @@ async function init() {
   checkoutBtn.addEventListener('click', checkout);
   document.addEventListener('keydown', (event) => {
     const tag = event.target?.tagName;
+    const inField = ['INPUT', 'TEXTAREA', 'SELECT'].includes(tag);
     if ((event.ctrlKey || event.metaKey) && event.key === 'Enter' && !event.target.closest('form')) { event.preventDefault(); checkout(); }
-    if (event.key === 'F2' && !['INPUT','TEXTAREA','SELECT'].includes(tag)) { event.preventDefault(); searchInput.focus(); searchInput.select(); }
+    if (event.key === 'F2' && !inField) { event.preventDefault(); searchInput.focus(); searchInput.select(); }
+    if (event.key === 'F4') { event.preventDefault(); if (!checkoutBtn.disabled) checkout(); }
+    if (event.key === 'Escape' && document.activeElement === searchInput) { searchInput.value = ''; loadProducts(); hideBarcodeError(); }
   });
 
   document.querySelectorAll('input[name="orderType"]').forEach((el) =>
@@ -1441,8 +1444,11 @@ function refreshOpenPayment() {
 function requireCustomerName() {
   const name = customerNameInput ? customerNameInput.value.trim() : '';
   if (name) return true;
+  // الرسالة داخل نافذة الدفع نفسها (لا تعتمد على التوست في زاوية الشاشة) + توست احتياطي
+  showPaymentError(t('pos.customerNameRequired'));
   showToast(t('pos.customerNameRequired'), 'error');
   if (customerNameInput) {
+    customerNameInput.scrollIntoView({ block: 'center', behavior: 'smooth' });
     customerNameInput.classList.add('input-error');
     customerNameInput.focus();
     customerNameInput.addEventListener('input', () => customerNameInput.classList.remove('input-error'), { once: true });
@@ -1450,8 +1456,26 @@ function requireCustomerName() {
   return false;
 }
 
-function checkout() {
+// الوردية إلزامية: نتحقق قبل فتح نافذة الدفع وقبل التأكيد (قد تُغلق الوردية من جهاز آخر)
+async function requireOpenShiftOrWarn() {
+  let shift = null;
+  try { shift = await window.api.shift.current(); } catch (err) { console.error('shift.current failed', err); }
+  if (shift) return true;
+  // نافذة تبقى ظاهرة حتى يضغط المستخدم زراً (التوست كان يختفي قبل أن يُقرأ)
+  if (!paymentModal.classList.contains('hidden')) showPaymentError(t('pos.shiftRequired'));
+  const goOpen = await confirmDialog(t('pos.shiftRequired'), {
+    title: t('pos.shiftRequiredTitle'),
+    tone: 'warning',
+    confirmLabel: t('pos.openShiftNow'),
+    cancelLabel: t('pos.closeNotice'),
+  });
+  if (goOpen) window.location.href = 'pages/shift.html';
+  return false;
+}
+
+async function checkout() {
   if (cart.length === 0) return;
+  if (!(await requireOpenShiftOrWarn())) return;
   // لا نتحقق من الاسم هنا: الحقل موجود داخل نافذة الدفع
   currentSaleTotals = computeSaleTotals();
   const { subtotal, discountTotal } = currentSaleTotals;
@@ -1643,9 +1667,11 @@ confirmPaymentBtn.addEventListener('click', confirmPayment);
 
 async function confirmPayment() {
   // الحقل داخل نافذة الدفع — نبقي النافذة مفتوحة ونركّز على حقل الاسم
+  if (!(await requireOpenShiftOrWarn())) return;
   if (!requireCustomerName()) {
     return;
   }
+  paymentError.classList.add('hidden');
   const method = selectedPaymentMethod();
   const total = effectiveGrandTotal();
   let cashAmount = 0;
@@ -1763,6 +1789,11 @@ async function confirmPayment() {
     const po = result?.printOutcome;
     if (po?.kitchen && po.kitchen.success === false) showToast(`⚠️ لم تُطبع تذكرة المطبخ: ${po.kitchen.reason || 'خطأ غير معروف'}`, 'error');
     if (po?.receipt && po.receipt.success === false) showToast(`⚠️ لم تُطبع الفاتورة: ${po.receipt.reason || 'خطأ غير معروف'}`, 'error');
+    const fo = result?.fiscalOutcome;
+    if (fo) {
+      if (fo.error) showToast(`⚠️ الفوترة التلقائية: ${fo.error}`, 'error');
+      else if (fo.status) showToast(`${ts('فوترة تلقائية')}: ${fo.status}${fo.provider ? ` · ${fo.provider}` : ''}`, fo.status === 'submitted' ? 'success' : 'info');
+    }
     cart = [];
     clearDraftCart();
     renderCart();

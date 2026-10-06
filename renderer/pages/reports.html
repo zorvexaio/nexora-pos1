@@ -4,10 +4,14 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: file:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-src 'none';">
   <meta charset="UTF-8" />
   <title>التقارير</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <link rel="stylesheet" href="../tokens.css" />
   <link rel="stylesheet" href="../style.css" />
 </head>
 <body>
-  <div class="app">
+  <a href="#mainContent" class="skip-link">تخطي إلى المحتوى</a>
+
+  <div class="app" id="mainContent">
     <header class="topbar">
       <div class="brand brand-premium"><span class="brand-mark" aria-hidden="true">N</span><span data-i18n="app.brand">Nexora POS</span></div>
       <nav class="nav-links">
@@ -255,7 +259,23 @@
           <tbody id="invoicesBody"></tbody>
         </table>
         </div>
+        
         <div id="invoicesEmpty" class="empty-state" style="display:none">لا توجد فواتير في هذه الفترة.</div>
+      </div>
+
+      <div class="report-panel full" style="margin-top:16px;">
+        <div class="panel-heading">
+          <h2>مستندات الفوترة الإلكترونية <span class="panel-hint">آخر التسجيلات المحلية للموصل المالي</span></h2>
+          <button type="button" id="refreshFiscalDocsBtn" class="btn btn-secondary btn-sm">تحديث</button>
+        </div>
+        <div class="table-scroll">
+          <table class="products-table">
+            <thead><tr><th>#</th><th>الفاتورة</th><th>المزوّد</th><th>الحالة</th><th>معرف خارجي</th><th>التاريخ</th></tr></thead>
+            <tbody id="fiscalDocsBody"></tbody>
+          </table>
+        </div>
+        <div id="fiscalDocsEmpty" class="empty-state" style="display:none">لا توجد مستندات مالية مسجّلة بعد.</div>
+
       </div>
 
       <div class="report-panel full">

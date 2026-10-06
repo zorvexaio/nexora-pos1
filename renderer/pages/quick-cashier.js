@@ -403,6 +403,18 @@ function updateChange() {
 
 async function confirmPay() {
   if (!currentQuote) return;
+  let openShift = null;
+  try { openShift = await window.api.shift.current(); } catch (err) { console.error('shift.current failed', err); }
+  if (!openShift) {
+    const goOpen = await confirmDialog(t('pos.shiftRequired'), {
+      title: t('pos.shiftRequiredTitle'),
+      tone: 'warning',
+      confirmLabel: t('pos.openShiftNow'),
+      cancelLabel: t('pos.closeNotice'),
+    });
+    if (goOpen) window.location.href = 'shift.html';
+    return;
+  }
   const total = Number(currentQuote.grandTotal || 0);
   let received = paymentMethod === 'cash' ? (parseLocaleNumber(cashInput.value) || 0) : total;
   if (paymentMethod === 'cash' && received < total - 0.5 / Math.pow(10, globalMinorUnit)) {
@@ -435,6 +447,11 @@ async function confirmPay() {
     const po = result?.printOutcome;
     if (po?.kitchen && po.kitchen.success === false) showToast(`⚠️ ${t('quickCashier.kitchenPrintFailed', 'لم تُطبع تذكرة المطبخ')}: ${po.kitchen.reason || t('common.unknownError', 'خطأ غير معروف')}`, 'error');
     if (po?.receipt && po.receipt.success === false) showToast(`⚠️ ${t('quickCashier.receiptPrintFailed', 'لم تُطبع الفاتورة')}: ${po.receipt.reason || t('common.unknownError', 'خطأ غير معروف')}`, 'error');
+    const fo = result?.fiscalOutcome;
+    if (fo) {
+      if (fo.error) showToast(`⚠️ ${t('quickCashier.fiscalFailed', 'الفوترة التلقائية')}: ${fo.error}`, 'error');
+      else if (fo.status) showToast(`${t('quickCashier.fiscalOk', 'فوترة تلقائية')}: ${fo.status}`, fo.status === 'submitted' ? 'success' : 'info');
+    }
     cart = [];
     currentQuote = null;
     renderCart();

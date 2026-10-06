@@ -3,7 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const root = path.resolve(__dirname, '..');
 const main = fs.readFileSync(path.join(root, 'main.js'), 'utf8');
-const db = fs.readFileSync(path.join(root, 'database', 'db.js'), 'utf8');
+const db = require('./lib/db-source').read();
 const license = fs.readFileSync(path.join(root, 'licensing', 'license.js'), 'utf8');
 const results = [];
 function pass(name, condition) { if (!condition) throw new Error(`FAIL: ${name}`); results.push(`PASS: ${name}`); }

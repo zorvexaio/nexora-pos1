@@ -4,12 +4,16 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: file:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-src 'none';">
   <meta charset="UTF-8" />
   <title>الإعدادات</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <link rel="stylesheet" href="../tokens.css" />
   <link rel="stylesheet" href="../style.css" />
 </head>
 <body>
-  <div class="app">
+  <a href="#mainContent" class="skip-link">تخطي إلى المحتوى</a>
+
+  <div class="app" id="mainContent">
     <header class="topbar">
-      <div class="brand" data-i18n="app.brand">نقطة البيع</div>
+      <div class="brand brand-premium"><span class="brand-mark" aria-hidden="true">N</span><span data-i18n="app.brand">Nexora POS</span></div>
       <nav class="nav-links">
         <a href="../index.html" data-i18n="nav.pos">الكاشير</a><a href="quick-cashier.html" data-setting="quickCashier" data-i18n="nav.quickCashier">الكاشير السريع</a>
         <a href="tables.html" data-business="restaurant" data-i18n="nav.tables">الطاولات</a>
@@ -46,7 +50,16 @@
         <div><div class="eyebrow">NEXORA POS</div><h1>الإعدادات</h1><p class="page-subtitle">تحكم مركزي في الهوية، الفوترة، المزامنة، الطباعة، التحديثات، والنسخ الاحتياطي.</p></div><div class="settings-hero-mark" aria-hidden="true">N</div>
       </div>
 
-      <div class="report-panel settings-panel">
+      
+      <nav class="settings-tabs" role="tablist" aria-label="أقسام الإعدادات">
+        <button type="button" class="settings-tab active" role="tab" aria-selected="true" data-tab="locale">الدولي والفوترة</button>
+        <button type="button" class="settings-tab" role="tab" aria-selected="false" data-tab="sales">المبيعات والضرائب</button>
+        <button type="button" class="settings-tab" role="tab" aria-selected="false" data-tab="brand">الهوية والعلامة</button>
+        <button type="button" class="settings-tab" role="tab" aria-selected="false" data-tab="ops">النسخ والمزامنة</button>
+        <button type="button" class="settings-tab" role="tab" aria-selected="false" data-tab="print">الطباعة والكاشير</button>
+        <button type="button" class="settings-tab" role="tab" aria-selected="false" data-tab="system">النظام والدعم</button>
+      </nav>
+<div class="report-panel settings-panel" data-settings-tab="locale">
         <h2>الإعداد الدولي والامتثال المحلي</h2>
         <p class="field-hint">هذه الطبقة تضبط الدولة والمنطقة الزمنية والعملة ووضع الضريبة. الفوترة الإلكترونية تُنفّذ عبر موصل محلي بحسب الدولة، ولا تفترض Nexora قانونًا واحدًا لكل الدول.</p>
         <form id="globalForm" class="form-grid">
@@ -58,12 +71,22 @@
           <div class="form-field"><label>وضع الضريبة</label><select id="fieldTaxMode"><option value="exclusive">الضريبة مضافة على السعر</option><option value="inclusive">الضريبة مشمولة بالسعر</option></select></div>
           <div class="form-field"><label>رقم التسجيل الضريبي</label><input id="fieldGlobalTaxNumber" /></div>
           <div class="form-field"><label>الفوترة الإلكترونية</label><select id="fieldFiscalizationMode"><option value="none">غير مفعّلة</option><option value="adapter">عبر موصل الدولة</option></select></div>
-          <div class="form-field full"><label>معرّف موصل الفوترة الإلكترونية</label><input id="fieldFiscalProvider" placeholder="مثال: tr.gib" /></div>
-          <div class="form-field full"><button type="submit" id="saveGlobalBtn" class="btn btn-primary">حفظ الإعداد الدولي</button></div>
+          <div class="form-field full"><label>معرّف موصل الفوترة الإلكترونية</label><select id="fieldFiscalProvider"><option value="">—</option><option value="generic">generic</option><option value="offline">offline</option><option value="tr.gib">tr.gib (Turkey)</option><option value="sa.zatca">sa.zatca (Saudi)</option><option value="eg.eta">eg.eta (Egypt)</option></select></div>
+                              <div class="form-field checkbox full">
+            <input id="fieldFiscalAutoIssue" type="checkbox" />
+            <label for="fieldFiscalAutoIssue">إصدار مالي تلقائي عند إتمام البيع</label>
+          </div>
+          <div class="field-hint full">يعمل فقط عندما يكون وضع الفوترة «عبر موصل الدولة». الفشل لا يمنع إتمام البيع ويُسجَّل في التدقيق.</div>
+          <div class="form-field full" id="fiscalStatusBox">
+            <label>حالة موصل الفوترة الإلكترونية</label>
+            <div id="fiscalStatusMessage" class="field-hint" style="margin:0;padding:10px 12px;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface-soft);">جارٍ الفحص…</div>
+            <div class="field-hint" style="margin-top:6px;">الموصلات المدمجة: generic، offline (تسجيل محلي معلّق)، tr.gib / sa.zatca / eg.eta (هياكل جاهزة — بدون اعتماد حي داخل الحزمة).</div>
+          </div>
+<div class="form-field full"><button type="submit" id="saveGlobalBtn" class="btn btn-primary">حفظ الإعداد الدولي</button></div>
         </form>
       </div>
 
-      <div class="report-panel settings-panel">
+      <div class="report-panel settings-panel" data-settings-tab="locale">
         <h2>العملة والفوترة</h2>
         <form id="currencyForm" class="form-grid">
           <div class="form-field"><label>العملة الأساسية</label><input id="fieldCurrencyBase" type="text" maxlength="8" placeholder="USD" required /></div>
@@ -76,7 +99,7 @@
         </form>
       </div>
 
-      <div class="report-panel settings-panel">
+      <div class="report-panel settings-panel" data-settings-tab="locale">
         <h2>بيانات الفرع ونوع النشاط</h2>
         <form id="settingsForm" class="form-grid">
           <div class="form-field full">
@@ -99,7 +122,7 @@
         </form>
       </div>
 
-      <div class="report-panel settings-panel">
+      <div class="report-panel settings-panel" data-settings-tab="sales">
         <h2>حد الخصم المسموح للكاشير</h2>
         <form id="discountForm" class="form-grid">
           <div class="form-field full">
@@ -113,7 +136,7 @@
         </form>
       </div>
 
-      <div class="report-panel settings-panel">
+      <div class="report-panel settings-panel" data-settings-tab="sales">
         <h2 data-i18n="settings.categories.title">فئات الكاشير (صور وترتيب)</h2>
         <div class="field-hint" data-i18n="settings.categories.hint">كل الفئات تظهر كتبويبات سريعة بشاشة الكاشير: الصورة اختيارية، وبدونها يظهر أول حرف من اسم الفئة. يمكنك إضافة الصورة أو مسحها لاحقاً، ثم رتّب الأقسام بالأسهم.</div>
 
@@ -128,7 +151,7 @@
         <div id="categoryImagesList" class="category-images-grid"></div>
       </div>
 
-      <div class="report-panel settings-panel">
+      <div class="report-panel settings-panel" data-settings-tab="sales">
         <h2 data-i18n="settings.tax.title">الضريبة الافتراضية</h2>
         <form id="taxDefaultForm" class="form-grid">
           <div class="form-field">
@@ -142,7 +165,7 @@
         </form>
       </div>
 
-      <div class="report-panel settings-panel">
+      <div class="report-panel settings-panel" data-settings-tab="sales">
         <h2 data-i18n="settings.loyalty.title">برنامج نقاط الولاء</h2>
         <form id="loyaltyForm" class="form-grid">
           <div class="form-field">
@@ -161,7 +184,7 @@
         </form>
       </div>
 
-      <div class="report-panel settings-panel">
+      <div class="report-panel settings-panel" data-settings-tab="sales">
         <h2>تسعير التوصيل الأوتوماتيكي</h2>
         <form id="deliveryPricingForm" class="form-grid">
           <div class="form-field">
@@ -180,7 +203,7 @@
         </form>
       </div>
 
-      <div class="report-panel settings-panel" data-business="restaurant,supermarket">
+      <div class="report-panel settings-panel" data-business="restaurant,supermarket" data-settings-tab="sales">
         <h2>البيع بالوزن (خضار وفواكه السوبرماركت)</h2>
         <form id="weighingForm" class="form-grid">
           <div class="form-field full">
@@ -199,7 +222,7 @@
         </form>
       </div>
 
-      <div class="report-panel settings-panel">
+      <div class="report-panel settings-panel" data-settings-tab="brand">
         <h2>العلامة التجارية (تظهر على الفاتورة)</h2>
         <form id="brandingForm" class="form-grid">
           <div class="form-field full">
@@ -225,7 +248,7 @@
         </form>
       </div>
 
-      <div class="report-panel settings-panel">
+      <div class="report-panel settings-panel" data-settings-tab="ops">
         <h2>النسخ الاحتياطي والاستعادة</h2>
         <p class="field-hint">يُنشئ نسخة كاملة من قاعدة البيانات الحالية، أو يستعيد نسخة سابقة (سيُعاد تشغيل التطبيق بعد الاستعادة).</p>
         <div class="form-field full" style="display:flex; gap:10px;">
@@ -236,7 +259,7 @@
         <div id="autoBackupStatus" class="field-hint" style="margin-top:8px; font-weight:700;"></div>
       </div>
 
-      <div class="report-panel settings-panel">
+      <div class="report-panel settings-panel" data-settings-tab="ops">
         <h2>المزامنة مع السيرفر المركزي</h2>
         <p class="field-hint">تعمل نقطة البيع دون اتصال، ثم تُرسل المنتجات والمخزون والعملاء والفواتير عند الضغط على مزامنة. استخدم خادم Nexora POS المركزي المتوافق مع العقد المرفق.</p>
         <form id="syncForm" class="form-grid">
@@ -249,7 +272,7 @@
         </form>
       </div>
 
-      <div class="report-panel settings-panel">
+      <div class="report-panel settings-panel" data-settings-tab="ops">
         <h2>مشاركة المخزون والمبيعات بين كاشيرات نفس المحل</h2>
         <p class="field-hint">
           لو عندك أكثر من شاشة كاشير بنفس المحل وبدك يتشاركوا نفس المخزون والفواتير لحظياً: حدّد
@@ -294,7 +317,7 @@
         </div>
       </div>
 
-      <div class="report-panel settings-panel">
+      <div class="report-panel settings-panel" data-settings-tab="print">
         <h2>الطباعة التلقائية</h2>
         <p class="field-hint">لا تظهر أي نافذة طباعة. اختر طابعة فعلية من القائمة، أو اترك "طابعة ويندوز الافتراضية" — طابعات PDF الوهمية (مثل Microsoft Print to PDF) مستبعدة تلقائياً من الطباعة التلقائية لأنها تُنتج ملف PDF بدل الطباعة الفعلية.</p>
         <form id="printingForm" class="form-grid">
@@ -328,7 +351,7 @@
         </form>
       </div>
 
-      <div class="report-panel settings-panel">
+      <div class="report-panel settings-panel" data-settings-tab="system">
         <h2>تحديث التطبيق</h2>
         <p class="field-hint">الإصدار الحالي: <span id="appCurrentVersion">—</span></p>
         <div class="form-field checkbox full">
@@ -343,7 +366,7 @@
         <div id="updateStatus" class="field-hint" style="margin-top:8px;"></div>
       </div>
 
-      <div class="report-panel settings-panel">
+      <div class="report-panel settings-panel" data-settings-tab="print">
         <h2 data-i18n="settings.receiptBarcode.title">رمز QR على الفاتورة</h2>
         <label class="switch-row">
           <input type="checkbox" id="fieldReceiptBarcodeEnabled" />
@@ -351,7 +374,7 @@
         </label>
       </div>
 
-      <div class="report-panel settings-panel">
+      <div class="report-panel settings-panel" data-settings-tab="print">
         <h2 data-i18n="settings.quickCashier.title">الكاشير السريع (بدون لوحة مفاتيح)</h2>
         <p class="field-hint" data-i18n="settings.quickCashier.description">شاشة بيع بديلة تعمل باللمس فقط: لوحة أرقام لإدخال كود الصنف يدوياً + شبكة صور للأصناف الشائعة. مناسبة لمحل كالبقالة حيث لا يوجد كيبورد أو لا يحتاج الكاشير القراءة والكتابة.</p>
         <label class="switch-row">
@@ -360,13 +383,13 @@
         </label>
       </div>
 
-      <div class="report-panel settings-panel developer-contact-panel premium-contact">
+      <div class="report-panel settings-panel developer-contact-panel premium-contact" data-settings-tab="system">
         <h2 data-i18n="settings.developer.title">رقم المطور</h2>
         <p class="field-hint" data-i18n="settings.developer.description">للدعم الفني والتواصل مع المطور:</p>
         <div class="developer-contact-row"><span class="developer-contact-icon" aria-hidden="true">☎</span><a href="tel:+905525355755" dir="ltr" class="developer-phone">+905525355755</a></div>
       </div>
 
-      <div class="report-panel settings-panel">
+      <div class="report-panel settings-panel" data-settings-tab="system">
         <h2 data-i18n="settings.audit.title">سجل التدقيق والأخطاء</h2>
         <button id="loadAuditBtn" type="button" class="btn btn-secondary" data-i18n="settings.audit.load">عرض آخر العمليات</button>
         <div id="auditLogList" class="field-hint" style="margin-top:10px; white-space:pre-wrap"></div>

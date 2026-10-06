@@ -1,6 +1,6 @@
 'use strict';
 const fs = require('fs');
-const main = fs.readFileSync('database/db.js','utf8');
+const main = require('./lib/db-source').read();
 const sync = fs.readFileSync('server/sync-server.js','utf8');
 const pos = fs.readFileSync('renderer/index.html','utf8') + fs.readFileSync('renderer/pos.js','utf8');
 const schema = fs.readFileSync('database/schema.sql','utf8');

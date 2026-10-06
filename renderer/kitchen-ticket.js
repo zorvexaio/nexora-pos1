@@ -1,3 +1,22 @@
+
+/** رقم فاتورة قصير للطباعة: آخر مقطع رقمي بعد الشرطة (000399) بدل الرمز الطويل. */
+function shortInvoiceNo(raw) {
+  const s = String(raw == null ? '' : raw).trim();
+  if (!s) return '';
+  const parts = s.split(/[-_/]/).filter(Boolean);
+  if (parts.length >= 2) {
+    const last = parts[parts.length - 1];
+    if (/^\d+$/.test(last)) return last.replace(/^0+(?=\d)/, '') === '' ? last : last; // keep zeros like 000399
+    // إن كان الأخير غير رقمي، جرّب مقطعاً رقمياً من النهاية
+    for (let i = parts.length - 1; i >= 0; i--) {
+      if (/^\d+$/.test(parts[i])) return parts[i];
+    }
+  }
+  const digits = s.match(/(\d{3,})$/);
+  if (digits) return digits[1];
+  return s.length > 12 ? s.slice(-8) : s;
+}
+
 async function init() {
   let lang = 'ar';
   try {
@@ -45,7 +64,7 @@ async function init() {
     .map((offer) => {
       const apps = Number(offer.applications || 1);
       const rows = offer.items
-        .map((oi) => `<div class="kitchen-item kitchen-offer-item"><span class="kitchen-item-qty">${Number(oi.quantity || 0)} x</span><span class="kitchen-item-name">${escapeHtml(oi.product_name)}</span>${noteFor(oi.product_id)}</div>`)
+        .map((oi) => `<div class="kitchen-item kitchen-offer-item"><span class="kitchen-item-qty">${Number(oi.quantity || 0)}×</span><span class="kitchen-item-name">${escapeHtml(oi.product_name)}</span>${noteFor(oi.product_id)}</div>`)
         .join('');
       return `<div class="kitchen-offer"><div class="kitchen-offer-title">*** ${t('kitchen.offer')} *** ${escapeHtml(offer.name)}${apps > 1 ? ` ×${apps}` : ''}</div>${rows}</div>`;
     })
@@ -69,7 +88,7 @@ async function init() {
         const isDelta = Array.isArray(deltaItems);
         const noteOnly = isDelta && qty === 0;
         const prefix = noteOnly ? 'تعديل ملاحظة ' : (isDelta && qty < 0 ? 'إلغاء ' : (isDelta ? 'إضافة ' : ''));
-        return `<div class="kitchen-item"><span class="kitchen-item-qty">${noteOnly ? '•' : `${isDelta ? Math.abs(qty) : qty} x`}</span><span class="kitchen-item-name">${prefix}${escapeHtml(i.product_name)}</span>${i.notes ? `<div class="kitchen-item-note">*** ${escapeHtml(i.notes)} ***</div>` : ''}</div>`;
+        return `<div class="kitchen-item"><span class="kitchen-item-qty">${noteOnly ? '•' : `${isDelta ? Math.abs(qty) : qty}×`}</span><span class="kitchen-item-name">${prefix}${escapeHtml(i.product_name)}</span>${i.notes ? `<div class="kitchen-item-note">*** ${escapeHtml(i.notes)} ***</div>` : ''}</div>`;
       }
     )
     .join('');
@@ -99,10 +118,10 @@ async function init() {
   const totalPieces = isDeltaTicket ? 0 : (sale.items || []).reduce((n, i) => n + Number(i.quantity || 0), 0);
   const piecesHtml = totalPieces > 0 ? `<div class="kt-count">${t('kitchen.totalPieces')}: <bdi>${Number.isInteger(totalPieces) ? totalPieces : totalPieces.toFixed(2)}</bdi></div>` : '';
 
-  const orderDisplay = sale.invoice_number || sale.id;
+  const orderDisplay = shortInvoiceNo(sale.invoice_number || sale.id) || (sale.invoice_number || sale.id);
   const shortWhen = formatShortDateTimeKitchen(sale.created_at);
   ticketEl.innerHTML = `
-    <div class="kt-order kt-order-big">${t('kitchen.orderNumber')} <bdi class="kt-order-no">#${escapeHtml(String(orderDisplay))}</bdi></div>
+    <div class="kt-order kt-order-compact"><span class="kt-order-label">${t('kitchen.orderNumber')}</span> <bdi class="kt-order-no">#${escapeHtml(String(orderDisplay))}</bdi></div>
     ${isDeltaTicket ? `<div class="kt-title">${titleText}</div>` : ''}
     <div class="kt-info">
       ${sale.customer_name ? `<div class="kt-row kt-row-customer"><span class="kt-label">${t('kitchen.customerLabel')}</span><span class="kt-value">${escapeHtml(sale.customer_name)}</span></div>` : ''}

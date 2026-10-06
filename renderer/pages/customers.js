@@ -41,7 +41,21 @@ async function loadCustomers() {
 
 function renderTable(customers) {
   tableBody.innerHTML = '';
-  emptyState.style.display = customers.length === 0 ? 'block' : 'none';
+  if (customers.length === 0) {
+    emptyState.style.display = 'block';
+    if (typeof renderPageEmptyState === 'function') {
+      renderPageEmptyState(emptyState, {
+        icon: '◎',
+        title: (typeof ts === 'function' ? ts('لا يوجد عملاء بعد') : 'لا يوجد عملاء بعد'),
+        message: (typeof ts === 'function' ? ts('أضف أول عميل لبدء إدارة الحسابات والولاء.') : 'أضف أول عميل لبدء إدارة الحسابات والولاء.'),
+        actionText: (typeof ts === 'function' ? ts('إضافة عميل') : 'إضافة عميل'),
+        onAction: () => { const b = document.getElementById('addCustomerBtn'); if (b) b.click(); }
+      });
+    }
+  } else {
+    emptyState.style.display = 'none';
+    emptyState.innerHTML = '';
+  }
   for (const c of customers) {
     const tr = document.createElement('tr');
     tr.innerHTML = `
@@ -117,7 +131,7 @@ async function openLedger(customer) {
         <span>${ts('الرصيد')}: ${Number(row.balance_after).toFixed(2)}</span>
       </div>
     </div>`;
-  }).join('') : `<div class="empty-state">${t('customers.noLedgerMovements')}</div>`;
+  }).join('') : `<div class="nexora-empty-state" style="padding:24px 12px"><div class="nexora-empty-icon" aria-hidden="true">◇</div><h3>${t('customers.noLedgerMovements')}</h3></div>`;
   document.getElementById('ledgerModal').classList.remove('hidden');
 }
 document.getElementById('closeLedgerBtn').addEventListener('click', () => document.getElementById('ledgerModal').classList.add('hidden'));

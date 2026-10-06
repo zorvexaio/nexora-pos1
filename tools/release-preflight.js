@@ -86,7 +86,7 @@ const htmlCspMismatches = htmlFiles.filter((p) => {
 });
 if (htmlCspMismatches.length) fail(`renderer CSP is broader than the runtime policy: ${htmlCspMismatches.map((p) => path.relative(root, p)).join(', ')}`);
 ok('renderer CSP is present and matches the runtime network policy');
-const dbSource = fs.readFileSync(path.join(root, 'database', 'db.js'), 'utf8');
+const dbSource = ['db.js', 'domains/export_sync.js'].map((f) => { try { return fs.readFileSync(path.join(root, 'database', f), 'utf8'); } catch (_) { return ''; } }).join('\n');
 if (!dbSource.includes('المزامنة إلى خادم بعيد يجب أن تستخدم HTTPS')) fail('remote sync HTTPS policy is missing');
 ok('remote sync HTTPS policy is enforced');
 

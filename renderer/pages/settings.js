@@ -18,6 +18,7 @@ const fieldTaxMode = document.getElementById('fieldTaxMode');
 const fieldGlobalTaxNumber = document.getElementById('fieldGlobalTaxNumber');
 const fieldFiscalizationMode = document.getElementById('fieldFiscalizationMode');
 const fieldFiscalProvider = document.getElementById('fieldFiscalProvider');
+const fieldFiscalAutoIssue = document.getElementById('fieldFiscalAutoIssue');
 
 const discountForm = document.getElementById('discountForm');
 const fieldMaxDiscountPercent = document.getElementById('fieldMaxDiscountPercent');
@@ -120,7 +121,28 @@ async function init() {
   fieldTaxMode.value = globalProfile.tax_mode || 'exclusive';
   fieldGlobalTaxNumber.value = globalProfile.tax_registration_number || '';
   fieldFiscalizationMode.value = globalProfile.fiscalization_mode || 'none';
+
   fieldFiscalProvider.value = globalProfile.fiscal_provider || '';
+  try {
+    const providers = await window.api.fiscalization.providers();
+    if (Array.isArray(providers) && fieldFiscalProvider.tagName === 'SELECT') {
+      const current = fieldFiscalProvider.value;
+      fieldFiscalProvider.innerHTML = providers.map((name) => `<option value="${name}">${name}</option>`).join('');
+      if (current && providers.includes(current)) fieldFiscalProvider.value = current;
+      else if (globalProfile.fiscal_provider && providers.includes(globalProfile.fiscal_provider)) fieldFiscalProvider.value = globalProfile.fiscal_provider;
+    }
+  } catch (_) { /* providers optional */ }
+  refreshFiscalStatus();
+  try {
+    if (fieldFiscalAutoIssue) {
+      const auto = await window.api.fiscalization.autoIssueEnabled();
+      fieldFiscalAutoIssue.checked = !!(auto && auto.enabled);
+    }
+  } catch (_) { /* optional */ }
+
+  fieldFiscalProvider.addEventListener('change', refreshFiscalStatus);
+  fieldFiscalizationMode.addEventListener('change', refreshFiscalStatus);
+
   const currency = await window.api.currency.get();
   fieldCurrencyBase.value = currency.base;
   fieldCurrencySecondary.value = currency.secondary;
@@ -832,3 +854,51 @@ async function disconnectLan() {
 }
 
 init();
+
+
+async function refreshFiscalStatus() {
+  const box = document.getElementById('fiscalStatusMessage');
+  if (!box) return;
+  try {
+    const provider = (fieldFiscalProvider && fieldFiscalProvider.value) || 'generic';
+    const st = await window.api.fiscalization.status(provider);
+    const mode = (fieldFiscalizationMode && fieldFiscalizationMode.value) || st.fiscalizationMode || 'none';
+    const ready = st.ready ? 'جاهز' : 'غير جاهز للقبول الحي';
+    const caps = Array.isArray(st.capabilities) && st.capabilities.length ? ` · قدرات: ${st.capabilities.join(', ')}` : '';
+    box.textContent = `[${mode}] ${st.mode || provider}: ${st.message || ready}${caps}`;
+    box.style.borderColor = st.ready ? 'var(--success-border)' : 'var(--line)';
+    box.style.background = st.ready ? 'var(--success-light)' : 'var(--surface-soft)';
+  } catch (err) {
+    box.textContent = 'تعذر فحص حالة الموصل: ' + (err.message || String(err));
+  }
+}
+
+/* ---- Settings internal tabs (v0.52.33) ---- */
+(function initSettingsTabs() {
+  const tabs = Array.from(document.querySelectorAll('.settings-tab[data-tab]'));
+  const panels = Array.from(document.querySelectorAll('.settings-panel[data-settings-tab]'));
+  if (!tabs.length || !panels.length) return;
+
+  function activate(tabId) {
+    tabs.forEach((btn) => {
+      const on = btn.dataset.tab === tabId;
+      btn.classList.toggle('active', on);
+      btn.setAttribute('aria-selected', on ? 'true' : 'false');
+    });
+    panels.forEach((panel) => {
+      panel.classList.toggle('is-active-tab', panel.dataset.settingsTab === tabId);
+    });
+    try { sessionStorage.setItem('nexora.settings.tab', tabId); } catch (_) {}
+  }
+
+  tabs.forEach((btn) => {
+    btn.addEventListener('click', () => activate(btn.dataset.tab));
+  });
+
+  let initial = 'locale';
+  try {
+    const saved = sessionStorage.getItem('nexora.settings.tab');
+    if (saved && tabs.some((t) => t.dataset.tab === saved)) initial = saved;
+  } catch (_) {}
+  activate(initial);
+})();

@@ -4,9 +4,13 @@
   <meta charset="UTF-8" />
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: file:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-src 'none';">
   <title>Nexora POS</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <link rel="stylesheet" href="tokens.css" />
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
+  <a href="#searchInput" class="skip-link">تخطي إلى البحث / الكاشير</a>
+
   <div class="app">
     <!-- شريط علوي -->
     <header class="topbar">
@@ -42,7 +46,7 @@
       </div>
     </header>
 
-    <div class="main">
+    <div class="main" id="mainContent">
       <!-- عمود المنتجات -->
       <section class="products-panel">
         <!-- البحث فوق الفئات والأصناف -->
@@ -186,51 +190,109 @@
     </div>
   </div>
 
-  <!-- صفحة إتمام الدفع الكاملة (بدون تمرير) -->
-  <div id="paymentModal" class="payment-page hidden" role="dialog" aria-modal="true" aria-labelledby="paymentPageTitle">
-    <div class="payment-page-inner">
-      <header class="payment-page-header">
-        <h2 id="paymentPageTitle" data-i18n="pos.completePayment">إتمام الدفع</h2>
-        <button type="button" id="cancelPaymentBtn" class="btn btn-secondary payment-page-close" data-i18n="common.cancel">إلغاء</button>
+  <!-- إتمام الدفع — لوحة مدمجة (تصميم محدث) -->
+  <div id="paymentModal" class="payment-page payment-sheet hidden" role="dialog" aria-modal="true" aria-labelledby="paymentPageTitle">
+    <div class="payment-page-inner payment-sheet-card">
+      <header class="payment-page-header payment-sheet-header">
+        <div class="payment-sheet-title-wrap">
+          <h2 id="paymentPageTitle" data-i18n="pos.completePayment">إتمام الدفع</h2>
+          <p class="payment-sheet-sub" data-i18n="pos.paymentSheetHint">راجع المبلغ وطريقة الدفع ثم أكّد</p>
+        </div>
+        <button type="button" id="cancelPaymentBtn" class="payment-sheet-close" data-i18n-aria="common.cancel" aria-label="إلغاء" title="Esc">
+          <span aria-hidden="true">×</span>
+        </button>
       </header>
 
-      <!-- اسم الزبون في أعلى الصفحة -->
-      <div class="form-field full customer-field payment-customer-top">
-        <label data-i18n="pos.customerNameLabel">اسم الزبون</label>
-        <div class="customer-picker">
-          <input id="customerNameInput" type="text" maxlength="120" autocomplete="off" data-i18n-placeholder="pos.customerNamePlaceholder" placeholder="اكتب الاسم مرة واحدة — للفاتورة والآجل والولاء" />
-          <div id="customerResults" class="customer-results hidden"></div>
+      <div class="payment-sheet-scroll">
+        <div class="payment-sheet-col payment-sheet-col-pay">
+        <!-- المبلغ المطلوب — بارز ومضغوط -->
+        <div class="payment-total payment-sheet-total" role="status" aria-live="polite">
+          <span class="payment-sheet-total-label" data-i18n="pos.amountDue">المطلوب</span>
+          <span id="paymentTotalDisplay" class="payment-sheet-total-value">0.00</span>
         </div>
-        <div class="field-hint" data-i18n="pos.customerNameHint">يُحفظ على الفاتورة. اختر من القائمة أو اتركه ليُنشأ تلقائياً عند الآجل — مرة واحدة فقط.</div>
-        <div id="selectedCustomerBox" class="selected-customer hidden">
-          <span id="selectedCustomerLabel"></span>
-          <button type="button" id="clearCustomerBtn">✕</button>
-        </div>
-        <div id="loyaltyRedeemBox" class="loyalty-redeem hidden">
-          <label data-i18n="pos.redeemPoints">استبدال نقاط الولاء</label>
-          <div class="loyalty-redeem-row">
-            <input id="loyaltyPointsInput" type="text" inputmode="numeric" min="0" step="1" value="0" />
-            <button type="button" id="loyaltyMaxBtn" data-i18n="pos.useMaxPoints">الحد الأقصى</button>
-          </div>
-          <div id="loyaltyRedeemHint" class="field-hint"></div>
-        </div>
-      </div>
 
-      <div class="payment-page-grid">
-        <!-- العمود الأيمن: بيانات الطلب -->
-        <section class="payment-col payment-col-order" aria-label="بيانات الطلب">
-          <div class="payment-order-info">
-            <div class="order-type-row">
+        <!-- طرق الدفع -->
+        <div class="payment-methods payment-sheet-methods" role="radiogroup" aria-label="طريقة الدفع">
+          <label class="method-option">
+            <input type="radio" name="paymentMethod" value="cash" checked />
+            <span data-i18n="common.cash">نقدي</span>
+          </label>
+          <label class="method-option">
+            <input type="radio" name="paymentMethod" value="card" />
+            <span data-i18n="common.card">بطاقة</span>
+          </label>
+          <label class="method-option">
+            <input type="radio" name="paymentMethod" value="mixed" />
+            <span data-i18n="common.mixed">مختلط</span>
+          </label>
+          <label class="method-option">
+            <input type="radio" name="paymentMethod" value="credit" />
+            <span data-i18n="pos.creditShort">آجل</span>
+          </label>
+          <label class="method-option">
+            <input type="radio" name="paymentMethod" value="store_credit" />
+            <span data-i18n="pos.storeCreditShort">رصيد</span>
+          </label>
+        </div>
+
+        <div id="cashFields" class="payment-fields payment-sheet-fields">
+          <div class="form-field">
+            <label data-i18n="pos.cashReceived">المبلغ المستلم</label>
+            <input id="cashReceivedInput" type="text" inputmode="decimal" autocomplete="off" />
+          </div>
+          <div class="payment-row payment-change-row">
+            <span data-i18n="pos.changeDue">الباقي للعميل</span>
+            <span id="changeDueDisplay">0.00</span>
+          </div>
+        </div>
+
+        <div id="mixedFields" class="payment-fields payment-sheet-fields hidden">
+          <div class="mixed-fields-grid">
+            <div class="form-field">
+              <label data-i18n="pos.cashAmount">نقداً</label>
+              <input id="mixedCashInput" type="text" inputmode="decimal" autocomplete="off" min="0" />
+            </div>
+            <div class="form-field">
+              <label data-i18n="pos.cardAmount">بطاقة</label>
+              <input id="mixedCardInput" type="text" inputmode="decimal" autocomplete="off" min="0" />
+            </div>
+          </div>
+          <div class="payment-row" id="mixedRemainingRow">
+            <span data-i18n="pos.remainingAmount">المتبقي</span>
+            <span id="mixedRemainingDisplay">0.00</span>
+          </div>
+        </div>
+
+        </div>
+        <div class="payment-sheet-col payment-sheet-col-order">
+        <!-- نوع الطلب -->
+        <div class="payment-order-info payment-sheet-order">
+          <div class="order-type-row payment-sheet-chips">
+            <label class="method-option">
+              <input type="radio" name="orderType" value="takeaway" checked />
+              <span data-i18n="pos.takeaway">سفري</span>
+            </label>
+            <label class="method-option">
+              <input type="radio" name="orderType" value="delivery" />
+              <span data-i18n="pos.delivery">توصيل</span>
+            </label>
+          </div>
+          <div id="orderTimeField" class="form-field">
+            <label data-i18n="pos.deliveryTimeLabel">وقت الطلب</label>
+            <div class="order-type-row payment-sheet-chips">
               <label class="method-option">
-                <input type="radio" name="orderType" value="takeaway" checked />
-                <span>سفري / استلام</span>
+                <input type="radio" name="deliveryTimeMode" value="now" checked />
+                <span data-i18n="pos.deliveryNow">الآن</span>
               </label>
               <label class="method-option">
-                <input type="radio" name="orderType" value="delivery" />
-                <span data-i18n="pos.delivery">توصيل</span>
+                <input type="radio" name="deliveryTimeMode" value="custom" />
+                <span data-i18n="pos.deliveryCustomTime">تحديد وقت</span>
               </label>
             </div>
-            <div id="deliveryFields" class="hidden delivery-fields-grid">
+            <input id="deliveryCustomTimeInput" type="time" class="hidden" />
+          </div>
+          <div id="deliveryFields" class="delivery-fields hidden">
+            <div class="delivery-fields-grid payment-sheet-delivery-grid">
               <div class="form-field">
                 <label data-i18n="pos.deliveryDistance">المسافة (كم)</label>
                 <input id="deliveryDistanceInput" type="text" inputmode="numeric" step="0.1" min="0" placeholder="مثال: 13" />
@@ -241,86 +303,41 @@
                 <input id="deliveryFeeInput" type="text" inputmode="numeric" step="0.01" min="0" value="0" />
               </div>
               <div class="form-field delivery-person-field">
-                <label data-i18n="pos.deliveryPerson">مندوب التوصيل (اختياري)</label>
-                <input id="deliveryPersonInput" type="text" list="deliveryPersonList" data-i18n-placeholder="pos.deliveryPersonPlaceholder" placeholder="اسم/رقم المندوب" />
+                <label data-i18n="pos.deliveryPerson">مندوب التوصيل</label>
+                <input id="deliveryPersonInput" type="text" list="deliveryPersonList" data-i18n-placeholder="pos.deliveryPersonPlaceholder" placeholder="اسم/رقم المندوب" autocomplete="off" />
                 <datalist id="deliveryPersonList"></datalist>
               </div>
             </div>
-            <div id="orderTimeField" class="form-field">
-              <label data-i18n="pos.deliveryTimeLabel">وقت الطلب</label>
-              <div class="order-type-row">
-                <label class="method-option">
-                  <input type="radio" name="deliveryTimeMode" value="now" checked />
-                  <span data-i18n="pos.deliveryNow">الآن</span>
-                </label>
-                <label class="method-option">
-                  <input type="radio" name="deliveryTimeMode" value="custom" />
-                  <span data-i18n="pos.deliveryCustomTime">تحديد وقت</span>
-                </label>
-              </div>
-              <input id="deliveryCustomTimeInput" type="time" class="hidden" />
+          </div>
+        </div>
+
+        <!-- الزبون + الولاء -->
+        <div class="form-field full customer-field payment-customer-top payment-sheet-customer">
+          <label data-i18n="pos.customerNameLabel">اسم الزبون</label>
+          <div class="customer-picker">
+            <input id="customerNameInput" type="text" maxlength="120" autocomplete="off" data-i18n-placeholder="pos.customerNamePlaceholder" placeholder="مطلوب — اكتب اسم الزبون" required aria-required="true" />
+            <div id="customerResults" class="customer-results hidden"></div>
+          </div>
+          <div id="selectedCustomerBox" class="selected-customer hidden">
+            <span id="selectedCustomerLabel"></span>
+            <button type="button" id="clearCustomerBtn">✕</button>
+          </div>
+          <div id="loyaltyRedeemBox" class="loyalty-redeem hidden">
+            <label data-i18n="pos.redeemPoints">استبدال نقاط الولاء</label>
+            <div class="loyalty-redeem-row">
+              <input id="loyaltyPointsInput" type="text" inputmode="numeric" min="0" step="1" value="0" />
+              <button type="button" id="loyaltyMaxBtn" data-i18n="pos.useMaxPoints">الحد الأقصى</button>
             </div>
+            <div id="loyaltyRedeemHint" class="field-hint"></div>
           </div>
-        </section>
+        </div>
 
-        <!-- العمود الأيسر: المبلغ وطريقة الدفع -->
-        <section class="payment-col payment-col-pay" aria-label="الدفع">
-          <div class="payment-total">
-            <span data-i18n="pos.amountDue">المطلوب</span>
-            <span id="paymentTotalDisplay">0.00</span>
-          </div>
+        <div id="paymentError" class="payment-error hidden"></div>
+        </div>
+      </div>
 
-          <div class="payment-methods">
-            <label class="method-option">
-              <input type="radio" name="paymentMethod" value="cash" checked />
-              <span data-i18n="common.cash">نقدي</span>
-            </label>
-            <label class="method-option">
-              <input type="radio" name="paymentMethod" value="card" />
-              <span data-i18n="common.card">بطاقة / تحويل</span>
-            </label>
-            <label class="method-option">
-              <input type="radio" name="paymentMethod" value="mixed" />
-              <span data-i18n="common.mixed">مختلط</span>
-            </label>
-            <label class="method-option">
-              <input type="radio" name="paymentMethod" value="credit" />
-              <span>دين / آجل</span>
-            </label>
-            <label class="method-option">
-              <input type="radio" name="paymentMethod" value="store_credit" />
-              <span>رصيد متجر</span>
-            </label>
-          </div>
-
-          <div id="cashFields" class="payment-fields">
-            <div class="form-field">
-              <label data-i18n="pos.cashReceived">المبلغ المستلم نقداً</label>
-              <input id="cashReceivedInput" type="text" inputmode="decimal" autocomplete="off" />
-            </div>
-            <div class="payment-row"><span data-i18n="pos.changeDue">الباقي للعميل</span><span id="changeDueDisplay">0.00</span></div>
-          </div>
-
-          <div id="mixedFields" class="payment-fields hidden">
-            <div class="mixed-fields-grid">
-              <div class="form-field">
-                <label data-i18n="pos.cashAmount">المبلغ نقداً</label>
-                <input id="mixedCashInput" type="text" inputmode="decimal" autocomplete="off" min="0" />
-              </div>
-              <div class="form-field">
-                <label data-i18n="pos.cardAmount">المبلغ بالبطاقة</label>
-                <input id="mixedCardInput" type="text" inputmode="decimal" autocomplete="off" min="0" />
-              </div>
-            </div>
-            <div class="payment-row" id="mixedRemainingRow"><span data-i18n="pos.remainingAmount">المتبقي لإكمال المبلغ</span><span id="mixedRemainingDisplay">0.00</span></div>
-          </div>
-
-          <div id="paymentError" class="payment-error hidden"></div>
-
-          <div class="payment-page-actions">
-            <button type="button" id="confirmPaymentBtn" class="btn btn-primary" data-i18n="pos.confirmPayment">تأكيد الدفع</button>
-          </div>
-        </section>
+      <div class="payment-page-actions payment-sheet-footer">
+        <button type="button" id="confirmPaymentBtn" class="btn btn-primary payment-sheet-confirm" data-i18n="pos.confirmPayment">تأكيد الدفع</button>
       </div>
     </div>
   </div>

@@ -14,7 +14,7 @@ const lock = JSON.parse(fs.readFileSync(path.join(root, 'package-lock.json'), 'u
 const i18n = fs.readFileSync(path.join(root, 'renderer', 'i18n.js'), 'utf8');
 const tableOrder = fs.readFileSync(path.join(root, 'renderer', 'pages', 'table-order.html'), 'utf8');
 const tableOrderJs = fs.readFileSync(path.join(root, 'renderer', 'pages', 'table-order.js'), 'utf8');
-const style = fs.readFileSync(path.join(root, 'renderer', 'style.css'), 'utf8');
+const style = require('./lib/renderer-css').read();
 
 const majorMinorPatch = String(pkg.version).split('.').map(Number);
 ok('release version remains compatible with 0.42 baseline', majorMinorPatch[0] === 0 && majorMinorPatch[1] >= 42 && lock.version === pkg.version && lock.packages?.['']?.version === pkg.version);

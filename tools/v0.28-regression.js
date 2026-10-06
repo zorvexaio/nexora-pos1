@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const root = path.resolve(__dirname, '..');
 const main = fs.readFileSync(path.join(root, 'main.js'), 'utf8');
-const db = fs.readFileSync(path.join(root, 'database', 'db.js'), 'utf8');
+const db = require('./lib/db-source').read();
 const syncClient = fs.readFileSync(path.join(root, 'database', 'sync-client.js'), 'utf8');
 const htmlFiles = [];
 function walk(dir){ for(const name of fs.readdirSync(dir)){ const p=path.join(dir,name); const st=fs.statSync(p); if(st.isDirectory()) walk(p); else if(p.endsWith('.html')) htmlFiles.push(p); }}

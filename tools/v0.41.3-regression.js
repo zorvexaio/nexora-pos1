@@ -5,7 +5,7 @@ function ok(name,v){console.log(`${v?'PASS':'FAIL'} ${name}`); if(!v) process.ex
 const pkg=JSON.parse(fs.readFileSync(path.join(root,'package.json'),'utf8'));
 const lock=JSON.parse(fs.readFileSync(path.join(root,'package-lock.json'),'utf8'));
 const main=fs.readFileSync(path.join(root,'main.js'),'utf8');
-const db=fs.readFileSync(path.join(root,'database','db.js'),'utf8');
+const db=require('./lib/db-source').read();
 const sync=fs.readFileSync(path.join(root,'server','sync-server.js'),'utf8');
 const products=fs.readFileSync(path.join(root,'renderer','pages','products.js'),'utf8');
 function versionAtLeast(v, min) { const a=v.split('.').map(Number), b=min.split('.').map(Number); for(let i=0;i<3;i++){ if((a[i]||0)!==(b[i]||0)) return (a[i]||0)>(b[i]||0); } return true; }

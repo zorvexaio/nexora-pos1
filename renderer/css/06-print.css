@@ -1,0 +1,131 @@
+/* Nexora POS — 06-print.css — Receipt / kitchen print (split from style.css) */
+/* ---------------------------------------------------------------------- */
+/* Receipt / kitchen ticket (print)                                        */
+/* ---------------------------------------------------------------------- */
+/* بدون هذا التعريف، الطابعة الحرارية (عبر طابعة نظام ويندوز/الطباعة الصامتة)
+   تستخدم حجم الصفحة الافتراضي لتعريف الطابعة بدل طول التذكرة الفعلي — فبتطلع
+   ورقة فاضية طويلة بعد آخر سطر مطبوع لحد ما توصل لطول الصفحة الافتراضي (زي A4).
+   size: 80mm auto تخلي المتصفح يحسب طول الصفحة تلقائياً بطول المحتوى فعلياً،
+   فتُقطع الورقة مباشرة بعد آخر سطر بدون أي هدر. العرض 80mm هو الأشيع لطابعات
+   الفواتير الحرارية؛ لو الطابعة 58mm ينفع تغييره هون لاحقاً لنفس القيمة الفعلية. */
+@page { size: auto; margin: 0; }
+.receipt-body {
+  background: #e5e7eb; overflow-y: auto; height: auto; min-height: 100vh;
+  display: flex; flex-direction: column; align-items: center; padding: 20px;
+}
+.receipt-actions { display: flex; gap: 10px; margin-bottom: 16px; }
+.receipt { width: 320px; background: #fff; border-radius: 10px; padding: 20px; font-size: 15px; color: #111827; box-shadow: 0 1px 4px rgba(0, 0, 0, .1); }
+.receipt-header { text-align: center; margin-bottom: 10px; }
+.receipt-logo { max-width: 90px; max-height: 90px; width: auto; height: auto; object-fit: contain; display: block; margin: 0 auto 8px; }
+.receipt-brand { font-size: 19px; font-weight: 800; margin-bottom: 4px; line-height: 1.3; word-break: break-word; }
+.receipt-store-meta { font-size: 11px; color: #222; margin-bottom: 2px; line-height: 1.35; word-break: break-word; }
+.receipt-tax-detail { font-size: 11.5px; }
+.receipt-item-offer-badge { font-weight: 800; font-size: 11px; }
+
+/* ---- تنسيق إيصال حراري بأسلوب المطاعم (اسم | Nxسعر=مجموع) ---- */
+.receipt-meta-block { margin: 6px 0 2px; font-size: 13.5px; line-height: 1.45; }
+.receipt-meta-line { display: flex; justify-content: space-between; gap: 8px; padding: 1px 0; }
+.receipt-meta-line .rm-label { color: #333; font-weight: 600; }
+.receipt-meta-line .rm-value { font-weight: 700; text-align: end; }
+.receipt-meta-inline { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; font-weight: 600; }
+.receipt-cols-head {
+  display: flex; justify-content: space-between; gap: 8px;
+  font-size: 12px; font-weight: 800; text-transform: none; padding: 2px 0;
+}
+.receipt-divider-thin { margin: 4px 0; border-top-style: dotted; }
+.receipt-item-calc { font-variant-numeric: tabular-nums; font-weight: 700; white-space: nowrap; direction: ltr; unicode-bidi: isolate; }
+.receipt-pieces { text-align: center; font-size: 12.5px; font-weight: 700; margin-top: 4px; }
+.receipt-ref { font-size: 12px !important; font-weight: 600 !important; letter-spacing: .02em; margin-top: 4px !important; }
+
+/* تذكرة مطبخ: رقم الطلب ضخم أولاً */
+.kt-order-big {
+  text-align: center; font-size: 22px; font-weight: 900; margin: 0 0 8px;
+  padding: 6px 8px; border: 2px solid #000; border-radius: 6px; line-height: 1.25;
+}
+.kt-order-big .kt-order-no { font-size: 26px; letter-spacing: .02em; }
+.kitchen-item {
+  display: flex; align-items: baseline; gap: 8px; padding: 3px 0;
+  font-size: 15.5px; font-weight: 700;
+}
+.kitchen-item-qty {
+  flex-shrink: 0; min-width: 2.6em; font-weight: 900;
+  font-variant-numeric: tabular-nums; direction: ltr; unicode-bidi: isolate;
+}
+.kitchen-item-name { flex: 1; min-width: 0; word-break: break-word; }
+
+.receipt-meta { font-size: 14px; color: #6b7280; }
+/* اسم العميل بارز وأكبر وضوحاً من بيانات الفاتورة العادية - عشان عامل التوصيل
+   أو أي حد يمسك الفاتورة يقدر يقرأ لمين الطلب بنظرة سريعة من غير ما يدوّر. */
+.receipt-customer-name { font-size: 20px; font-weight: 800; color: #111827; margin: 4px 0; word-break: break-word; }
+.receipt-divider { border-top: 1px dashed #d1d5db; margin: 10px 0; }
+.receipt-items { display: flex; flex-direction: column; gap: 8px; }
+.receipt-item-line { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.receipt-item-name { font-weight: 700; flex: 1; min-width: 0; }
+.receipt-item-qty, .receipt-item-unit { font-weight: 500; color: #4b5563; }
+.receipt-item-total { font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.receipt-item-offer-badge { font-weight: 400; }
+.receipt-item-note { color: #4b5563; font-size: 14px; font-style: italic; }
+/* ملاحظة الطلب العامة على الفاتورة — أبرز من ملاحظة الصنف لأنها تخص الطلب كله. */
+.receipt-order-note { margin: 8px 0; padding: 7px 9px; background: var(--warning-light); border: 1.5px solid var(--warning-border); border-radius: 6px; color: var(--warning); font-weight: 700; font-size: 14.5px; line-height: 1.5; }
+.receipt-row { display: flex; justify-content: space-between; padding: 3px 0; }
+.receipt-total { font-size: 18px; font-weight: 800; border-top: 1px solid #e5e7eb; margin-top: 6px; padding-top: 8px; }
+/* رمز QR أسفل الفاتورة — كان بدون أي تنسيق فيلتصق بالحافة بلا توسيط ولا مسافات. */
+.receipt-qr { display: block; width: 110px; height: 110px; margin: 14px auto 4px; }
+/* نص أسفل الفاتورة ("شكراً لزيارتكم" ورسالة التذييل المخصّصة): كان رمادي فاتح
+   وخط عادي رفيع، وهذا يظهر باهتاً جداً أو شبه غير مقروء على أغلب طابعات الفواتير
+   الحرارية (رأس الطباعة الحراري ما بيطلّع الرمادي الفاتح والخطوط الرفيعة بوضوح).
+   خط أثقل وأكبر شوي يضمن ظهوره واضحاً على كل الطابعات تقريباً، مش بس طابعة معيّنة. */
+.receipt-footer { text-align: center; margin-top: 16px; color: #4b5563; font-size: 15px; font-weight: 700; }
+.kitchen-ticket { font-size: 15.5px; }
+.kitchen-item-name { font-weight: 700; }
+/* ملاحظة الصنف (⚠) كانت نص عادي بلا تمييز فبتضيع بسهولة أثناء الشغل في المطبخ —
+   بقت أوضح بخلفية وحدّ ولون تحذيري. */
+.kitchen-item-note { margin-top: 3px; padding: 3px 8px; background: var(--warning-light); border: 1px solid var(--warning-border); border-radius: 4px; color: var(--warning); font-weight: 700; font-size: 13px; }
+/* ملاحظة الطلب العامة (وليست ملاحظة صنف) — أكبر وأوضح من ملاحظة الصنف لأنها تخص
+   الطلب كله وغالباً تعليمات حرجة (حساسية، طلب خاص) لازم تُقرأ أول حاجة. */
+.kitchen-order-note { margin: 8px 0; padding: 8px 10px; background: var(--warning-light); border: 2px solid var(--warning-border); border-radius: 6px; color: var(--warning); font-weight: 800; font-size: 15px; line-height: 1.5; }
+/* العروض (Bundles) على تذكرة المطبخ والفاتورة: إطار أسود سميك وعنوان بكلمة "عرض" يظهر على الطابعات الحرارية
+   (نستخدم نجوماً نصية بدل الرموز التعبيرية لأن بعض الطابعات لا تطبعها). */
+.kitchen-offer { margin: 6px 0; padding: 4px 6px; border: 2px solid #000; border-radius: 4px; }
+.kitchen-offer-title { text-align: center; font-weight: 800; padding-bottom: 3px; margin-bottom: 4px; border-bottom: 1.5px dashed #000; }
+/* سطر العرض المختصر على فاتورة الزبون: 🎁 اسم العرض + المبلغ الموفَّر، بلا صندوق. */
+.receipt-offer-line { display: flex; justify-content: space-between; gap: 8px; font-weight: 700; margin: 2px 0; }
+.kitchen-delivery-time { margin: 6px 0; padding: 5px 10px; background: var(--info-light); border: 1px solid var(--info-border); border-radius: 6px; color: var(--info); font-weight: 700; font-size: 13.5px; }
+
+/* تصحيح طريقة الدفع (مودال تفاصيل الفاتورة بالتقارير) — ميزة حساسة، لذا بتصميم
+   بسيط وواضح بدل تعقيد بصري يشتت الانتباه عن السبب الإلزامي. */
+.invoice-payment-correction { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 12px; }
+.payment-correction-form { margin-top: 10px; padding: 12px; background: #fafafa; border: 1px solid var(--line); border-radius: 10px; }
+.payment-correction-form.hidden { display: none; }
+.payment-correction-form textarea { width: 100%; border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; font: inherit; resize: vertical; }
+.payment-correction-form select, .payment-correction-form input[type="text"] { height: 38px; border: 1px solid var(--line); border-radius: 8px; padding: 0 10px; width: 100%; }
+#correctionMixedFields { display: flex; gap: 10px; }
+#correctionMixedFields.hidden { display: none; }
+#correctionMixedFields .form-field { flex: 1; }
+
+@media print {
+  .no-print { display: none !important; }
+  /* السبب الفعلي الأكبر لهدر الورق: .receipt-body عندها min-height: 100vh للتوسيط
+     على الشاشة، وهاد يخلي ارتفاع الصفحة المطبوعة يمتد لطول الشاشة كاملة بدل طول
+     التذكرة الفعلي فقط — حتى مع تحديد @page size: auto. نُلغي هذا الارتفاع الأدنى
+     تماماً وقت الطباعة (وكل عناصر الجسم الأب) ليصير طول الصفحة = طول المحتوى الحقيقي. */
+  html, body { height: auto !important; min-height: 0 !important; }
+  .receipt-body { background: #fff; padding: 0; align-items: stretch; min-height: 0; height: auto; }
+  .receipt { box-shadow: none; width: 100%; border-radius: 0; }
+
+  /* الألوان الرمادية الفاتحة (meta, item-note, footer...) مصمَّمة للشاشة، وعلى طابعات
+     الفواتير الحرارية بالذات بتطبع باهتة أو غير واضحة أبداً — وهاد سبب حقيقي لفرق
+     الوضوح مقارنة ببرامج تانية بتفرض أسود صافي دايماً وقت الطباعة. نفرض هون نفس الشي:
+     كل نص الفاتورة أسود صافي عند الطباعة (الشاشة تبقى بألوانها الأصلية كما هي). */
+  .receipt, .receipt *, .kitchen-ticket, .kitchen-ticket * { color: #000 !important; }
+  .receipt-divider, .receipt-total, .receipt-row { border-color: #000 !important; }
+  .kitchen-item-note, .kitchen-order-note, .kitchen-delivery-time { background: #fff !important; border-color: #000 !important; border-width: 1.5px !important; }
+
+  /* طباعة عامة لأي صفحة داخل التطبيق (مثلاً زر "طباعة" بصفحة التقارير) —
+     سابقاً ما كان في أي قاعدة طباعة عامة، فلو حدا ضغط Ctrl+P بأي صفحة غير
+     الفاتورة كانت تطبع الشريط العلوي والقائمة الجانبية كمان بدون داعي. */
+  .topbar { display: none !important; }
+  body, .app, .main { background: #fff !important; overflow: visible !important; height: auto !important; }
+  .products-page { overflow: visible !important; height: auto !important; padding: 0 !important; }
+}
+

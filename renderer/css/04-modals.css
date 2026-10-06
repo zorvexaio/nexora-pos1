@@ -1,0 +1,112 @@
+/* Nexora POS — 04-modals.css — Modals + restaurant tables (split from style.css) */
+/* ---------------------------------------------------------------------- */
+/* Modals                                                                  */
+/* ---------------------------------------------------------------------- */
+.modal-overlay {
+  position: fixed; inset: 0; background: rgba(14, 17, 32, .55); backdrop-filter: blur(4px);
+  display: flex; align-items: center; justify-content: center; z-index: 100; padding: 20px;
+  animation: modalOverlayIn .16s ease;
+}
+@keyframes modalOverlayIn { from { opacity: 0; } to { opacity: 1; } }
+.modal {
+  background: var(--surface); border-radius: 18px; padding: 26px; width: 100%; max-width: 480px;
+  max-height: 88vh; overflow-y: auto; box-shadow: 0 24px 60px rgba(15, 17, 33, .28); border: 1px solid var(--line);
+  animation: modalPopIn .18s cubic-bezier(.2,.9,.3,1.1);
+}
+@keyframes modalPopIn { from { opacity: 0; transform: translateY(10px) scale(.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
+.modal h2 { font-size: 18.5px; letter-spacing: -.01em; }
+.modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
+.modal-actions .btn { padding: 11px 20px; font-weight: 700; }
+
+.confirm-dialog-icon { width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; margin-bottom: 14px; }
+.confirm-dialog-icon.tone-danger { background: var(--danger-light); color: var(--danger); }
+.confirm-dialog-icon.tone-warning { background: var(--warning-light); color: var(--warning); }
+.confirm-dialog-title { margin: 0 0 8px; }
+.confirm-dialog-message { white-space: pre-line; color: var(--text); line-height: 1.65; font-size: 14.5px; }
+
+.variant-list { display: flex; flex-direction: column; gap: 8px; margin: 12px 0; }
+.variant-option {
+  display: flex; justify-content: space-between; align-items: center; padding: 13px 15px; border: 1.5px solid var(--line-strong);
+  border-radius: var(--radius); background: var(--surface); cursor: pointer; font-weight: 700; font-size: 14px;
+  transition: border-color .12s ease, background .12s ease, transform .1s ease, box-shadow .12s ease;
+}
+.variant-option:hover:not(:disabled) { border-color: var(--primary); background: var(--primary-light); box-shadow: var(--shadow-sm); transform: translateY(-1px); }
+.variant-option:active:not(:disabled) { transform: translateY(0) scale(.99); }
+.variant-option:disabled { opacity: .45; cursor: not-allowed; }
+.variant-option > span:last-child {
+  font-weight: 900; color: var(--primary); font-variant-numeric: tabular-nums; font-size: 13px;
+  background: var(--primary-light); padding: 3px 10px; border-radius: 999px; white-space: nowrap; margin-inline-start: 10px;
+}
+.variant-option:disabled > span:last-child { background: var(--surface-strong); color: var(--text-faint); }
+
+/* نافذة ملاحظة الصنف — أعيد تصميمها لتبدو أقرب لمنتج احترافي: رأس بأيقونة دائرية،
+   حقل نص بحدود واضحة عند التركيز، اقتراحات جاهزة (رقائق) لأشيع الملاحظات بضغطة
+   واحدة بدل الكتابة كل مرة، وعدّاد أحرف بسيط أسفل الحقل. */
+.item-note-modal .modal { max-width: 440px; }
+.item-note-head { display: flex; align-items: center; gap: 12px; margin-bottom: 4px; }
+.item-note-icon {
+  width: 40px; height: 40px; border-radius: 999px; flex-shrink: 0; display: grid; place-items: center;
+  background: var(--brand-gold-soft); border: 1px solid var(--brand-gold); font-size: 18px;
+}
+.item-note-head h2 { margin: 0; font-size: 17px; }
+#itemNoteProductName { margin: 2px 0 14px; }
+.item-note-suggestions { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.note-chip {
+  border: 1px solid var(--line-strong); background: var(--surface-soft); color: var(--text-soft);
+  font-size: 12.5px; font-weight: 700; padding: 6px 12px; border-radius: 999px; cursor: pointer;
+  transition: border-color .12s ease, color .12s ease, background .12s ease;
+}
+.note-chip:hover { border-color: var(--primary); color: var(--primary); background: var(--primary-light); }
+#itemNoteInput {
+  border: 1.5px solid var(--line-strong) !important; transition: border-color .12s ease, box-shadow .12s ease;
+}
+#itemNoteInput:focus { outline: none; border-color: var(--primary) !important; box-shadow: 0 0 0 3px var(--primary-light); }
+.item-note-counter { text-align: end; font-size: 11.5px; color: var(--text-faint); margin-top: 4px; }
+
+.payment-modal .modal { max-width: 420px; }
+.payment-total {
+  font-size: 30px; font-weight: 900; text-align: center; color: var(--primary); margin: 8px 0 18px;
+  padding: 14px; background: var(--primary-light); border-radius: var(--radius); font-variant-numeric: tabular-nums;
+}
+.payment-methods { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
+.payment-fields { margin-bottom: 10px; background: var(--surface-soft); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px; }
+.payment-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0 0; font-size: 13.5px; color: var(--text-soft); font-weight: 600; }
+.payment-row span:last-child { font-weight: 900; font-size: 17px; color: var(--text); font-variant-numeric: tabular-nums; }
+#changeDueDisplay { color: var(--success, #16a34a); }
+.payment-error { background: var(--danger-light); border: 1px solid var(--danger-border); color: var(--danger); padding: 9px 12px; border-radius: var(--radius-sm); font-size: 13px; font-weight: 700; margin: 8px 0; }
+
+/* ---------------------------------------------------------------------- */
+/* Restaurant tables page                                                  */
+/* ---------------------------------------------------------------------- */
+.tables-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 14px; }
+.table-card {
+  border: 1px solid var(--line); border-radius: var(--radius-lg); padding: 18px; cursor: pointer;
+  position: relative; transition: transform .12s ease, box-shadow .12s ease; box-shadow: var(--shadow-sm);
+}
+.table-card:hover { transform: translateY(-3px); box-shadow: var(--shadow); }
+.table-card.free { background: var(--success-light); border-color: var(--success-border); }
+.table-card.occupied { background: var(--danger-light); border-color: var(--danger-border); }
+.table-name { font-size: 17px; font-weight: 800; margin-bottom: 4px; }
+.table-seats { font-size: 12px; color: var(--text-faint); margin-bottom: 10px; }
+.table-status { font-size: 13px; font-weight: 700; }
+.table-card.free .table-status { color: var(--success); }
+.table-card.occupied .table-status { color: var(--danger); }
+.table-card.bill-requested { border-color: var(--warning); box-shadow: 0 0 0 3px var(--warning-light); animation: bill-pulse 1.4s ease-in-out infinite; }
+@keyframes bill-pulse { 0%, 100% { box-shadow: 0 0 0 3px var(--warning-light); } 50% { box-shadow: 0 0 0 6px var(--warning-light); } }
+.bill-request-badge { position:absolute; top:-10px; inset-inline:8px; background:var(--warning); color:#fff; font-size:11px; font-weight:800; padding:5px 8px; border-radius:8px; display:flex; align-items:center; justify-content:space-between; gap:6px; box-shadow: var(--shadow-sm); }
+.ack-bill-btn { background:rgba(255,255,255,.25); border:none; color:#fff; padding:3px 8px; border-radius:6px; font-size:10px; font-weight:800; }
+.table-delete {
+  position: absolute; top: 10px; inset-inline-end: 10px; width: 26px; height: 26px; border-radius: 50%;
+  border: none; background: rgba(0, 0, 0, .06); color: var(--text-faint); cursor: pointer; font-size: 13px;
+}
+.table-delete:hover { background: var(--danger); color: #fff; }
+.table-release {
+  position: absolute; bottom: 10px; inset-inline-end: 10px; padding: 4px 10px; border-radius: 999px;
+  border: 1px solid var(--danger-border); background: var(--surface); color: var(--danger);
+  font-size: 11px; font-weight: 800; cursor: pointer;
+}
+.table-release:hover { background: var(--danger); color: #fff; }
+
+.table-order-actions { display: flex; gap: 8px; align-items: center; }
+.back-to-tables { font-weight: 700; color: var(--primary); cursor: pointer; }
+

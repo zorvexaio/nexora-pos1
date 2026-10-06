@@ -59,7 +59,21 @@ async function loadUsers() {
 
 function renderTable(users) {
   tableBody.innerHTML = '';
-  emptyState.style.display = users.length === 0 ? 'block' : 'none';
+  if (users.length === 0) {
+    emptyState.style.display = 'block';
+    if (typeof renderPageEmptyState === 'function') {
+      renderPageEmptyState(emptyState, {
+        icon: '☺',
+        title: (typeof ts === 'function' ? ts('لا يوجد مستخدمون بعد') : 'لا يوجد مستخدمون بعد'),
+        message: (typeof ts === 'function' ? ts('أضف مستخدماً لتوزيع الصلاحيات على الفريق.') : 'أضف مستخدماً لتوزيع الصلاحيات على الفريق.'),
+        actionText: (typeof ts === 'function' ? ts('إضافة مستخدم') : 'إضافة مستخدم'),
+        onAction: () => { const b = document.getElementById('addUserBtn'); if (b) b.click(); }
+      });
+    }
+  } else {
+    emptyState.style.display = 'none';
+    emptyState.innerHTML = '';
+  }
 
   for (const u of users) {
     const tr = document.createElement('tr');

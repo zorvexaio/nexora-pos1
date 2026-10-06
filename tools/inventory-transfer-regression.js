@@ -9,7 +9,7 @@ function read(rel) { return fs.readFileSync(path.join(ROOT, rel), 'utf8'); }
 function assert(condition, message) { if (!condition) throw new Error(message); }
 function expect(text, pattern, message) { assert(pattern.test(text), message); }
 
-const db = read('database/db.js');
+const db = require('./lib/db-source').read();
 const server = read('server/sync-server.js');
 const preload = read('preload.js');
 const main = read('main.js');

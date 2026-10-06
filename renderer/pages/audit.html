@@ -4,6 +4,8 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: file:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-src 'none';">
   <meta charset="UTF-8" />
   <title>سجل التدقيق</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <link rel="stylesheet" href="../tokens.css" />
   <link rel="stylesheet" href="../style.css" />
   <style>
     .audit-table td { vertical-align: top; }
@@ -15,9 +17,11 @@
   </style>
 </head>
 <body>
-  <div class="app">
+  <a href="#mainContent" class="skip-link">تخطي إلى المحتوى</a>
+
+  <div class="app" id="mainContent">
     <header class="topbar">
-      <div class="brand" data-i18n="app.brand">نقطة البيع</div>
+      <div class="brand brand-premium"><span class="brand-mark" aria-hidden="true">N</span><span data-i18n="app.brand">Nexora POS</span></div>
       <nav class="nav-links">
         <a href="../index.html" data-i18n="nav.pos">الكاشير</a><a href="quick-cashier.html" data-setting="quickCashier" data-i18n="nav.quickCashier">الكاشير السريع</a>
         <a href="tables.html" data-business="restaurant" data-i18n="nav.tables">الطاولات</a>

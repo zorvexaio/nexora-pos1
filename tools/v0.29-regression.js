@@ -3,7 +3,7 @@ const path = require('path');
 const root = path.resolve(__dirname, '..');
 const main = fs.readFileSync(path.join(root, 'main.js'), 'utf8');
 const login = fs.readFileSync(path.join(root, 'renderer', 'login.js'), 'utf8');
-const db = fs.readFileSync(path.join(root, 'database', 'db.js'), 'utf8');
+const db = require('./lib/db-source').read();
 let passed = 0;
 const ok = (c, m) => { if (!c) { console.error('FAIL:', m); process.exitCode = 1; } else { passed++; console.log('PASS:', m); } };
 ok(main.includes("'auth:bootstrapInfo',"), 'bootstrapInfo is explicitly allowed pre-auth');

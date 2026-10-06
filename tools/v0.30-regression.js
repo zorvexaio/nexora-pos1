@@ -2,7 +2,7 @@
 const fs = require('fs');
 const path = require('path');
 const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
-const db = fs.readFileSync(path.join(__dirname, '..', 'database', 'db.js'), 'utf8');
+const db = require('./lib/db-source').read();
 const server = fs.readFileSync(path.join(__dirname, '..', 'server', 'sync-server.js'), 'utf8');
 let pass = 0;
 function ok(name, condition) { if (!condition) throw new Error(`FAIL ${name}`); console.log(`PASS ${name}`); pass += 1; }

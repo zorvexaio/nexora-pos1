@@ -4,12 +4,16 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: file:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-src 'none';">
   <meta charset="UTF-8" />
   <title>المرتجعات</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <link rel="stylesheet" href="../tokens.css" />
   <link rel="stylesheet" href="../style.css" />
 </head>
 <body>
-  <div class="app">
+  <a href="#mainContent" class="skip-link">تخطي إلى المحتوى</a>
+
+  <div class="app" id="mainContent">
     <header class="topbar">
-      <div class="brand" data-i18n="app.brand">نقطة البيع</div>
+      <div class="brand brand-premium"><span class="brand-mark" aria-hidden="true">N</span><span data-i18n="app.brand">Nexora POS</span></div>
       <nav class="nav-links">
         <a href="../index.html" data-i18n="nav.pos">الكاشير</a><a href="quick-cashier.html" data-setting="quickCashier" data-i18n="nav.quickCashier">الكاشير السريع</a>
         <a href="tables.html" data-business="restaurant" data-i18n="nav.tables">الطاولات</a>
@@ -53,23 +57,11 @@
           </div>
         </div>
         <div id="salesManageList" class="returns-sale-list"></div>
-      </div>
-
-      <div class="report-panel settings-panel" id="saleReturnSection">
-        <h2 data-i18n="returns.searchTitle">البحث عن فاتورة لإرجاعها</h2>
-        <div class="form-grid">
-          <div class="form-field full">
-            <label>رقم الفاتورة</label>
-            <div style="display:flex; gap:8px;">
-              <input id="saleIdInput" type="text" inputmode="numeric" placeholder="مثال: 2026-000128" />
-              <button id="loadSaleBtn" class="btn btn-primary">بحث</button>
-            </div>
-          </div>
+        <div id="saleReturnPanel" class="report-panel returns-inline-panel hidden">
+        <div class="returns-inline-header">
+          <h2>مرتجع — فاتورة <span id="saleIdLabel"></span></h2>
+          <button type="button" id="closeReturnPanelBtn" class="btn btn-secondary btn-sm">إغلاق</button>
         </div>
-      </div>
-
-      <div id="saleReturnPanel" class="report-panel hidden">
-        <h2>فاتورة رقم <span id="saleIdLabel"></span></h2>
         <table class="products-table">
           <thead>
             <tr>
@@ -78,6 +70,10 @@
           </thead>
           <tbody id="returnItemsBody"></tbody>
         </table>
+        <div class="form-actions" style="margin-top:10px;display:flex;flex-wrap:wrap;gap:8px;">
+          <button type="button" id="returnAllQtyBtn" class="btn btn-secondary btn-sm">إرجاع كل الكميات المتبقية</button>
+          <button type="button" id="returnClearQtyBtn" class="btn btn-secondary btn-sm">تصفير الكميات</button>
+        </div>
 
         <div class="form-grid" style="margin-top:16px;">
           <div class="form-field full">
@@ -101,7 +97,9 @@
         </div>
       </div>
 
-      <div id="modifyPanel" class="report-panel hidden">
+      </div>
+
+      <div id="modifyPanel" class="report-panel returns-inline-panel hidden">
         <div class="page-header" style="margin:0 0 12px;">
           <h2><span data-i18n="returns.modifyTitle">تعديل الفاتورة</span> <span id="modifyInvoiceLabel"></span></h2>
           <button id="closeModifyBtn" class="btn btn-secondary" data-i18n="common.close">إغلاق</button>
@@ -131,6 +129,20 @@
           </section>
         </div>
       </div>
+      
+      <div class="report-panel settings-panel" id="saleReturnSection">
+        <h2 data-i18n="returns.searchTitle">بحث سريع برقم الفاتورة</h2>
+        <div class="form-grid">
+          <div class="form-field full">
+            <label>رقم الفاتورة</label>
+            <div style="display:flex; gap:8px;">
+              <input id="saleIdInput" type="text" inputmode="numeric" placeholder="مثال: 2026-000128" />
+              <button id="loadSaleBtn" class="btn btn-primary">بحث</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div id="paymentModifyModal" class="pro-modal hidden">
         <div class="pro-modal-card">
           <div class="pro-modal-head"><div><h2 data-i18n="returns.paymentModifyTitle">تعديل طريقة الدفع</h2><p id="paymentModifyInvoice"></p></div><button id="closePaymentModify" class="pro-close">×</button></div>

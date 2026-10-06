@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 
 const ROOT = path.resolve(__dirname, '..');
-const db = fs.readFileSync(path.join(ROOT, 'database', 'db.js'), 'utf8');
+const db = require('./lib/db-source').read();
 const main = fs.readFileSync(path.join(ROOT, 'main.js'), 'utf8');
 const reports = fs.readFileSync(path.join(ROOT, 'renderer', 'pages', 'reports.js'), 'utf8');
 

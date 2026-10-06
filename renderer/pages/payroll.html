@@ -3,11 +3,14 @@
 <head>
 <meta charset="UTF-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: file:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-src 'none';">
-<title>الموظفون والرواتب</title><link rel="stylesheet" href="../style.css">
+<title>الموظفون والرواتب</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" /><link rel="stylesheet" href="../tokens.css" /><link rel="stylesheet" href="../style.css">
 <style> .advance-card{border:1px solid rgba(127,127,127,.18);border-radius:14px;padding:12px;margin:8px 0;background:rgba(127,127,127,.045)} .advance-card>div{display:flex;justify-content:space-between;gap:10px;align-items:center}.advance-card strong{font-size:15px}.advance-card span{font-size:12px;padding:3px 8px;border-radius:999px;background:rgba(70,160,110,.12)}.advance-card small,.advance-card p,.advance-card em{display:block;margin-top:6px;line-height:1.6}.advance-card em{font-size:12px;opacity:.7}.employee-ledger-head span{font-size:12px;opacity:.7}
 .advance-actions{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}.advance-actions button{border:1px solid rgba(255,255,255,.16);padding:7px 11px;border-radius:9px;background:rgba(255,255,255,.06);color:inherit;cursor:pointer}.advance-actions .advance-settle{font-weight:700}
 </style></head>
 <body>
+  <a href="#mainContent" class="skip-link">تخطي إلى المحتوى</a>
+
 <div class="app">
 <header class="topbar">
   <div class="brand brand-premium"><span class="brand-mark" aria-hidden="true">N</span><span>Nexora POS</span></div>
@@ -19,7 +22,7 @@
   </nav>
   <div class="topbar-right"><select id="langSwitcher" class="lang-switcher"><option value="ar">AR</option><option value="tr">TR</option><option value="en">EN</option></select><div class="branch-name" id="branchName">—</div><div class="user-info"><span id="currentUserName"></span><span id="currentUserRoleBadge" class="role-badge"></span><button id="logoutBtn" class="btn btn-secondary btn-sm">خروج</button></div></div>
 </header>
-<main class="payroll-v2-shell">
+<main id="mainContent" class="payroll-v2-shell">
   <section class="payroll-v2-head"><div><div class="section-kicker">إدارة العاملين</div><h1>الموظفون والرواتب</h1><p>العاملون في الرواتب مستقلون عن حسابات الدخول ولا يحتاجون مستخدمًا أو كلمة مرور.</p></div><div class="payroll-v2-controls"><input id="employeeSearch" class="payroll-search" type="search" placeholder="ابحث باسم العامل أو الوظيفة"><label class="month-field"><span>الشهر</span><input id="monthPicker" type="month"></label><label class="checkbox-inline"><input id="showInactiveToggle" type="checkbox"><span>إظهار المعطَّلين</span></label><button id="addEmployeeBtn" class="btn btn-primary">+ إضافة عامل</button></div></section>
   <section class="payroll-v2-summary"><div><span>إجمالي الصافي</span><strong id="kpiTotal">0.00</strong></div><div><span>عدد العاملين</span><strong id="kpiEmployees">0</strong></div><div class="save-state"><span>حالة الحفظ</span><strong id="saveState">محفوظ تلقائيًا</strong></div></section>
   <section class="payroll-v2-panel"><div class="payroll-v2-panel-head"><div><h2>قائمة العاملين</h2><p id="periodCaption">—</p></div><div style="display:flex;gap:8px"><button id="reopenMonthBtn" class="btn btn-danger hidden" title="الشهر مصروف بالكامل ومقفل — إعادة فتحه تسمح بتسجيل صرف/تصحيح جديد بدون حذف أو تعديل أي دفعة سابقة">إعادة فتح الشهر</button><button id="accrueMonthBtn" class="btn btn-secondary" title="يعترف بكامل رواتب الشهر كمصروف بقائمة الدخل فوراً، حتى لو لم يُصرف شيء بعد للعاملين">ترحيل استحقاق الشهر</button><button id="payrollSettingsBtn" class="btn btn-secondary">إعدادات الرواتب</button><button id="payrollExportBtn" class="btn btn-secondary">تصدير المسير</button><button id="refreshBtn" class="btn btn-secondary">تحديث</button></div></div>

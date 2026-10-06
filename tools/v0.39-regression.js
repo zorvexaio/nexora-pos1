@@ -1,7 +1,7 @@
 const fs=require('fs');
 const path=require('path');
 const root=path.resolve(__dirname,'..');
-const css=fs.readFileSync(path.join(root,'renderer','style.css'),'utf8');
+const css=require('./lib/renderer-css').read();
 function pass(n,c){if(!c) throw new Error(`FAIL ${n}`); console.log(`PASS ${n}`)}
 pass('signature design tokens', css.includes('--brand-gold') && css.includes('--brand-indigo'));
 pass('application topbar', css.includes('.topbar {') && css.includes('var(--brand-gold)'));

@@ -1,7 +1,7 @@
 const assert = require('assert');
 const fs=require('fs');
 const main=fs.readFileSync('main.js','utf8');
-const db=fs.readFileSync('database/db.js','utf8');
+const db=require('./lib/db-source').read();
 const preload=fs.readFileSync('preload.js','utf8');
 const payroll=fs.readFileSync('renderer/pages/payroll.js','utf8');
 const payrollHtml=fs.readFileSync('renderer/pages/payroll.html','utf8');

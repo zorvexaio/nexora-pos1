@@ -100,7 +100,21 @@ async function loadProducts() {
 
 function renderTable(products) {
   tableBody.innerHTML = '';
-  emptyState.style.display = products.length === 0 ? 'block' : 'none';
+  if (products.length === 0) {
+    emptyState.style.display = 'block';
+    if (typeof renderPageEmptyState === 'function') {
+      renderPageEmptyState(emptyState, {
+        icon: '▣',
+        title: (typeof t === 'function' ? t('products.emptyTitle', 'لا توجد منتجات') : 'لا توجد منتجات'),
+        message: (typeof t === 'function' ? t('products.emptyMessage', 'أضف أول منتج أو عدّل عوامل التصفية.') : 'أضف أول منتج أو عدّل عوامل التصفية.'),
+        actionText: (typeof ts === 'function' ? ts('إضافة منتج') : 'إضافة منتج'),
+        onAction: () => { const b = document.getElementById('addProductBtn'); if (b) b.click(); }
+      });
+    }
+  } else {
+    emptyState.style.display = 'none';
+    emptyState.innerHTML = '';
+  }
 
   let lowStockCount = 0;
   let noBarcodeCount = 0;

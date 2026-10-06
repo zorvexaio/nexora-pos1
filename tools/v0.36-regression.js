@@ -3,7 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const root = path.resolve(__dirname, '..');
 const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
-const css = fs.readFileSync(path.join(root, 'renderer/style.css'), 'utf8');
+const css = require('./lib/renderer-css').read();
 const index = fs.readFileSync(path.join(root, 'renderer/index.html'), 'utf8');
 
 function pass(name, condition) {

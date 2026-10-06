@@ -9,7 +9,7 @@ const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
 
-const src = fs.readFileSync(path.join(__dirname, '..', 'database', 'db.js'), 'utf8');
+const src = require('./lib/db-source').read();
 const FROZEN = {
   "2": {
     "name": "financial-minor-units-v2",

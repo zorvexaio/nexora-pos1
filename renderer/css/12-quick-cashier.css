@@ -1,0 +1,181 @@
+/* Nexora POS — 12-quick-cashier.css — Quick cashier (split from style.css) */
+/* ========== الكاشير السريع ========== */
+.qc-page {
+  padding: 12px 14px !important;
+  background: var(--bg) !important;
+}
+.qc-layout {
+  gap: 12px !important;
+}
+.qc-keypad-panel,
+.qc-products-panel,
+.qc-cart-panel {
+  border-radius: 16px !important;
+  border: 1px solid var(--line) !important;
+  background: var(--surface) !important;
+  box-shadow: var(--shadow-sm) !important;
+  padding: 12px !important;
+}
+.qc-code-display {
+  border-radius: 14px !important;
+  border: 1.5px solid var(--line-strong) !important;
+  background: var(--surface-soft) !important;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.06em;
+}
+.qc-key {
+  border-radius: 12px !important;
+  font-weight: 800 !important;
+  transition: transform 0.08s, background 0.12s, border-color 0.12s !important;
+}
+.qc-key:hover {
+  border-color: var(--primary-border) !important;
+  background: var(--primary-light) !important;
+}
+.qc-add-btn {
+  border-radius: 14px !important;
+  background: linear-gradient(135deg, #22c55e, #15803d) !important;
+  box-shadow: 0 10px 22px rgba(22, 163, 74, 0.32) !important;
+}
+.qc-tile {
+  border-radius: 14px !important;
+  border: 1px solid var(--line) !important;
+  overflow: hidden !important;
+  background: var(--surface) !important;
+  transition: transform 0.12s, box-shadow 0.12s, border-color 0.12s !important;
+}
+.qc-tile:hover {
+  transform: translateY(-2px);
+  border-color: var(--primary-border) !important;
+  box-shadow: var(--shadow) !important;
+}
+.qc-tile:active {
+  transform: scale(0.98);
+}
+
+/* بطاقات KPI في الصفحات الإدارية */
+.kpi-card {
+  border-radius: 14px !important;
+  border: 1px solid var(--line) !important;
+  background: var(--surface) !important;
+  box-shadow: var(--shadow-sm) !important;
+  transition: transform 0.12s, box-shadow 0.12s !important;
+}
+.kpi-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow) !important;
+}
+.kpi-value {
+  font-weight: 900 !important;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+
+/* رؤوس الصفحات */
+.page-header,
+.pro-page-head,
+.content-header {
+  margin-bottom: 14px !important;
+}
+.page-header h1,
+.pro-page-head h1,
+.content-header h1 {
+  font-size: 22px !important;
+  font-weight: 900 !important;
+  letter-spacing: -0.03em !important;
+}
+
+/* أزرار صغيرة في الشريط */
+.btn-sm {
+  height: 34px !important;
+  padding: 0 12px !important;
+  font-size: 12.5px !important;
+  border-radius: 9px !important;
+}
+
+/* شارة الدور */
+.role-badge {
+  border-radius: 999px !important;
+  font-size: 11px !important;
+  font-weight: 800 !important;
+  padding: 2px 8px !important;
+}
+
+/* حالة فارغة */
+.empty-state,
+.cart-empty,
+.products-empty {
+  color: var(--text-faint) !important;
+  font-weight: 600 !important;
+  text-align: center;
+  padding: 28px 16px !important;
+}
+
+/* تحسين نافذة موافقة المدير */
+#approvalModal .modal {
+  max-width: 420px !important;
+}
+#approvalModal .login-mode-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  padding: 4px;
+  background: var(--surface-soft);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  margin: 12px 0;
+}
+#approvalModal .login-mode-tab {
+  border: 0;
+  background: transparent;
+  border-radius: 9px;
+  height: 38px;
+  font-weight: 800;
+  color: var(--text-soft);
+  cursor: pointer;
+}
+#approvalModal .login-mode-tab.active {
+  background: var(--surface);
+  color: var(--primary);
+  box-shadow: var(--shadow-sm);
+}
+
+/* شريط الأدوات أسفل القائمة */
+.sidebar-tools {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 10px 12px 14px;
+  border-top: 1px solid var(--line);
+  margin-top: auto;
+}
+.theme-toggle {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  cursor: pointer;
+  font-size: 16px;
+}
+.theme-toggle:hover {
+  border-color: var(--primary-border);
+  background: var(--primary-light);
+}
+
+/* تفاصيل الخصم في السلة أقل إزعاجاً */
+.cart-panel details {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 6px 10px;
+  background: var(--surface-soft);
+  margin-bottom: 8px;
+}
+.cart-panel details summary {
+  cursor: pointer;
+  font-weight: 800;
+  font-size: 12.5px;
+  color: var(--text-soft);
+}
+
+

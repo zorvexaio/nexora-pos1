@@ -18,7 +18,7 @@ const fs = require('fs');
 const path = require('path');
 const assert = require('assert');
 
-const dbSrc = fs.readFileSync(path.join(__dirname, '..', 'database', 'db.js'), 'utf8');
+const dbSrc = require('./lib/db-source').read();
 
 // حارس انجراف: تأكيد أن الدالة الحقيقية لا تزال تشتق method (مع افتراض 'cash' كتوافق
 // خلفي)، وتتحقق من صحته، وتفصل useRegister عن paidFromRegister الخام.

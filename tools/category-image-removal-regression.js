@@ -6,9 +6,18 @@ const fs = require('fs');
 const path = require('path');
 
 const root = path.resolve(__dirname, '..');
+function readDatabaseSources(root) {
+  // الكود قُسِّم من database/db.js إلى database/domains/*.js — نقرأ الكل كنص واحد.
+  const dbDir = path.join(root, 'database');
+  const files = [path.join(dbDir, 'db.js')];
+  const domains = path.join(dbDir, 'domains');
+  if (fs.existsSync(domains)) for (const f of fs.readdirSync(domains).sort()) if (f.endsWith('.js')) files.push(path.join(domains, f));
+  return files.map((f) => fs.readFileSync(f, 'utf8')).join('\n');
+}
+
 const settings = fs.readFileSync(path.join(root, 'renderer', 'pages', 'settings.js'), 'utf8');
 const pos = fs.readFileSync(path.join(root, 'renderer', 'pos.js'), 'utf8');
-const db = fs.readFileSync(path.join(root, 'database', 'db.js'), 'utf8');
+const db = readDatabaseSources(root);
 
 assert.match(settings, /data-remove-cat="\$\{c\.id\}"/, 'A category with an image must expose a remove action.');
 assert.match(settings, /categories\.setImage\(categoryId, null\)/, 'Removing an image must clear the stored image path.');

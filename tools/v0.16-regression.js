@@ -1,5 +1,5 @@
 const fs = require('fs');
-const db = fs.readFileSync('database/db.js','utf8');
+const db = require('./lib/db-source').read();
 const main = fs.readFileSync('main.js','utf8');
 const schema = fs.readFileSync('database/schema.sql','utf8');
 const tests = [

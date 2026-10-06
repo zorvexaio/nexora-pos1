@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const root = path.resolve(__dirname, '..');
-const db = fs.readFileSync(path.join(root, 'database', 'db.js'), 'utf8');
+const db = require('./lib/db-source').read();
 const main = fs.readFileSync(path.join(root, 'main.js'), 'utf8');
 const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
 const checks = [

@@ -4,7 +4,7 @@ const assert = require('assert');
 
 const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
 const main = fs.readFileSync('main.js', 'utf8');
-const db = fs.readFileSync('database/db.js', 'utf8');
+const db = require('./lib/db-source').read();
 const schema = fs.readFileSync('database/schema.sql', 'utf8');
 
 const publish = Array.isArray(pkg.build?.publish) ? pkg.build.publish[0] : null;

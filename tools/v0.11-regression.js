@@ -1,6 +1,6 @@
 const fs=require('fs');
 const path=require('path');
-const db=fs.readFileSync(path.join(__dirname,'..','database','db.js'),'utf8');
+const db=require('./lib/db-source').read();
 const schema=fs.readFileSync(path.join(__dirname,'..','database','schema.sql'),'utf8');
 const checks=[
   ['inventory schema has branch unit cost', /unit_cost REAL NOT NULL DEFAULT 0/.test(schema)],

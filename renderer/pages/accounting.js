@@ -9,6 +9,9 @@ let isAdminUser = false;
 let accountsCache = [];
 
 async function init() {
+  const exportCsvBtn = document.getElementById('accountingExportCsvBtn');
+  if (exportCsvBtn) exportCsvBtn.addEventListener('click', exportActiveTableCsv);
+
   const user = await guardPage(['admin', 'manager'], '../login.html');
   if (!user) return;
   isAdminUser = user.role === 'admin';
@@ -358,5 +361,54 @@ async function onPostManualEntry() {
     showToast(t('accounting.toast.postEntryFailed') + (error.message || error), 'error');
   }
 }
+
+
+function exportActiveTableCsv() {
+  const activePanel = document.querySelector('.tab-panel:not([hidden]), .tab-panel.active, [data-tab-panel].active');
+  // find visible tab content
+  let panel = null;
+  const tabBtns = document.querySelectorAll('.tab-btn');
+  let activeTab = 'overview';
+  tabBtns.forEach((b) => { if (b.classList.contains('active')) activeTab = b.dataset.tab || activeTab; });
+  panel = document.getElementById(activeTab + 'Panel') || document.querySelector(`[data-panel="${activeTab}"]`) || document.querySelector(`.tab-content[data-tab="${activeTab}"]`);
+  // fallback: any visible table in accounting page
+  const tables = Array.from(document.querySelectorAll('.products-table, table'));
+  let table = null;
+  if (panel) table = panel.querySelector('table');
+  if (!table) {
+    // pick first table with rows in non-hidden parent
+    table = tables.find((tb) => {
+      const host = tb.closest('[hidden]');
+      return !host && tb.querySelectorAll('tbody tr').length;
+    }) || tables[0];
+  }
+  if (!table) {
+    showToast(typeof ts === 'function' ? ts('لا يوجد جدول للتصدير') : 'لا يوجد جدول للتصدير', 'error');
+    return;
+  }
+  const rows = [];
+  table.querySelectorAll('tr').forEach((tr) => {
+    const cells = Array.from(tr.querySelectorAll('th,td')).map((c) => {
+      let text = (c.textContent || '').replace(/\s+/g, ' ').trim();
+      if (/[",\n]/.test(text)) text = '"' + text.replace(/"/g, '""') + '"';
+      return text;
+    });
+    if (cells.length) rows.push(cells.join(','));
+  });
+  if (rows.length < 2) {
+    showToast(typeof ts === 'function' ? ts('لا بيانات كافية للتصدير') : 'لا بيانات كافية للتصدير', 'info');
+    return;
+  }
+  const bom = '\uFEFF';
+  const blob = new Blob([bom + rows.join('\n')], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `nexora-accounting-${activeTab}-${new Date().toISOString().slice(0, 10)}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+  showToast(typeof ts === 'function' ? ts('تم تصدير CSV') : 'تم تصدير CSV', 'success');
+}
+
 
 init();

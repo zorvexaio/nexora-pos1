@@ -1,5 +1,5 @@
 const fs=require('fs'),path=require('path');const root=path.resolve(__dirname,'..');
-const db=fs.readFileSync(path.join(root,'database','db.js'),'utf8');
+const db=require('./lib/db-source').read();
 const main=fs.readFileSync(path.join(root,'main.js'),'utf8');
 const preload=fs.readFileSync(path.join(root,'preload.js'),'utf8');
 const ui=fs.readFileSync(path.join(root,'renderer','pages','returns.js'),'utf8');

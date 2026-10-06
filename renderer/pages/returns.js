@@ -39,7 +39,23 @@ async function init(){
   canRefund=['admin','manager'].includes(user.role);
   if(!canRefund){ document.getElementById('saleReturnSection')?.classList.add('hidden'); }
   const branch=await window.api.branches.current(); $('branchName').textContent=branch?branch.name:'';
-  loadSaleBtn.addEventListener('click',loadSale);
+  loadSaleBtn.addEventListener('click',()=>loadSale({focus:true}));
+  const closeReturnPanelBtn=document.getElementById('closeReturnPanelBtn');
+  if(closeReturnPanelBtn)closeReturnPanelBtn.addEventListener('click',()=>{saleReturnPanel.classList.add('hidden');document.querySelectorAll('.returns-sale-row.is-selected').forEach(el=>el.classList.remove('is-selected'));});
+  const returnAllQtyBtn=document.getElementById('returnAllQtyBtn');
+  const returnClearQtyBtn=document.getElementById('returnClearQtyBtn');
+  if(returnAllQtyBtn)returnAllQtyBtn.addEventListener('click',()=>{
+    returnItemsBody.querySelectorAll('input[data-sale-item-id]').forEach(el=>{
+      if(el.disabled)return;
+      const max=el.getAttribute('max');
+      el.value=max!=null?String(max):el.value;
+    });
+    updatePreview();
+  });
+  if(returnClearQtyBtn)returnClearQtyBtn.addEventListener('click',()=>{
+    returnItemsBody.querySelectorAll('input[data-sale-item-id]').forEach(el=>{if(!el.disabled)el.value='0';});
+    updatePreview();
+  });
   $('salesSearchInput').addEventListener('input',renderSalesList);
   $('closeModifyBtn').addEventListener('click',()=>{$('modifyPanel').classList.add('hidden');modifySale=null;});
   $('modifyProductSearch').addEventListener('input',loadModifyProducts);
@@ -63,7 +79,7 @@ async function renderSalesList(){
   $('salesManageList').innerHTML=filtered.length?filtered.map(s=>`<div class="returns-sale-row"><div><strong>${escapeHtml(s.invoice_number||s.id)}</strong><small>${escapeHtml(s.created_at||'')} ${s.customer_name?` · ${escapeHtml(s.customer_name)}`:''} · ${escapeHtml(payLabel(s.payment_method))}${s.status==='partially_refunded'?` · ${escapeHtml(ts('مرتجعة جزئياً'))}`:''}</small></div><div><b>${Number(s.grand_total||0).toFixed(2)}</b><button class="btn btn-secondary btn-sm" data-paymodify="${s.id}">${L('modify')} ${lang()==='ar'?'الدفع':lang()==='tr'?'Ödeme':'Payment'}</button><button class="btn btn-secondary btn-sm" data-modify="${s.id}">${L('modify')}</button>${canRefund?`<button class="btn btn-danger btn-sm" data-return="${s.invoice_number||''}">${L('ret')}</button>`:''}</div></div>`).join(''):`<div class="drawer-empty">${L('noSales')}</div>`;
   $('salesManageList').querySelectorAll('[data-modify]').forEach(b=>b.addEventListener('click',()=>openModifier(Number(b.dataset.modify))));
   $('salesManageList').querySelectorAll('[data-paymodify]').forEach(b=>b.addEventListener('click',()=>openPaymentModifier(Number(b.dataset.paymodify))));
-  $('salesManageList').querySelectorAll('[data-return]').forEach(b=>b.addEventListener('click',()=>{saleIdInput.value=b.dataset.return;loadSale();window.scrollTo({top:document.body.scrollHeight,behavior:'smooth'});}));
+  $('salesManageList').querySelectorAll('[data-return]').forEach(b=>b.addEventListener('click',()=>{document.querySelectorAll('.returns-sale-row.is-selected').forEach(el=>el.classList.remove('is-selected'));const row=b.closest('.returns-sale-row');if(row)row.classList.add('is-selected');saleIdInput.value=b.dataset.return;loadSale({focus:true,anchor:row});}));
 }
 
 async function openPaymentModifier(id){
@@ -76,6 +92,11 @@ async function openPaymentModifier(id){
 function updatePaymentFields(){const m=$('paymentModifyMethod').value;const mixed=m==='mixed';$('paymentMixedFields').classList.toggle('hidden',!mixed);$('paymentCardField').classList.toggle('hidden',!mixed);}
 
 async function openModifier(id){
+  if (saleReturnPanel) saleReturnPanel.classList.add('hidden');
+  document.querySelectorAll('.returns-sale-row.is-selected').forEach(el=>el.classList.remove('is-selected'));
+  const modBtn=document.querySelector(`[data-modify="${id}"]`);
+  const row=modBtn&&modBtn.closest('.returns-sale-row');
+  if(row)row.classList.add('is-selected');
   modifySale=await window.api.sales.get(id); if(!modifySale) return;
   modifyCart=modifySale.items.map(i=>({productId:i.product_id,name:i.product_name,quantity:Number(i.quantity),price:Number(i.unit_price),taxRate:Number(i.tax_rate||0),taxInclusive:Number(i.tax_inclusive||0)===1,notes:i.notes||'',categoryId:i.category_id||null}));
   modifyCategoryId=null;
@@ -85,7 +106,7 @@ async function openModifier(id){
   $('modifyInvoiceLabel').textContent=modifySale.invoice_number||modifySale.id;
   $('modifyReasonInput').value=''; $('modifyPanel').classList.remove('hidden');
   modifyBundles=await window.api.bundles.listActive(); renderModifyCart(); await loadModifyProducts();
-  $('modifyPanel').scrollIntoView({behavior:'smooth',block:'start'});
+  $('modifyPanel').scrollIntoView({behavior:'smooth',block:'nearest'});
 }
 
 async function loadModifyProducts(){
@@ -149,11 +170,22 @@ async function saveModification(){
   try{const result=await window.api.sales.modifyItems({saleId:modifySale.id,items:modifyCart.filter(i=>Number(i.quantity)>0).map(i=>({productId:i.productId,quantity:i.quantity,notes:i.notes})),reason,bundleIds:modifyBundles.filter(b=>modifyCart.some(i=>(b.items||[]).some(x=>Number(x.product_id)===Number(i.productId)))).map(b=>b.id),discountType:modifyDiscountType.value,discountValue:Number(modifyDiscountValue.value||0)});showToast(L('saved'),'success');if(result.printOutcome?.kitchenDelta?.success===false)showToast(`${M('returns.deltaPrintFailed','تعذر طباعة تعديل المطبخ')}: ${(result.printOutcome.kitchenDelta.reason||'Error')}`,'error');$('modifyPanel').classList.add('hidden');await renderSalesList();}catch(e){showToast(e.message||String(e),'error');}finally{$('saveModifyBtn').disabled=false;}
 }
 
-async function loadSale(){
+async function loadSale(opts = {}){
   const invoiceNumber=normalizeDigits(saleIdInput.value.trim());if(!invoiceNumber)return;
   const sale=await window.api.returns.saleForReturn(invoiceNumber);
   if(!sale){showToast(ts('لا توجد فاتورة بهذا الرقم'),'error');saleReturnPanel.classList.add('hidden');return;}
-  currentSale=sale;saleIdLabel.textContent=sale.invoice_number||sale.id;renderItems();saleReturnPanel.classList.remove('hidden');
+  currentSale=sale;saleIdLabel.textContent=sale.invoice_number||sale.id;renderItems();
+  // إخفاء لوحة التعديل إن كانت مفتوحة حتى لا تتداخل مع المرتجع
+  const modifyPanel=document.getElementById('modifyPanel');
+  if(modifyPanel)modifyPanel.classList.add('hidden');
+  saleReturnPanel.classList.remove('hidden');
+  if(opts.focus!==false){
+    requestAnimationFrame(()=>{
+      saleReturnPanel.scrollIntoView({behavior:'smooth',block:'nearest'});
+      const firstQty=saleReturnPanel.querySelector('input[data-sale-item-id]:not([disabled])');
+      if(firstQty)try{firstQty.focus();}catch(_){}
+    });
+  }
 }
 function renderItems(){
   returnItemsBody.innerHTML='';
@@ -167,4 +199,21 @@ async function submitReturn(){
   if(!(await confirmDialog(ts('هل تريد تنفيذ هذا المرتجع؟ سيتم إرجاع الكمية للمخزون تلقائياً.'),{tone:'warning'})))return;
   confirmReturnBtn.disabled=true;try{const result=await window.api.returns.create({saleId:currentSale.id,items,reason:returnReasonInput.value.trim(),refundMethod:refundMethodSelect.value,clientRequestId:(crypto.randomUUID?crypto.randomUUID():`${Date.now()}-${Math.random()}`)});showToast(`${t('returns.success','تم تنفيذ المرتجع بنجاح. المبلغ المسترد')}: ${result.totalRefunded.toFixed(2)}`,'success');saleReturnPanel.classList.add('hidden');saleIdInput.value='';await renderSalesList();}catch(err){showToast(ts('حدث خطأ: ')+err.message,'error');}finally{confirmReturnBtn.disabled=false;}
 }
+
+document.addEventListener('keydown', (event) => {
+  if (event.key !== 'Escape') return;
+  if (saleReturnPanel && !saleReturnPanel.classList.contains('hidden')) {
+    saleReturnPanel.classList.add('hidden');
+    document.querySelectorAll('.returns-sale-row.is-selected').forEach((el) => el.classList.remove('is-selected'));
+    event.preventDefault();
+    return;
+  }
+  const modifyPanel = document.getElementById('modifyPanel');
+  if (modifyPanel && !modifyPanel.classList.contains('hidden')) {
+    modifyPanel.classList.add('hidden');
+    document.querySelectorAll('.returns-sale-row.is-selected').forEach((el) => el.classList.remove('is-selected'));
+    event.preventDefault();
+  }
+});
+
 init();

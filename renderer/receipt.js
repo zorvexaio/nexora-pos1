@@ -45,6 +45,25 @@ async function init() {
 
 }
 
+
+/** رقم فاتورة قصير للطباعة: آخر مقطع رقمي بعد الشرطة (000399) بدل الرمز الطويل. */
+function shortInvoiceNo(raw) {
+  const s = String(raw == null ? '' : raw).trim();
+  if (!s) return '';
+  const parts = s.split(/[-_/]/).filter(Boolean);
+  if (parts.length >= 2) {
+    const last = parts[parts.length - 1];
+    if (/^\d+$/.test(last)) return last.replace(/^0+(?=\d)/, '') === '' ? last : last; // keep zeros like 000399
+    // إن كان الأخير غير رقمي، جرّب مقطعاً رقمياً من النهاية
+    for (let i = parts.length - 1; i >= 0; i--) {
+      if (/^\d+$/.test(parts[i])) return parts[i];
+    }
+  }
+  const digits = s.match(/(\d{3,})$/);
+  if (digits) return digits[1];
+  return s.length > 12 ? s.slice(-8) : s;
+}
+
 function renderReceipt(sale, branding, currency = {}) {
   // المبالغ تُعرض بخانات عملة المنشأة (0/2/3) وليس 2 ثابتة.
   const minorUnit = Number.isInteger(currency.minorUnit) && currency.minorUnit >= 0 && currency.minorUnit <= 3 ? currency.minorUnit : 2;
@@ -113,13 +132,15 @@ function renderReceipt(sale, branding, currency = {}) {
       const unit = Number(i.unit_price || 0);
       const line = Number(i.line_total || 0);
       const badge = isOfferItem(i) ? `<span class="receipt-item-offer-badge">[${t('receipt.offerBadge', 'عرض')}]</span> ` : '';
-      const qtyPrice = `<bdi class="receipt-item-calc">${qty}×${fmt(unit)}=${fmt(line)}${cur ? cur : ''}</bdi>`;
+      // سطر واحد: [عرض] 1× الاسم ................ 500.00
+      const namePart = `${badge}<bdi class="receipt-item-qty">${qty}×</bdi> ${escapeHtml(i.product_name)}`;
       return `
       <div class="receipt-item">
         <div class="receipt-item-line">
-          <span class="receipt-item-name">${badge}${escapeHtml(i.product_name)}</span>
-          <span class="receipt-item-total">${qtyPrice}</span>
+          <span class="receipt-item-name">${namePart}</span>
+          <span class="receipt-item-total"><bdi>${fmt(line)}</bdi></span>
         </div>
+        ${qty > 1 ? `<div class="receipt-item-unitline"><bdi>${fmt(unit)}</bdi> × ${qty}</div>` : ''}
         ${i.notes ? `<div class="receipt-item-note">${escapeHtml(i.notes)}</div>` : ''}
       </div>`;
     })
@@ -152,7 +173,8 @@ function renderReceipt(sale, branding, currency = {}) {
   // ---- بيانات الفاتورة: ترتيب مطابق لإيصالات المطاعم الحرارية ----
   const isDelivery = sale.order_type === 'delivery';
   const typeLabel = isDelivery ? t('receipt.typeDelivery') : (sale.table_name ? `${t('receipt.typeTable')} ${sale.table_name}` : t('receipt.typeInStore'));
-  const orderNo = sale.invoice_number || (sale.id != null ? String(sale.id) : '');
+  const orderNoFull = sale.invoice_number || (sale.id != null ? String(sale.id) : '');
+  const orderNo = shortInvoiceNo(orderNoFull) || orderNoFull;
   const shortWhen = formatShortDateTime(sale.created_at);
   const deliveryTimeValue = sale.delivery_time
     ? formatDate(sale.delivery_time)
@@ -169,7 +191,7 @@ function renderReceipt(sale, branding, currency = {}) {
     <div class="receipt-meta-block">
       ${sale.customer_name ? `<div class="receipt-meta-line"><span class="rm-label">${t('receipt.customerLabel')}</span><span class="rm-value">${escapeHtml(sale.customer_name)}</span></div>` : ''}
       <div class="receipt-meta-line receipt-meta-inline">
-        ${orderNo ? `<span>${t('receipt.orderNo', 'رقم الطلب')}: <bdi>#${escapeHtml(orderNo)}</bdi></span>` : ''}
+        ${orderNo ? `<span>${t('receipt.invoiceNo', 'فاتورة')}: <bdi>#${escapeHtml(orderNo)}</bdi></span>` : ''}
         ${shortWhen ? `<span><bdi>${shortWhen}</bdi></span>` : ''}
       </div>
       <div class="receipt-meta-line"><span class="rm-label">${t('receipt.orderTypeLabel')}</span><span class="rm-value">${escapeHtml(typeLabel)}</span></div>
@@ -216,7 +238,7 @@ function renderReceipt(sale, branding, currency = {}) {
 
     <img id="receiptQr" class="receipt-qr" alt="QR" style="display:none" />
     <div class="receipt-footer">${t('receipt.thankYou')}</div>
-    ${orderNo ? `<div class="receipt-footer receipt-ref"><bdi>${escapeHtml(orderNo)}</bdi></div>` : ''}
+    ${orderNo ? `<div class="receipt-footer receipt-ref"><bdi>#${escapeHtml(orderNo)}</bdi></div>` : ''}
     ${branding && branding.receiptFooterMessage ? `<div class="receipt-footer receipt-footer-custom">${escapeHtml(branding.receiptFooterMessage).replace(/\n/g, '<br>')}</div>` : ''}
   `;
 

@@ -109,6 +109,8 @@ async function init() {
 
   // نستخدم normalizeDigits لأن حقل البحث نص عادي (لا type="number") حتى يقبل الأرقام العربية/الفارسية
   // المكتوبة من لوحة مفاتيح عربية، وهو ما لا تسمح به خانات <input type="number"> إطلاقاً
+  const refreshFiscalDocsBtn = document.getElementById('refreshFiscalDocsBtn');
+  if (refreshFiscalDocsBtn) refreshFiscalDocsBtn.addEventListener('click', loadFiscalDocs);
   invoiceSearchInput.addEventListener('input', () => {
     invoiceSearchInput.value = normalizeDigits(invoiceSearchInput.value);
     clearTimeout(invoiceSearchTimer);
@@ -127,6 +129,8 @@ function switchTab(tab) {
   document.querySelectorAll('.tab-panel').forEach((panel) => {
     panel.hidden = panel.dataset.panel !== tab;
   });
+
+  if (tab === 'invoices') loadFiscalDocs();
 }
 
 function closeInvoiceModal() {
@@ -165,6 +169,18 @@ async function openInvoiceDetail(saleId) {
         <div class="strong"><span>الإجمالي</span><b>${formatMoney(sale.grand_total)}</b></div>
         <div><span>طريقة الدفع</span><b id="invoiceCurrentMethod">${paymentMethodLabel(sale.payment_method) || escapeHtml(sale.payment_method)}</b></div>
       </div>
+      <div class="invoice-fiscal-panel no-print" id="invoiceFiscalPanel">
+        <div class="panel-heading" style="margin-top:14px;margin-bottom:8px;">
+          <h3 style="font-size:14px;margin:0;">الفوترة الإلكترونية</h3>
+        </div>
+        <div id="invoiceFiscalStatus" class="field-hint" style="margin:0 0 8px;padding:8px 10px;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface-soft);">جارٍ تحميل حالة المستندات…</div>
+        <div class="form-actions" style="display:flex;flex-wrap:wrap;gap:8px;">
+          <button type="button" id="fiscalIssueBtn" class="btn btn-primary btn-sm">إصدار / تسجيل مالي</button>
+          <button type="button" id="fiscalCancelBtn" class="btn btn-secondary btn-sm">إلغاء مالي</button>
+          <button type="button" id="fiscalRefreshBtn" class="btn btn-secondary btn-sm">تحديث</button>
+        </div>
+        <div id="invoiceFiscalList" class="field-hint" style="margin-top:10px;white-space:pre-wrap;font-size:12px;"></div>
+      </div>
       ${canCorrect ? `
       <div class="invoice-payment-correction no-print">
         <button type="button" id="togglePaymentCorrectionBtn" class="btn btn-secondary btn-sm">تصحيح طريقة الدفع</button>
@@ -193,6 +209,7 @@ async function openInvoiceDetail(saleId) {
         </div>
       </div>` : ''}
     `;
+    wireInvoiceFiscalPanel(sale);
     if (canCorrect) wirePaymentCorrectionForm(sale);
   } catch (error) {
     invoiceModalBody.innerHTML = `<div class="empty-state">تعذر تحميل تفاصيل الفاتورة: ${escapeHtml(error.message || String(error))}</div>`;
@@ -382,9 +399,17 @@ function renderCashMovements(data) {
   if (!data.groups || !data.groups.length) {
     body.innerHTML = '';
     empty.classList.remove('hidden');
+    if (typeof renderPageEmptyState === 'function') {
+      renderPageEmptyState(empty, {
+        icon: '▭',
+        title: ts('لا حركات صندوق مجمّعة'),
+        message: ts('السلف ودفعات الموردين في الفترة تظهر هنا.'),
+      });
+    }
     return;
   }
   empty.classList.add('hidden');
+  empty.innerHTML = '';
   body.innerHTML = data.groups
     .map((g) => `<tr><td>${labels[g.key] || g.key}</td><td>${g.count}</td><td>${g.type === 'cash_out' ? '-' : '+'}${formatMoney(g.total)}</td></tr>`)
     .join('');
@@ -422,11 +447,117 @@ function renderSparkline(days) {
   `;
 }
 
+
+async function wireInvoiceFiscalPanel(sale) {
+  const statusEl = document.getElementById('invoiceFiscalStatus');
+  const listEl = document.getElementById('invoiceFiscalList');
+  const issueBtn = document.getElementById('fiscalIssueBtn');
+  const cancelBtn = document.getElementById('fiscalCancelBtn');
+  const refreshBtn = document.getElementById('fiscalRefreshBtn');
+  if (!statusEl || !issueBtn) return;
+
+  async function refresh() {
+    try {
+      const st = await window.api.fiscalization.status();
+      const docs = await window.api.fiscalization.list({ saleId: sale.id });
+      const mode = st.fiscalizationMode || 'none';
+      statusEl.textContent = `[${mode}] ${st.mode || st.activeProvider || 'generic'}: ${st.message || ''}`;
+      statusEl.style.borderColor = st.ready ? 'var(--success-border)' : 'var(--line)';
+      statusEl.style.background = st.ready ? 'var(--success-light)' : 'var(--surface-soft)';
+      if (!docs || !docs.length) {
+        listEl.textContent = ts('لا توجد مستندات مالية مسجّلة لهذه الفاتورة بعد.');
+      } else {
+        listEl.textContent = docs.map((d) => {
+          const when = d.issued_at || d.created_at || '';
+          return `#${d.id} · ${d.provider} · ${d.status}${d.external_id ? ` · ${d.external_id}` : ''}${when ? ` · ${when}` : ''}`;
+        }).join('\n');
+      }
+    } catch (err) {
+      statusEl.textContent = ts('تعذر تحميل الحالة المالية: ') + (err.message || String(err));
+      listEl.textContent = '';
+    }
+  }
+
+  issueBtn.addEventListener('click', async () => {
+    if (!(await confirmDialog(ts('تسجيل/إصدار مستند فوترة إلكترونية لهذه الفاتورة؟'), { tone: 'info' }))) return;
+    issueBtn.disabled = true;
+    try {
+      const doc = await window.api.fiscalization.issue({ saleId: sale.id });
+      showToast(ts('تم تسجيل المستند المالي: ') + (doc.status || ''), 'success');
+      await refresh();
+    } catch (err) {
+      showToast(ts('تعذر الإصدار: ') + (err.message || String(err)), 'error');
+    } finally {
+      issueBtn.disabled = false;
+    }
+  });
+
+  cancelBtn.addEventListener('click', async () => {
+    if (!(await confirmDialog(ts('تسجيل إلغاء مالي لهذه الفاتورة؟'), { tone: 'warning' }))) return;
+    cancelBtn.disabled = true;
+    try {
+      const doc = await window.api.fiscalization.cancel({ saleId: sale.id });
+      showToast(ts('تم تسجيل الإلغاء المالي: ') + (doc.status || ''), 'success');
+      await refresh();
+    } catch (err) {
+      showToast(ts('تعذر الإلغاء: ') + (err.message || String(err)), 'error');
+    } finally {
+      cancelBtn.disabled = false;
+    }
+  });
+
+  refreshBtn.addEventListener('click', () => refresh());
+  await refresh();
+}
+
+
+async function loadFiscalDocs() {
+  const body = document.getElementById('fiscalDocsBody');
+  const empty = document.getElementById('fiscalDocsEmpty');
+  if (!body) return;
+  try {
+    const docs = await window.api.fiscalization.list({});
+    body.innerHTML = '';
+    if (!docs || !docs.length) {
+      if (empty) {
+        empty.style.display = 'block';
+        if (typeof renderPageEmptyState === 'function') {
+          renderPageEmptyState(empty, {
+            icon: '⬡',
+            title: ts('لا توجد مستندات مالية'),
+            message: ts('بعد تفعيل الموصل ستظهر هنا تسجيلات الإصدار والإلغاء.'),
+          });
+        }
+      }
+      return;
+    }
+    if (empty) { empty.style.display = 'none'; empty.innerHTML = ''; }
+    body.innerHTML = docs.map((d) => {
+      const when = d.issued_at || d.created_at || '—';
+      return `<tr>
+        <td>${d.id}</td>
+        <td>${d.sale_id != null ? escapeHtml(String(d.sale_id)) : '—'}</td>
+        <td>${escapeHtml(d.provider || '')}</td>
+        <td><span class="status-badge">${escapeHtml(d.status || '')}</span></td>
+        <td>${escapeHtml(d.external_id || d.external_number || '—')}</td>
+        <td>${escapeHtml(String(when))}</td>
+      </tr>`;
+    }).join('');
+  } catch (err) {
+    body.innerHTML = '';
+    if (empty) {
+      empty.style.display = 'block';
+      empty.textContent = ts('تعذر تحميل المستندات المالية: ') + (err.message || String(err));
+    }
+  }
+}
+
 async function loadInvoices() {
   const range = { ...currentRange(), search: invoiceSearchInput.value.trim() };
   try {
     const invoices = await window.api.reports.invoices(range);
     renderInvoices(invoices);
+    await loadFiscalDocs();
   } catch (error) {
     invoicesBody.innerHTML = '';
     invoicesEmpty.style.display = 'block';
@@ -438,6 +569,13 @@ async function loadInvoices() {
 function renderInvoices(items) {
   invoicesBody.innerHTML = '';
   invoicesEmpty.style.display = items.length ? 'none' : 'block';
+  if (!items.length && typeof renderPageEmptyState === 'function') {
+    renderPageEmptyState(invoicesEmpty, {
+      icon: '▦',
+      title: ts('لا توجد فواتير في هذه الفترة'),
+      message: ts('غيّر الفترة أو ابحث برقم الفاتورة.'),
+    });
+  }
   for (const inv of items) {
     const tr = document.createElement('tr');
     tr.className = 'clickable-row';
@@ -466,6 +604,15 @@ function formatDateTime(str) {
 function renderDebtAging(items) {
   debtAgingBody.innerHTML = '';
   debtAgingEmpty.style.display = items.length ? 'none' : 'block';
+  if (!items.length && typeof renderPageEmptyState === 'function') {
+    renderPageEmptyState(debtAgingEmpty, {
+      icon: '◇',
+      title: ts('لا توجد ديون مستحقة'),
+      message: ts('كل أرصدة العملاء مسدّدة أو لا توجد مبيعات آجلة في النطاق.'),
+    });
+  } else if (items.length) {
+    debtAgingEmpty.innerHTML = '';
+  }
   for (const item of items) {
     const tr = document.createElement('tr');
     tr.innerHTML = `<td>${escapeHtml(item.name || 'بدون اسم')}</td><td>${formatMoney(item.balance)}</td><td>${item.age_days ?? 0}</td>`;
@@ -488,7 +635,19 @@ function renderProfitLoss(pl, prevPl) {
   renderTrend(trendNetProfit, pl.netProfit, prevPl?.netProfit);
 
   topProfitBody.innerHTML = '';
-  topProfitEmpty.style.display = pl.byProduct.length === 0 ? 'block' : 'none';
+  if (!pl.byProduct.length) {
+    topProfitEmpty.style.display = 'block';
+    if (typeof renderPageEmptyState === 'function') {
+      renderPageEmptyState(topProfitEmpty, {
+        icon: '◇',
+        title: ts('لا بيانات ربح للمنتجات'),
+        message: ts('لا مبيعات كافية لحساب هامش الربح في الفترة.'),
+      });
+    }
+  } else {
+    topProfitEmpty.style.display = 'none';
+    topProfitEmpty.innerHTML = '';
+  }
   // maxProfit لازم يكون مبني على القيمة المطلقة لأكبر ربح/خسارة — وإلا منتج خسران
   // بيطلع بشريط أخضر صغير (4%) بدل ما ينعرض كخسارة واضحة بالأحمر.
   const maxProfit = Math.max(...pl.byProduct.map((p) => Math.abs(Number(p.profit) || 0)), 1);
@@ -512,7 +671,19 @@ function renderDeliverySummary(delivery) {
   deliveryFeesTotal.textContent = formatMoney(delivery.deliveryFees);
 
   deliveryByPersonBody.innerHTML = '';
-  deliveryEmpty.style.display = delivery.byPerson.length === 0 ? 'block' : 'none';
+  if (!delivery.byPerson.length) {
+    deliveryEmpty.style.display = 'block';
+    if (typeof renderPageEmptyState === 'function') {
+      renderPageEmptyState(deliveryEmpty, {
+        icon: '🚚',
+        title: ts('لا توجد طلبات توصيل في الفترة'),
+        message: ts('غيّر الفترة أو تأكد من تسجيل طلبات delivery.'),
+      });
+    }
+  } else {
+    deliveryEmpty.style.display = 'none';
+    deliveryEmpty.innerHTML = '';
+  }
   for (const p of delivery.byPerson) {
     const tr = document.createElement('tr');
     tr.innerHTML = `
@@ -555,7 +726,19 @@ function renderSummary(summary, prevSummary) {
 
 function renderTopProducts(items) {
   topProductsBody.innerHTML = '';
-  topProductsEmpty.style.display = items.length === 0 ? 'block' : 'none';
+  if (!items.length) {
+    topProductsEmpty.style.display = 'block';
+    if (typeof renderPageEmptyState === 'function') {
+      renderPageEmptyState(topProductsEmpty, {
+        icon: '▣',
+        title: ts('لا منتجات في هذه الفترة'),
+        message: ts('لا مبيعات مطابقة لنطاق التواريخ المحدد.'),
+      });
+    }
+  } else {
+    topProductsEmpty.style.display = 'none';
+    topProductsEmpty.innerHTML = '';
+  }
   const maxQty = Math.max(...items.map((p) => Number(p.qty) || 0), 1);
   for (const p of items) {
     const pct = Math.max((Number(p.qty) / maxQty) * 100, 4);
@@ -571,7 +754,19 @@ function renderTopProducts(items) {
 
 function renderDailyChart(days) {
   dailyChart.innerHTML = '';
-  dailyEmpty.style.display = days.length === 0 ? 'block' : 'none';
+  if (!days.length) {
+    dailyEmpty.style.display = 'block';
+    if (typeof renderPageEmptyState === 'function') {
+      renderPageEmptyState(dailyEmpty, {
+        icon: '▦',
+        title: ts('لا مبيعات يومية في الفترة'),
+        message: ts('وسّع نطاق التواريخ لعرض الاتجاه اليومي.'),
+      });
+    }
+  } else {
+    dailyEmpty.style.display = 'none';
+    dailyEmpty.innerHTML = '';
+  }
   if (days.length === 0) return;
 
   const maxTotal = Math.max(...days.map((d) => d.total), 1);

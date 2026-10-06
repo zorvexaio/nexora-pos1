@@ -116,7 +116,19 @@ async function loadInventory() {
 
 function renderTable() {
   tableBody.innerHTML = '';
-  emptyState.style.display = currentItems.length === 0 ? 'block' : 'none';
+  if (currentItems.length === 0) {
+    emptyState.style.display = 'block';
+    if (typeof renderPageEmptyState === 'function') {
+      renderPageEmptyState(emptyState, {
+        icon: '▤',
+        title: (typeof ts === 'function' ? ts('لا توجد منتجات مطابقة') : 'لا توجد منتجات مطابقة'),
+        message: (typeof ts === 'function' ? ts('عدّل البحث أو أضف منتجات من صفحة المنتجات.') : 'عدّل البحث أو أضف منتجات من صفحة المنتجات.')
+      });
+    }
+  } else {
+    emptyState.style.display = 'none';
+    emptyState.innerHTML = '';
+  }
 
   let lowCount = 0;
   let stockValue = 0;
@@ -149,7 +161,19 @@ function renderTable() {
 
 async function loadMovements() {
   const movements = await window.api.inventory.movements({});
-  movementsEmptyState.style.display = movements.length === 0 ? 'block' : 'none';
+  if (movements.length === 0) {
+    movementsEmptyState.style.display = 'block';
+    if (typeof renderPageEmptyState === 'function') {
+      renderPageEmptyState(movementsEmptyState, {
+        icon: '⇅',
+        title: (typeof ts === 'function' ? ts('لا توجد حركات مسجّلة بعد') : 'لا توجد حركات مسجّلة بعد'),
+        message: (typeof ts === 'function' ? ts('ستظهر هنا تسويات المخزون والمبيعات والمشتريات.') : 'ستظهر هنا تسويات المخزون والمبيعات والمشتريات.'),
+      });
+    }
+  } else {
+    movementsEmptyState.style.display = 'none';
+    movementsEmptyState.innerHTML = '';
+  }
   movementsTableBody.innerHTML = '';
   for (const m of movements) {
     const tr = document.createElement('tr');
@@ -216,7 +240,19 @@ async function saveAdjustment(e) {
 async function loadTransfers() {
   try {
     transfers = await window.api.inventory.transfers({});
-    transfersEmptyState.style.display = transfers.length === 0 ? 'block' : 'none';
+    if (transfers.length === 0) {
+      transfersEmptyState.style.display = 'block';
+      if (typeof renderPageEmptyState === 'function') {
+        renderPageEmptyState(transfersEmptyState, {
+          icon: '⇄',
+          title: (typeof ts === 'function' ? ts('لا توجد تحويلات مسجلة') : 'لا توجد تحويلات مسجلة'),
+          message: (typeof ts === 'function' ? ts('حوّل مخزوناً بين الفروع عند الحاجة.') : 'حوّل مخزوناً بين الفروع عند الحاجة.'),
+        });
+      }
+    } else {
+      transfersEmptyState.style.display = 'none';
+      transfersEmptyState.innerHTML = '';
+    }
     transfersTableBody.innerHTML = '';
     for (const transfer of transfers) {
       const incoming = transfer.destination_branch_uuid === transfer.branch_uuid;
@@ -282,7 +318,7 @@ async function saveTransferBranch(e){
   try { await window.api.inventory.addTransferBranch({uuid:transferBranchUuid.value.trim(),name:transferBranchName.value.trim(),notes:transferBranchNotes.value.trim()||null}); closeTransferBranchModal(); showToast(t('inventory.branchSaved'), 'success'); } catch(err){showToast(ts('تعذر حفظ الفرع: ')+err.message, 'error');}
 }
 async function receiveTransfer(uuid){ if(!(await confirmDialog(t('inventory.confirmReceiveTransfer')))) return; try { await window.api.inventory.receiveTransfer({uuid}); await loadTransfers(); await loadInventory(); } catch(err){showToast(ts('تعذر استلام التحويل: ')+err.message, 'error');} }
-async function cancelTransfer(uuid){ if(!(await confirmDialog(t('inventory.confirmCancelTransfer'), { tone: 'danger', confirmLabel: t('common.cancel','إلغاء') }))) return; try { await window.api.inventory.cancelTransfer({uuid}); await loadTransfers(); await loadInventory(); } catch(err){showToast(ts('تعذر إلغاء التحويل: ')+err.message, 'error');} }
+async function cancelTransfer(uuid){ if(!(await confirmDialog(t('inventory.confirmCancelTransfer'), { tone: 'danger', confirmLabel: t('common.cancel','إلغاء') }))) return; try { await window.api.inventory.cancelTransfer(uuid); await loadTransfers(); await loadInventory(); } catch(err){showToast(ts('تعذر إلغاء التحويل: ')+err.message, 'error');} }
 function showTransferDetails(transfer){
   const items=Array.isArray(transfer.items)?transfer.items:[];
   const lines=items.map(i=>`${i.product_name || i.product_uuid}: ${i.quantity}`).join('\n');

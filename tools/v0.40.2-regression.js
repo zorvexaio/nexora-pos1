@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const root = path.join(__dirname, '..');
 const schema = fs.readFileSync(path.join(root, 'database', 'schema.sql'), 'utf8');
-const db = fs.readFileSync(path.join(root, 'database', 'db.js'), 'utf8');
+const db = require('./lib/db-source').read();
 function pass(message) { console.log(`PASS: ${message}`); }
 function fail(message) { console.error(`FAIL: ${message}`); process.exit(1); }
 const checks = [

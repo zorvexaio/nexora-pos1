@@ -1,0 +1,198 @@
+/* Nexora POS — 02-pos.css — POS grid + cart (block 1) (split from style.css) */
+/* ---------------------------------------------------------------------- */
+/* POS — product grid + cart                                              */
+/* ---------------------------------------------------------------------- */
+.products-panel { flex: 1; display: flex; flex-direction: column; padding: 18px 22px; overflow: hidden; min-width: 0; background: var(--bg); }
+.search-row { position: relative; margin-bottom: 14px; }
+.search-row input {
+  padding: 14px 16px 14px 16px; padding-inline-start: 44px; font-size: 15px; border-radius: var(--radius-lg);
+  border-color: var(--line); background: var(--surface); box-shadow: var(--shadow-sm);
+}
+.search-row input:focus { box-shadow: var(--shadow-sm), var(--focus-ring); }
+.search-icon { position: absolute; inset-inline-start: 15px; top: 16px; color: var(--text-faint); pointer-events: none; }
+.barcode-error { margin-top: 8px; padding: 8px 12px; background: var(--danger-light); color: var(--danger); border: 1px solid var(--danger-border); border-radius: var(--radius-sm); font-size: 13px; font-weight: 700; }
+
+.products-grid {
+  flex: 1; overflow-y: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(128px, 1fr));
+  gap: 10px; align-content: start; padding: 2px 2px 16px;
+}
+/* بطاقة منتج مضغوطة: أيقونة أصغر بجانب الاسم بدل فوقه، فيرتفع عدد الأصناف الظاهرة
+   دفعة وحدة على الشاشة بشكل ملحوظ. حركة رفع خفيفة + توهّج عند المرور/الضغط تعطي
+   إحساساً "متجاوباً" احترافياً يليق بشاشة بيع سريعة. */
+.product-card {
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 10px 11px; cursor: pointer; transition: transform .14s ease, box-shadow .14s ease, border-color .14s ease;
+  display: flex; flex-direction: column; gap: 6px; box-shadow: var(--shadow-sm);
+  position: relative; text-align: start; min-height: 88px; overflow: hidden;
+}
+.product-card::after {
+  content: ''; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0); transition: box-shadow .14s ease;
+}
+.product-card:hover { transform: translateY(-3px); box-shadow: var(--shadow-lg); border-color: var(--primary-border); }
+.product-card:hover::after { box-shadow: inset 0 0 0 1px var(--primary-border); }
+.product-card:active { transform: translateY(-1px) scale(.97); box-shadow: var(--shadow); }
+/* لا رمز/حرف أعلى البطاقة بعد الآن — اسم المنتج هو العنصر الأساسي والأوضح على الزر،
+   خصوصاً على شاشات اللمس الصغيرة حيث كانت الأيقونة تشغل مساحة والاسم يضيع. */
+.product-card .name {
+  font-weight: 900; font-size: 15.5px; color: var(--text); line-height: 1.28; flex: 1; letter-spacing: -.005em;
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+}
+.card-meta-row { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-top: auto; flex-wrap: wrap; }
+.price-badge {
+  background: var(--primary-light); color: var(--primary); font-weight: 900; font-size: 13px;
+  padding: 3px 9px; border-radius: 999px; white-space: nowrap; font-variant-numeric: tabular-nums;
+}
+.product-card .stock { font-size: 10px; color: var(--text-faint); font-weight: 700; white-space: nowrap; }
+.product-card .stock.low { color: var(--danger); }
+.variant-badge { background: var(--brand-gold-soft); color: var(--brand-gold); font-size: 9.5px; font-weight: 800; padding: 1px 5px; border-radius: 6px; }
+
+/* بطاقة الحزمة (العرض): بلا أيقونة صندوق كبيرة أيضاً — شارة "🎁 عرض" صغيرة في الزاوية
+   وحدّ علوي ذهبي دقيق تكفي لتمييزها، والاسم يبقى هو الأبرز كباقي البطاقات. */
+.bundle-card { border-color: var(--brand-gold); border-top: 3px solid var(--brand-gold); padding-top: 7px; }
+.bundle-offer-badge {
+  position: absolute; top: -1px; inset-inline-end: 10px; background: var(--brand-gold); color: #fff;
+  font-size: 9.5px; font-weight: 800; padding: 3px 8px 4px; border-radius: 0 0 7px 7px;
+  box-shadow: 0 3px 10px rgba(200,162,74,.4); letter-spacing: .02em;
+}
+.bundle-card .price-badge { background: var(--brand-gold-soft); color: var(--brand-gold); }
+.bundle-card .stock { color: var(--text-soft); }
+
+.cart-panel {
+  width: 390px; flex-shrink: 0; background: var(--surface); border-inline-start: 1px solid var(--line);
+  display: flex; flex-direction: column; padding: 20px; overflow-y: auto; overflow-x: hidden;
+  box-shadow: -8px 0 24px rgba(23,26,46,.03);
+}
+.cart-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.section-kicker { font-size: 10.5px; font-weight: 800; color: var(--brand-gold); letter-spacing: .14em; }
+.cart-head h2 { font-size: 19px; }
+.cart-count { background: var(--primary); color: #fff; border-radius: 999px; min-width: 28px; height: 28px; display: grid; place-items: center; font-weight: 800; font-size: 13px; padding: 0 8px; box-shadow: 0 4px 10px rgba(67,56,202,.3); }
+/* السلة: كل ما زاد عدد الأصناف تتصاغر المسافات والخط تدريجياً (4 درجات) حتى تظهر
+   أكبر عدد ممكن من الأصناف دفعة وحدة بدون سكرول. الدرجات مبنية على عدد الأسطر
+   (applyCartDensity في pos.js) — مباشرة وموثوقة، بدون أي قياس ارتفاع عبر JS.
+   أدنى حجم خط هو 11px حتى تبقى الملاحظات مقروءة دائماً ولا "تختفي" بصرياً. */
+.cart-items { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; }
+.cart-item {
+  background: var(--surface-soft); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 10px 12px; transition: border-color .12s ease, background .12s ease;
+}
+.cart-item:hover { border-color: var(--line-strong); background: var(--surface); }
+.cart-item-main { font-size: 13.5px; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.cart-item-main > span:first-child { font-weight: 700; color: var(--text); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cart-item-main > span:last-child { font-weight: 900; font-variant-numeric: tabular-nums; color: var(--text); white-space: nowrap; }
+
+/* عداد الكمية: عنصر واحد متماسك (pill) بدل ثلاثة عناصر متفرقة — زر ناقص/رقم/زر
+   زائد بخلفية موحّدة وحدود دقيقة، شكل "stepper" مألوف باحترافية أنظمة البيع. */
+.qty-controls { display: flex; align-items: center; gap: 0; flex-shrink: 0; background: var(--surface); border: 1px solid var(--line-strong); border-radius: 999px; padding: 2px; }
+.qty-controls button {
+  width: 22px; height: 22px; border-radius: 50%; border: 0; background: transparent; color: var(--primary);
+  font-size: 15px; font-weight: 900; cursor: pointer; display: grid; place-items: center; line-height: 1;
+  transition: background .12s ease, transform .1s ease;
+}
+.qty-controls button:hover { background: var(--primary-light); }
+.qty-controls button:active { transform: scale(.9); }
+.qty-controls > span { min-width: 24px; text-align: center; font-weight: 800; font-size: 13px; color: var(--text); }
+
+.cart-items.density-1 { gap: 6px; }
+.cart-items.density-1 .cart-item { padding: 8px 12px; }
+
+.cart-items.density-2 { gap: 5px; }
+.cart-items.density-2 .cart-item { padding: 6px 10px; }
+.cart-items.density-2 .cart-item-main { font-size: 12.5px; }
+.cart-items.density-2 .cart-item-note { padding: 4px 8px; font-size: 11.5px; }
+
+.cart-items.density-3 { gap: 3px; }
+.cart-items.density-3 .cart-item { padding: 5px 9px; }
+.cart-items.density-3 .cart-item-main { font-size: 12px; gap: 6px; }
+.cart-items.density-3 .cart-item-note { padding: 3px 7px; font-size: 11px; margin-top: 4px; }
+
+.cart-items.density-4 { gap: 2px; }
+.cart-items.density-4 .cart-item { padding: 4px 8px; }
+.cart-items.density-4 .cart-item-main { font-size: 11px; gap: 5px; }
+.cart-items.density-4 .cart-item-note { padding: 2px 6px; font-size: 10.5px; margin-top: 3px; }
+.cart-items.density-4 .note-btn { padding: 3px 6px; font-size: 15px; }
+.cart-items.density-3 .note-btn { padding: 3px 7px; font-size: 16px; }
+.cart-items.density-2 .note-btn { padding: 4px 8px; font-size: 16.5px; }
+
+/* الملاحظة: كانت نص عادي بلا أي تمييز فاختلطت مع باقي السطر — صارت الآن بشارة واضحة
+   (خلفية ذهبية فاتحة + حد + أيقونة + إمكانية تعديل سريع بالضغط عليها مباشرة) حتى
+   الكاشير ينتبهلها فوراً بلمحة. */
+.cart-item-note {
+  display: flex; align-items: flex-start; gap: 6px; margin-top: 6px; padding: 6px 10px;
+  background: var(--brand-gold-soft); border: 1px solid var(--brand-gold); border-radius: var(--radius-sm);
+  color: var(--text); font-size: 12.5px; font-weight: 700; line-height: 1.4;
+  cursor: pointer; transition: filter .12s ease;
+}
+.cart-item-note:hover { filter: brightness(0.97); }
+.cart-item-note::before { content: '📝'; flex-shrink: 0; }
+
+/* أيقونة الملاحظة (📝) على السطر نفسه كانت بلا أي تمييز حتى لو الصنف فيه ملاحظة —
+   هلأ توضّح (خلفية ذهبية + حد دائري) لما يكون فيه ملاحظة، حتى الكاشير ينتبهلها
+   من أول نظرة بدون ما يفتح شي، مع حركة خفيفة عند التحويم/الضغط تعطي إحساس احترافي. */
+.note-btn {
+  border-radius: 999px; padding: 4px 9px; font-size: 17px;
+  border: 1px solid transparent; background: transparent; cursor: pointer;
+  transition: transform .12s ease, background .12s ease, border-color .12s ease;
+  line-height: 1;
+}
+.note-btn:hover { background: var(--surface-strong); transform: scale(1.08); }
+.note-btn:active { transform: scale(.95); }
+.note-btn.has-note { background: var(--brand-gold-soft); border-color: var(--brand-gold); }
+
+/* زر حذف سطر من السلة — أحمر خفيف عند التحويم حتى ينتبه المستخدم إنه إجراء
+   نهائي (وليس زر عادي متل الملاحظة)، بنفس حجم/شكل .note-btn حفاظاً على الاتساق. */
+.remove-line-btn {
+  border-radius: 999px; padding: 4px 9px; font-size: 15px;
+  border: 1px solid transparent; background: transparent; cursor: pointer;
+  transition: transform .12s ease, background .12s ease, border-color .12s ease;
+  line-height: 1;
+}
+.remove-line-btn:hover { background: #fee2e2; border-color: #fca5a5; transform: scale(1.08); }
+.remove-line-btn:active { transform: scale(.95); }
+
+.order-type-row { display: flex; gap: 8px; margin-bottom: 10px; }
+.method-option {
+  flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 9px;
+  border: 1px solid var(--line-strong); border-radius: var(--radius-sm); font-size: 13px; font-weight: 700;
+  color: var(--text-soft); cursor: pointer; background: var(--surface); transition: border-color .12s ease, background .12s ease, color .12s ease;
+}
+.method-option:hover { border-color: var(--primary-border); }
+.method-option:has(input:checked) { border-color: var(--primary); background: var(--primary-light); color: var(--primary); box-shadow: inset 0 0 0 1px var(--primary); }
+.method-option input { width: auto; margin-inline-end: 4px; }
+
+.cart-summary { border-top: 1px dashed var(--line-strong); padding-top: 12px; margin-top: 4px; }
+.cart-summary .row { display: flex; justify-content: space-between; padding: 5px 0; color: var(--text-soft); font-size: 13.5px; }
+.cart-summary .row span:last-child { font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+.cart-summary .row.total { font-size: 20px; font-weight: 900; color: var(--text); border-top: 1px solid var(--line); margin-top: 8px; padding-top: 12px; }
+.cart-summary .row.total span:last-child { color: var(--primary); }
+
+.checkout-btn {
+  width: 100%; margin-top: 0; padding: 16px; border: 0; border-radius: var(--radius);
+  background: linear-gradient(135deg, var(--brand-indigo), var(--brand-indigo-dark)); color: #fff;
+  font-size: 16.5px; font-weight: 800; cursor: pointer; box-shadow: 0 12px 28px rgba(67, 56, 202, .34);
+  transition: transform .12s ease, box-shadow .12s ease; letter-spacing: .01em;
+}
+.checkout-btn::before { content: '✓ '; opacity: .85; }
+.checkout-btn:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 16px 32px rgba(67, 56, 202, .4); }
+.checkout-btn:active:not(:disabled) { transform: translateY(0); }
+.checkout-btn:disabled { background: var(--line-strong); box-shadow: none; cursor: not-allowed; color: var(--text-faint); }
+.checkout-hint { text-align: center; font-size: 11px; color: var(--text-faint); margin-top: 6px; }
+/* شريط ثابت أسفل قسم السلة يحتوي زر إتمام البيع: يبقى ظاهراً دائماً مهما طال
+   محتوى السلة (خيارات توصيل/ملاحظة/خصم) أو صغر ارتفاع نافذة التطبيق، بدل أن
+   يُقتطع خارج الشاشة بدون أي طريقة للوصول إليه. الخلفية معتّمة (نفس خلفية
+   اللوحة) حتى لا يظهر محتوى السلة من خلفه أثناء التمرير. الحجم الطبيعي للخط
+   يبقى كما هو دائماً، ولا يصغر عند تصغير النافذة. */
+.checkout-sticky-footer {
+  position: sticky; bottom: 0; z-index: 3; background: var(--surface);
+  padding-top: 12px; margin-top: 4px; flex-shrink: 0;
+}
+
+.business-picker { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 10px 0; }
+.business-option {
+  display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 14px 8px;
+  border: 1px solid var(--line-strong); border-radius: var(--radius); background: var(--surface);
+  font-weight: 700; color: var(--text-soft); cursor: pointer; font-size: 22px;
+}
+.business-option span { font-size: 12px; }
+.business-option.selected { border-color: var(--primary); background: var(--primary-light); color: var(--primary); }
+

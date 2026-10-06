@@ -30,3 +30,13 @@ pos-crl.json
 Thumbs.db
 .vscode/
 *.log
+
+# Backup / editor leftovers — never commit
+*.bak
+*.bak2
+*~
+*.orig
+*.swp
+
+# Local cleanup archive (optional historical docs)
+# archive/

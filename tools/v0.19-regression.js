@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const root = path.resolve(__dirname, '..');
-const db = fs.readFileSync(path.join(root, 'database', 'db.js'), 'utf8');
+const db = require('./lib/db-source').read();
 const schema = fs.readFileSync(path.join(root, 'database', 'schema.sql'), 'utf8');
 const rendererReturns = fs.readFileSync(path.join(root, 'renderer', 'pages', 'returns.js'), 'utf8');
 const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));

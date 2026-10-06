@@ -1,7 +1,7 @@
 const fs=require('fs');
 const path=require('path');
 const root=path.resolve(__dirname,'..');
-const db=fs.readFileSync(path.join(root,'database','db.js'),'utf8');
+const db=require('./lib/db-source').read();
 const sync=fs.readFileSync(path.join(root,'server','sync-server.js'),'utf8');
 const schema=fs.readFileSync(path.join(root,'database','schema.sql'),'utf8');
 const syncClient=fs.readFileSync(path.join(root,'database','sync-client.js'),'utf8');

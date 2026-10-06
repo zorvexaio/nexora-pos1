@@ -1,0 +1,181 @@
+/* Nexora POS — 01-base.css — Reset, buttons, forms, app shell (split from style.css) */
+/* ---------------------------------------------------------------------- */
+/* Reset / base                                                           */
+/* ---------------------------------------------------------------------- */
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  font-family: var(--font-ui);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 14.5px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  transition: background-color .2s ease, color .2s ease;
+}
+h1, h2, h3, h4 { margin: 0 0 6px; font-weight: 800; letter-spacing: -.01em; }
+h1 { font-size: 24px; }
+h2 { font-size: 18px; }
+h3 { font-size: 15px; }
+p { margin: 0 0 8px; color: var(--text-soft); }
+a { color: inherit; text-decoration: none; }
+button { font-family: inherit; }
+.hidden { display: none !important; }
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--line-strong); border-radius: 20px; border: 2px solid var(--bg); }
+
+button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, a:focus-visible {
+  outline: none; box-shadow: var(--focus-ring); border-radius: var(--radius-sm);
+}
+
+/* ---------------------------------------------------------------------- */
+/* Buttons                                                                */
+/* ---------------------------------------------------------------------- */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  padding: 10px 18px; border-radius: var(--radius-sm); border: 1px solid transparent;
+  font-size: 14px; font-weight: 700; cursor: pointer; white-space: nowrap;
+  transition: transform .12s ease, box-shadow .12s ease, background-color .15s ease, border-color .15s ease;
+}
+.btn:active { transform: translateY(1px); }
+.btn-primary { background: var(--primary); color: #fff; box-shadow: 0 6px 16px rgba(67, 56, 202, .28); }
+.btn-primary:hover { background: var(--primary-hover); }
+.btn-secondary { background: var(--surface); color: var(--text); border-color: var(--line-strong); }
+.btn-secondary:hover { background: var(--surface-strong); }
+.btn-danger { background: var(--danger); color: #fff; }
+.btn-danger:hover { filter: brightness(1.08); }
+.btn-sm { padding: 6px 12px; font-size: 12.5px; border-radius: 7px; }
+.btn:disabled { opacity: .5; cursor: not-allowed; transform: none; box-shadow: none; }
+
+/* ---------------------------------------------------------------------- */
+/* Forms                                                                  */
+/* ---------------------------------------------------------------------- */
+input[type="text"], input[type="number"], input[type="password"], input[type="email"],
+input[type="date"], input[type="datetime-local"], input[type="search"], input[type="tel"],
+select, textarea {
+  width: 100%; padding: 10px 12px; border: 1px solid var(--line-strong); border-radius: var(--radius-sm);
+  background: var(--surface); color: var(--text); font-size: 14px; font-family: inherit;
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+input::placeholder, textarea::placeholder { color: var(--text-faint); }
+input:focus, select:focus, textarea:focus { border-color: var(--primary); box-shadow: var(--focus-ring); }
+label { display: block; font-size: 12.5px; font-weight: 700; color: var(--text-soft); margin-bottom: 5px; }
+
+.form-field { display: flex; flex-direction: column; margin-bottom: 12px; }
+.form-field.full { grid-column: 1 / -1; }
+.form-field.checkbox { flex-direction: row; align-items: center; gap: 8px; }
+.form-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; }
+.field-hint { font-size: 12px; color: var(--text-faint); margin-top: 4px; }
+.checkbox-inline { display: flex; align-items: center; gap: 6px; font-size: 14px; color: var(--text-soft); white-space: nowrap; }
+
+.tabs { display: flex; gap: 6px; }
+.tab-btn { padding: 8px 16px; border-radius: 9px; border: 1px solid var(--line-strong); background: var(--surface); color: var(--text-soft); font-weight: 700; cursor: pointer; font-size: 13px; }
+.tab-btn.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+
+.image-picker { display: flex; align-items: center; gap: 12px; }
+.image-picker img { width: 64px; height: 64px; object-fit: cover; border-radius: var(--radius-sm); background: var(--surface-strong); border: 1px solid var(--line); }
+
+.advanced-toggle { cursor: pointer; color: var(--primary); font-weight: 700; font-size: 13px; margin: 4px 0 10px; }
+.advanced-fields { padding-top: 10px; border-top: 1px dashed var(--line-strong); }
+
+/* ---------------------------------------------------------------------- */
+/* App shell / topbar — v2 professional pass                              */
+/* ---------------------------------------------------------------------- */
+.app { display: flex; flex-direction: row; height: 100vh; }
+
+/* شريط جانبي أيقوني (يمين في RTL / يسار في LTR) بدل الشريط العلوي المزدحم */
+.topbar {
+  display: flex; flex-direction: column; align-items: stretch; gap: 8px;
+  width: 232px; flex-shrink: 0; height: 100vh; overflow-y: auto; overflow-x: hidden;
+  padding: 14px 12px 16px;
+  background: linear-gradient(180deg, var(--surface), var(--surface-soft));
+  border-inline-end: 1px solid var(--line);
+  box-shadow: inset -1px 0 0 var(--brand-gold), var(--shadow-sm);
+  -webkit-app-region: drag; position: relative; z-index: 20;
+}
+.topbar * { -webkit-app-region: no-drag; }
+
+.brand, .brand-premium {
+  display: flex; align-items: center; gap: 11px; font-weight: 800; font-size: 16px;
+  color: var(--text); flex-shrink: 0; order: 1; letter-spacing: -.01em;
+  padding: 4px 6px 12px; border-bottom: 1px solid var(--line);
+}
+.brand-mark {
+  width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center;
+  background: linear-gradient(150deg, var(--brand-indigo), #1e1b4b 75%); color: var(--brand-gold);
+  font-weight: 900; border: 1px solid var(--brand-gold); font-size: 15px;
+  box-shadow: 0 4px 12px rgba(67, 56, 202, .28), inset 0 1px 0 rgba(255,255,255,.12);
+  flex-shrink: 0;
+}
+.brand-logo { width: 36px; height: 36px; object-fit: cover; border-radius: 11px; display: block; flex-shrink: 0; }
+
+.nav-links {
+  display: flex; flex-direction: column; align-items: stretch; flex-wrap: nowrap;
+  gap: 1px; order: 2; flex: 1 1 auto; overflow-y: auto; overflow-x: hidden;
+  padding: 4px 0; scrollbar-width: thin; min-height: 0;
+  scroll-behavior: smooth;
+}
+.nav-links::-webkit-scrollbar { width: 5px; }
+.nav-links a {
+  display: flex; align-items: center; gap: 9px;
+  padding: 7px 10px; border-radius: 9px; font-size: 13px; font-weight: 600;
+  color: var(--text-soft); white-space: nowrap;
+  transition: background-color .15s ease, color .15s ease, transform .1s ease;
+  position: relative; flex-shrink: 0;
+}
+.nav-links a .nav-ico {
+  width: 22px; height: 22px; flex-shrink: 0; display: grid; place-items: center;
+  font-size: 13px; font-weight: 800; border-radius: 7px;
+  background: var(--surface-strong); color: var(--text-faint);
+}
+.nav-links a:hover { background: var(--surface-strong); color: var(--text); }
+.nav-links a:hover .nav-ico { background: var(--primary-light); color: var(--primary); }
+.nav-links a:active { transform: scale(.98); }
+.nav-links a.active { background: var(--primary-light); color: var(--primary); font-weight: 800; }
+.nav-links a.active .nav-ico { background: var(--primary); color: #fff; }
+.nav-links a.active::after {
+  content: ''; position: absolute; inset-inline-start: 0; top: 8px; bottom: 8px; width: 3px;
+  border-radius: 0 3px 3px 0; background: var(--primary);
+}
+html[dir="rtl"] .nav-links a.active::after { border-radius: 3px 0 0 3px; }
+
+/* أدوات المستخدم مثبتة أسفل الشريط الجانبي — لا تختفي عند التمرير */
+.topbar-right {
+  display: flex; flex-direction: column; align-items: stretch; gap: 8px;
+  flex-shrink: 0; order: 3; margin: 0; padding-top: 10px; border-top: 1px solid var(--line);
+  position: sticky; bottom: 0; background: linear-gradient(180deg, transparent, var(--surface-soft) 12%, var(--surface-soft));
+  padding-bottom: 2px; z-index: 2;
+}
+.topbar-right .sidebar-tools {
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+}
+.topbar-right .user-info {
+  flex-wrap: wrap; border-inline-start: none; padding-inline-start: 0; gap: 6px;
+}
+.topbar-right .branch-name { align-self: flex-start; }
+.topbar-right .lang-switcher, .topbar-right .theme-toggle { align-self: auto; }
+.theme-toggle {
+  width: 36px; height: 32px; border-radius: 8px; border: 1px solid var(--line);
+  background: var(--surface); cursor: pointer; font-size: 15px;
+  display: grid; place-items: center; flex-shrink: 0;
+  transition: background .12s ease, border-color .12s ease;
+}
+.theme-toggle:hover { background: var(--surface-strong); border-color: var(--primary-border); }
+.lang-switcher { width: auto; padding: 6px 10px; font-size: 12.5px; font-weight: 700; border-radius: 7px; }
+.lang-switcher-floating { position: fixed; top: 18px; inset-inline-end: 18px; z-index: 40; }
+.branch-name { font-size: 12.5px; color: var(--text-faint); font-weight: 600; padding: 4px 10px; background: var(--surface-strong); border-radius: 999px; }
+.user-info { display: flex; align-items: center; gap: 9px; padding-inline-start: 12px; border-inline-start: 1px solid var(--line); }
+.user-info::before {
+  content: attr(data-initial); width: 28px; height: 28px; border-radius: 50%; flex-shrink: 0;
+  display: grid; place-items: center; background: var(--primary-light); color: var(--primary);
+  font-weight: 800; font-size: 12px;
+}
+.role-badge { padding: 3px 9px; border-radius: 999px; font-size: 11px; font-weight: 800; background: var(--primary-light); color: var(--primary); text-transform: uppercase; letter-spacing: .04em; }
+.theme-toggle { border: 1px solid var(--line-strong); background: var(--surface); border-radius: 8px; width: 34px; height: 34px; cursor: pointer; font-size: 15px; transition: transform .12s ease, border-color .12s ease; }
+.theme-toggle:hover { border-color: var(--primary-border); transform: translateY(-1px); }
+
+.main { flex: 1; display: flex; overflow: hidden; }
+

@@ -1,0 +1,393 @@
+/* Nexora POS — 14-a11y-final.css — Focus, touch, high-contrast, admin tables final (split from style.css) */
+/* ==========================================================================
+   v0.52.30 Hardening — Accessibility, Touch Targets, High Contrast
+   ========================================================================== */
+
+.visually-hidden {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+}
+
+.skip-link {
+  position: absolute;
+  inset-inline-start: 12px;
+  top: -48px;
+  z-index: 9999;
+  padding: 10px 16px;
+  border-radius: 10px;
+  background: var(--primary);
+  color: #fff;
+  font-weight: 800;
+  text-decoration: none;
+  transition: top .15s ease;
+}
+.skip-link:focus {
+  top: 12px;
+  outline: 3px solid var(--brand-gold);
+  outline-offset: 2px;
+}
+
+/* Focus visible — keyboard users */
+:focus-visible {
+  outline: 3px solid rgba(91, 91, 214, .55);
+  outline-offset: 2px;
+}
+button:focus:not(:focus-visible),
+a:focus:not(:focus-visible),
+input:focus:not(:focus-visible),
+select:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* Minimum touch targets (WCAG 2.5.5 / mobile POS) */
+.btn,
+.checkout-btn,
+.login-btn,
+.pin-key,
+.login-mode-tab,
+.nav-links a,
+.category-tabs button,
+.cat-scroll-btn,
+.qc-method-tab,
+.qc-add-btn {
+  min-height: 44px;
+  min-width: 44px;
+}
+.pin-key {
+  font-size: 20px;
+  border-radius: 14px;
+}
+.pin-grid {
+  gap: 10px;
+}
+
+/* Password reveal control */
+.password-field-wrap {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  position: relative;
+}
+.password-field-wrap input {
+  flex: 1;
+  padding-inline-end: 48px !important;
+}
+.password-toggle-btn {
+  position: absolute;
+  inset-inline-end: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 40px;
+  height: 40px;
+  min-width: 40px;
+  min-height: 40px;
+  border: 0;
+  background: transparent;
+  border-radius: 10px;
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  color: var(--text-soft);
+}
+.password-toggle-btn:hover {
+  background: var(--surface-strong);
+  color: var(--text);
+}
+
+/* Product cards — clearer press feedback */
+.product-card {
+  min-height: 88px;
+  cursor: pointer;
+  transition: transform .12s var(--ease-out), box-shadow .12s ease, border-color .12s ease;
+}
+.product-card:active {
+  transform: scale(0.98);
+}
+.product-card:focus-visible {
+  border-color: var(--primary);
+  box-shadow: var(--focus-ring);
+}
+
+/* High contrast preference */
+@media (prefers-contrast: more) {
+  :root {
+    --line: #b0b0b8;
+    --line-strong: #8a8a94;
+    --text: #000;
+    --text-soft: #222;
+  }
+  body[data-theme="dark"] {
+    --line: #9a9aa8;
+    --line-strong: #c0c0cc;
+    --text: #fff;
+    --text-soft: #eee;
+  }
+  .btn, .product-card, .cart-item, .login-card {
+    border-width: 2px;
+  }
+}
+
+/* Reduced motion already present — reinforce interactive transforms */
+@media (prefers-reduced-motion: reduce) {
+  .product-card,
+  .btn,
+  .pin-key,
+  .nav-links a {
+    transition: none !important;
+  }
+  .product-card:active {
+    transform: none;
+  }
+}
+
+/* Admin tables readability */
+.table-wrap table th,
+.table-wrap table td,
+table.data-table th,
+table.data-table td {
+  padding: 12px 14px;
+  line-height: 1.45;
+}
+.page-header h1,
+.page-title {
+  letter-spacing: -0.02em;
+}
+
+/* Checkout primary action always dominant */
+.checkout-btn:not(:disabled) {
+  min-height: 52px;
+  font-size: 16px;
+  font-weight: 800;
+  box-shadow: 0 10px 28px rgba(91, 91, 214, .28);
+}
+.checkout-btn:disabled {
+  opacity: .55;
+  cursor: not-allowed;
+}
+
+/* Sticky cart summary on shorter screens */
+@media (max-width: 980px) {
+  .cart-panel .checkout-btn {
+    position: sticky;
+    bottom: 8px;
+    z-index: 5;
+  }
+}
+
+/* Toast + keyboard help overlay */
+#nexora-toast-host {
+  position: fixed;
+  inset-inline-end: 16px;
+  bottom: 16px;
+  z-index: 10000;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+  max-width: min(360px, 92vw);
+}
+.nexora-toast {
+  pointer-events: auto;
+  padding: 12px 16px;
+  border-radius: 12px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow-lg);
+  color: var(--text);
+  font-weight: 700;
+  font-size: 13.5px;
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity .2s ease, transform .2s ease;
+}
+.nexora-toast.show { opacity: 1; transform: translateY(0); }
+.nexora-toast-success { border-color: var(--success-border); background: var(--success-light); color: var(--success); }
+.nexora-toast-error { border-color: var(--danger-border); background: var(--danger-light); color: var(--danger); }
+.nexora-toast-info { border-color: var(--primary-border); background: var(--primary-light); color: var(--primary); }
+
+.nexora-keys-overlay {
+  position: fixed; inset: 0; z-index: 10001;
+  background: rgba(0,0,0,.45);
+  display: grid; place-items: center;
+  padding: 16px;
+}
+.nexora-keys-card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  padding: 24px;
+  width: min(420px, 100%);
+  box-shadow: var(--shadow-lg);
+}
+.nexora-keys-card h2 { margin: 0 0 14px; font-size: 18px; }
+.nexora-keys-card ul { margin: 0 0 18px; padding: 0; list-style: none; display: grid; gap: 10px; }
+.nexora-keys-card li { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 14px; }
+.nexora-keys-card kbd {
+  display: inline-flex; min-width: 36px; justify-content: center;
+  padding: 4px 8px; border-radius: 8px; border: 1px solid var(--line-strong);
+  background: var(--surface-strong); font-weight: 800; font-size: 12px;
+}
+
+/* ==========================================================================
+   v0.52.32 — Admin pages visual parity with cashier
+   ========================================================================== */
+
+.page-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 18px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--line);
+}
+.page-header h1 {
+  margin: 4px 0 6px;
+  font-size: 26px;
+  font-weight: 900;
+  letter-spacing: -0.03em;
+  color: var(--text);
+}
+.page-subtitle {
+  margin: 0;
+  color: var(--text-soft);
+  font-size: 13.5px;
+  max-width: 560px;
+  line-height: 1.5;
+}
+.eyebrow, .section-kicker {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--primary);
+}
+.page-header .header-actions,
+.page-header .actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+/* Filters bar */
+.filters-row, .toolbar-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 14px;
+  padding: 12px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+}
+.filters-row input,
+.filters-row select,
+.toolbar-row input,
+.toolbar-row select {
+  min-height: 42px;
+  border-radius: 10px;
+}
+
+/* Data tables */
+.table-wrap, .data-table-wrap {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  overflow: auto;
+  box-shadow: var(--shadow-sm);
+}
+.table-wrap table,
+table.data-table,
+.products-page table,
+.inventory-page table,
+.customers-page table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.table-wrap th,
+.data-table th,
+.products-page table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--surface-soft);
+  text-align: start;
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--text-soft);
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--line-strong);
+  white-space: nowrap;
+}
+.table-wrap td,
+.data-table td,
+.products-page table td {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--line);
+  font-size: 13.5px;
+  vertical-align: middle;
+}
+.table-wrap tr:hover td,
+.data-table tr:hover td {
+  background: color-mix(in srgb, var(--primary-light) 55%, transparent);
+}
+
+/* Empty / loading states */
+.nexora-loading-state, .empty-state {
+  display: grid;
+  place-items: center;
+  gap: 10px;
+  padding: 48px 20px;
+  color: var(--text-soft);
+  font-weight: 700;
+}
+.nexora-spinner {
+  width: 28px; height: 28px;
+  border: 3px solid var(--line-strong);
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: nexora-spin .7s linear infinite;
+}
+@keyframes nexora-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .nexora-spinner { animation: none; border-top-color: var(--line-strong); }
+}
+
+/* Admin content shell */
+.products-page, .inventory-page, .customers-page, .settings-page,
+.reports-page, .users-page, .suppliers-page, .returns-page {
+  flex: 1;
+  padding: 18px 20px 28px;
+  overflow: auto;
+  background: var(--bg);
+}
+
+/* Primary action in admin always strong */
+.page-header .btn-primary {
+  min-height: 44px;
+  padding-inline: 18px;
+  font-weight: 800;
+}
+
+/* Settings sections clearer cards */
+.settings-page .settings-section,
+.settings-page section.card,
+.settings-section {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  padding: 18px;
+  margin-bottom: 14px;
+  box-shadow: var(--shadow-sm);
+}

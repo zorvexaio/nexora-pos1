@@ -1,5 +1,5 @@
 const fs=require('fs');
-const db=fs.readFileSync('database/db.js','utf8');
+const db=require('./lib/db-source').read();
 const main=fs.readFileSync('main.js','utf8');
 const server=fs.readFileSync('server/sync-server.js','utf8');
 const pkg=JSON.parse(fs.readFileSync('package.json','utf8'));

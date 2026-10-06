@@ -2,7 +2,7 @@ const fs = require("fs");
 const path = require("path");
 const assert = require("assert");
 const root = path.join(__dirname, "..");
-const dbSource = fs.readFileSync(path.join(root, "database", "db.js"), "utf8");
+const dbSource = require('./lib/db-source').read();
 const licenseSource = fs.readFileSync(path.join(root, "licensing", "license.js"), "utf8");
 assert(dbSource.includes("recalcCustomerLoyaltyPointsForBranch"), "loyalty is recomputed from authoritative sales ledger");
 assert(!dbSource.includes("loyalty_points=excluded.loyalty_points"), "customer sync does not overwrite loyalty snapshot");

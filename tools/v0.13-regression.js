@@ -1,4 +1,4 @@
-const fs=require('fs');const path=require('path');const root=path.resolve(__dirname,'..');const read=(x)=>fs.readFileSync(path.join(root,x),'utf8');const db=read('database/db.js');const schema=read('database/schema.sql');const syncServer=read('server/sync-server.js');const checks=[
+const fs=require('fs');const path=require('path');const root=path.resolve(__dirname,'..');const read=(x)=>fs.readFileSync(path.join(root,x),'utf8');const db=require('./lib/db-source').read();const schema=read('database/schema.sql');const syncServer=read('server/sync-server.js');const checks=[
 ['customers own a branch',/CREATE TABLE IF NOT EXISTS customers[\s\S]*branch_id INTEGER NOT NULL REFERENCES branches\(id\)/m.test(schema)],
 ['suppliers own a branch',/CREATE TABLE IF NOT EXISTS suppliers[\s\S]*branch_id INTEGER NOT NULL REFERENCES branches\(id\)/m.test(schema)],
 ['legacy customer branch migration',/customers:\s*'branch_id INTEGER REFERENCES branches\(id\)'/m.test(db)&&/customers:\s*'UPDATE customers SET branch_id=COALESCE\(branch_id, \?\) WHERE branch_id IS NULL'/m.test(db)],

@@ -46,11 +46,33 @@ function setMode(mode) {
   const isPin = mode === 'pin';
   pinModeBtn.classList.toggle('active', isPin);
   passwordModeBtn.classList.toggle('active', !isPin);
+  pinModeBtn.setAttribute('aria-selected', isPin ? 'true' : 'false');
+  passwordModeBtn.setAttribute('aria-selected', isPin ? 'false' : 'true');
   pinPad.classList.toggle('hidden', !isPin);
+  pinPad.setAttribute('aria-hidden', isPin ? 'false' : 'true');
   loginForm.classList.toggle('hidden', isPin);
   loginError.classList.add('hidden');
   pinError.classList.add('hidden');
   resetPin();
+  if (isPin) {
+    const firstKey = document.querySelector('.pin-key[data-digit="1"]');
+    if (firstKey) firstKey.focus();
+  } else {
+    usernameInput.focus();
+  }
+}
+
+/* إظهار / إخفاء كلمة المرور */
+const togglePasswordBtn = document.getElementById('togglePasswordBtn');
+if (togglePasswordBtn && passwordInput) {
+  togglePasswordBtn.addEventListener('click', () => {
+    const showing = passwordInput.type === 'text';
+    passwordInput.type = showing ? 'password' : 'text';
+    togglePasswordBtn.setAttribute('aria-pressed', showing ? 'false' : 'true');
+    togglePasswordBtn.setAttribute('aria-label', showing ? 'إظهار كلمة المرور' : 'إخفاء كلمة المرور');
+    togglePasswordBtn.textContent = showing ? '👁' : '🙈';
+    passwordInput.focus();
+  });
 }
 
 /* ---------------- لوحة أرقام PIN ---------------- */

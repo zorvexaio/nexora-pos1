@@ -1001,10 +1001,10 @@ ipcMain.handle('auth:login', (event, creds) => {
 // دخول سريع برقم PIN فقط — بديل عن اسم مستخدم/كلمة مرور، مخصَّص لتبديل الموظفين بسرعة
 // على نفس الجهاز (نفس المحل، عدة كاشيرات). يبحث عن أي مستخدم نشط يطابق الـ PIN.
 //
-// حماية بسيطة من محاولات التخمين المتكررة: بعد 5 محاولات فاشلة متتالية، نقفل الدخول
-// بـPIN لمدة دقيقة واحدة (بالذاكرة فقط — يُعاد ضبطها تلقائياً عند إعادة تشغيل البرنامج،
-// وتكفي لمنع تخمين آلي سريع دون إزعاج موظف نسي رقمه مرة أو مرتين).
+// حماية من التخمين: بعد 5 محاولات فاشلة متتالية يُقفل الدخول بـPIN لمدة 5 دقائق
+// (طبقة IPC في الذاكرة + طبقة DB قد تفرض قفلاً أطول حتى 15 دقيقة).
 const pinAttempts = { count: 0, lockedUntil: 0 };
+const PIN_IPC_LOCKOUT_MS = 5 * 60 * 1000;
 ipcMain.handle('auth:loginWithPin', (event, pin) => {
   const licenseError = requireLicenseForAuth();
   if (licenseError) return { success: false, message: licenseError.message || mt('الترخيص غير صالح.', 'Invalid license.', 'Geçersiz lisans.') };
@@ -1018,7 +1018,7 @@ ipcMain.handle('auth:loginWithPin', (event, pin) => {
   if (!result) {
     pinAttempts.count += 1;
     if (pinAttempts.count >= 5) {
-      pinAttempts.lockedUntil = Date.now() + 60_000;
+      pinAttempts.lockedUntil = Date.now() + PIN_IPC_LOCKOUT_MS;
       pinAttempts.count = 0;
     }
     db.logAudit({ action: 'login_failed', entityType: 'auth', level: 'warning', details: { method: 'pin' } });
@@ -1393,7 +1393,7 @@ ipcMain.handle('discount:approveWithPin', (_event, pin) => { requireAccountReady
   if (!result) {
     managerPinAttempts.count += 1;
     if (managerPinAttempts.count >= 5) {
-      managerPinAttempts.lockedUntil = Date.now() + 60_000;
+      managerPinAttempts.lockedUntil = Date.now() + 5 * 60_000; // 5 دقائق — متوافق مع قفل دخول PIN
       managerPinAttempts.count = 0;
     }
     return { approved: false, message: mt('رقم PIN غير صحيح أو لا يخص مديراً', "Incorrect PIN, or it doesn't belong to a manager", 'PIN yanlış veya bir yöneticiye ait değil') };
@@ -1881,7 +1881,7 @@ ipcMain.handle('tables:merge', (_event, { sourceTableId, targetTableId }) => {
 });
 ipcMain.handle('tables:split', (_event, { saleId, selected, payment }) => {
   requireAccountReady();
-  const shift = db.getOpenShift();
+  const shift = requireOpenShift();
   const result = db.splitTableSale(saleId, selected, payment, currentUser.id, shift?.id || null);
   // دفع جزء من الطاولة = فاتورة للزبون فقط. لا نرسل تذكرة مطبخ هنا لأن الطلب
   // وصل للمطبخ بالفعل عند حفظه، وإعادة إرسالها ستنتج طلباً مكرراً.
@@ -1889,7 +1889,7 @@ ipcMain.handle('tables:split', (_event, { saleId, selected, payment }) => {
 });
 ipcMain.handle('tables:close', (_event, { saleId, payment }) => {
   requireAccountReady();
-  const shift = db.getOpenShift();
+  const shift = requireOpenShift();
   // نفس نمط sale:create بالضبط: منحة اعتماد صادرة فعلياً من مدير، أو المدير/المدير
   // العام يعتمد لنفسه مباشرة — لا نثق أبداً بأي approverId قادم من الواجهة مباشرة.
   const creditGrant = payment.creditApprovalGrantId ? consumeApprovalGrant(payment.creditApprovalGrantId) : null;
@@ -1972,6 +1972,19 @@ function consumeApprovalGrant(grantId) {
 
 // تسعير مسبق قبل الدفع (بلا إنشاء بيع فعلي) — تستخدمه شاشة الكاشير السريع لتعرف
 // الإجمالي الحقيقي شامل الضريبة قبل فتح شاشة الدفع، فيتطابق مع ما سيُحفظ فعلياً.
+// لا يُسمح بأي عملية بيع/دفع بدون وردية (جلسة صندوق) مفتوحة.
+function requireOpenShift() {
+  const shift = db.getOpenShift();
+  if (!shift) {
+    throw new Error(mt(
+      'لا يمكن البيع قبل فتح الوردية. افتح الوردية من صفحة «الصندوق» أولاً.',
+      'You cannot make a sale before opening a shift. Open a shift from the "Cash session" page first.',
+      'Vardiya açılmadan satış yapılamaz. Önce "Kasa" sayfasından vardiyayı açın.'
+    ));
+  }
+  return shift;
+}
+
 ipcMain.handle('sale:quote', (_event, payload) => {
   requireAccountReady();
   return db.quoteSale((payload && payload.items) || [], db.getCurrentBranch().id);
@@ -1980,9 +1993,8 @@ ipcMain.handle('sale:quote', (_event, payload) => {
 // نُلحق هوية المستخدم الحالي من العملية الرئيسية دائماً (لا نثق بأي userId قادم من الواجهة)
 ipcMain.handle('sale:create', (_event, sale) => {
   requireAccountReady();
-  const openShift = db.getOpenShift();
-  // الوردية اختيارية لإنشاء البيع (متطلبات الاختبار والمنتج). إن وُجدت وردية مفتوحة
-  // تُربط الفاتورة بها ليظهر النقد في computeExpectedCash؛ وإلا shift_id=NULL.
+  // الوردية إلزامية: لا بيع بدون وردية مفتوحة، وتُربط الفاتورة بها ليظهر النقد في computeExpectedCash.
+  const openShift = requireOpenShift();
   const discountGrant = sale.discountApprovalGrantId ? consumeApprovalGrant(sale.discountApprovalGrantId) : null;
   const creditGrant = sale.creditApprovalGrantId ? consumeApprovalGrant(sale.creditApprovalGrantId) : null;
   const trustedSale = { ...sale, userId: currentUser.id, shiftId: openShift?.id || null,
@@ -2004,7 +2016,49 @@ ipcMain.handle('sale:create', (_event, sale) => {
   printJobs.push(autoPrintReceipt(result.id).then((r) => { printOutcome.receipt = r; }));
   // ننتظر نتيجة الطباعة (لا تمنع إرجاع نتيجة البيع، لكن تُرفَق به) عشان الواجهة تقدر
   // تنبّه الكاشير فوراً لو في مشكلة حقيقية بدل ما تفشل الطباعة بصمت تام كما كان يحدث سابقاً.
-  return Promise.all(printJobs).then(() => ({ ...result, printOutcome }));
+  return Promise.all(printJobs).then(async () => {
+    let fiscalOutcome = null;
+    try {
+      const autoIssue = db.getSetting('fiscal_auto_issue_on_sale', '0') === '1';
+      const profile = db.getGlobalProfile() || {};
+      const mode = profile.fiscalization_mode || 'none';
+      if (autoIssue && mode === 'adapter') {
+        const provider = String(profile.fiscal_provider || 'generic').toLowerCase() || 'generic';
+        const saleRow = db.getSale(result.id, db.getCurrentBranch().id);
+        const issueResult = await fiscalizationRegistry.get(provider).issueInvoice(saleRow || result);
+        const status = issueResult.accepted ? 'submitted' : (issueResult.mode === 'offline' ? 'pending' : 'pending');
+        fiscalOutcome = db.saveFiscalDocument({
+          saleId: result.id,
+          provider,
+          status,
+          externalId: issueResult.externalId || null,
+          externalNumber: issueResult.externalNumber || null,
+          requestPayload: saleRow || result,
+          responsePayload: issueResult,
+          issuedAt: issueResult.accepted ? new Date().toISOString() : null,
+        });
+        db.logAudit({
+          userId: currentUser.id,
+          action: 'fiscal_auto_issue',
+          entityType: 'sale',
+          entityId: result.id,
+          details: { provider, status: fiscalOutcome.status },
+        });
+      }
+    } catch (fiscalErr) {
+      fiscalOutcome = { error: String(fiscalErr && fiscalErr.message ? fiscalErr.message : fiscalErr) };
+      try {
+        db.logAudit({
+          userId: currentUser?.id,
+          action: 'fiscal_auto_issue_failed',
+          entityType: 'sale',
+          entityId: result.id,
+          details: { error: fiscalOutcome.error },
+        });
+      } catch (_) { /* ignore audit failure */ }
+    }
+    return { ...result, printOutcome, fiscalOutcome };
+  });
 });
 ipcMain.handle('sales:list', (_event, filters) => { requireAccountReady(); return db.listSales(filters); });
 ipcMain.handle('sales:knownDeliveryPersons', () => { requireAccountReady(); return db.listKnownDeliveryPersons(); });
@@ -2104,18 +2158,85 @@ ipcMain.handle('accounting:postEntry', (_event, input) => { requireAdmin(); cons
 ipcMain.handle('accounting:journals', (_event, range) => { requireManagerOrAdmin(); return db.listJournalEntries(range || {}); });
 ipcMain.handle('sync:conflicts', () => { requireAdmin(); return db.listSyncConflicts(); });
 ipcMain.handle('backup:manifests', () => { requireAdmin(); return db.listBackupManifests(); });
-ipcMain.handle('fiscalization:providers', () => { requireManagerOrAdmin(); return ['generic']; });
+ipcMain.handle('fiscalization:providers', () => {
+  requireManagerOrAdmin();
+  return fiscalizationRegistry.list();
+});
+ipcMain.handle('fiscalization:status', async (_event, provider) => {
+  requireManagerOrAdmin();
+  const profile = db.getGlobalProfile() || {};
+  const name = String(provider || profile.fiscal_provider || 'generic').toLowerCase() || 'generic';
+  const status = await fiscalizationRegistry.status(name);
+  return {
+    ...status,
+    activeProvider: name,
+    fiscalizationMode: profile.fiscalization_mode || 'none',
+    providers: fiscalizationRegistry.list(),
+  };
+});
 ipcMain.handle('fiscalization:issue', async (_event, payload = {}) => {
   requireManagerOrAdmin();
   const saleId = Number(payload.saleId);
   if (!Number.isInteger(saleId) || saleId <= 0) throw new Error(mt('معرّف الفاتورة غير صالح.', 'Invalid invoice ID.', 'Geçersiz fatura kimliği.'));
   const sale = db.getSale(saleId, db.getCurrentBranch().id);
   if (!sale) throw new Error(mt('الفاتورة غير موجودة في الفرع الحالي.', 'The invoice was not found in the current branch.', 'Fatura mevcut şubede bulunamadı.'));
-  const provider = String(payload.provider || db.getGlobalProfile()?.fiscalization_provider || 'generic').toLowerCase();
+  const profile = db.getGlobalProfile() || {};
+  const provider = String(payload.provider || profile.fiscal_provider || 'generic').toLowerCase() || 'generic';
+  if ((profile.fiscalization_mode || 'none') === 'none' && provider === 'generic') {
+    return db.saveFiscalDocument({
+      saleId,
+      provider,
+      status: 'skipped',
+      externalId: null,
+      externalNumber: null,
+      requestPayload: sale,
+      responsePayload: { accepted: false, mode: 'generic', reason: 'Fiscalization mode is none.' },
+      issuedAt: null,
+    });
+  }
   const result = await fiscalizationRegistry.get(provider).issueInvoice(sale);
-  return db.saveFiscalDocument({ saleId, provider, status: result.accepted ? 'submitted' : 'pending', externalId: result.externalId || null, externalNumber: result.externalNumber || null, requestPayload: sale, responsePayload: result, issuedAt: result.accepted ? new Date().toISOString() : null });
+  const status = result.accepted ? 'submitted' : (result.mode === 'offline' ? 'pending' : 'pending');
+  return db.saveFiscalDocument({
+    saleId,
+    provider,
+    status,
+    externalId: result.externalId || null,
+    externalNumber: result.externalNumber || null,
+    requestPayload: sale,
+    responsePayload: result,
+    issuedAt: result.accepted ? new Date().toISOString() : null,
+  });
+});
+ipcMain.handle('fiscalization:cancel', async (_event, payload = {}) => {
+  requireManagerOrAdmin();
+  const saleId = Number(payload.saleId);
+  if (!Number.isInteger(saleId) || saleId <= 0) throw new Error(mt('معرّف الفاتورة غير صالح.', 'Invalid invoice ID.', 'Geçersiz fatura kimliği.'));
+  const sale = db.getSale(saleId, db.getCurrentBranch().id);
+  if (!sale) throw new Error(mt('الفاتورة غير موجودة في الفرع الحالي.', 'The invoice was not found in the current branch.', 'Fatura mevcut şubede bulunamadı.'));
+  const profile = db.getGlobalProfile() || {};
+  const provider = String(payload.provider || profile.fiscal_provider || 'generic').toLowerCase() || 'generic';
+  const result = await fiscalizationRegistry.get(provider).cancelInvoice(sale);
+  return db.saveFiscalDocument({
+    saleId,
+    provider,
+    status: result.accepted ? 'cancelled' : 'cancel-pending',
+    externalId: result.externalId || null,
+    externalNumber: result.externalNumber || null,
+    requestPayload: sale,
+    responsePayload: result,
+    issuedAt: null,
+  });
 });
 ipcMain.handle('fiscalization:list', (_event, filters) => { requireManagerOrAdmin(); return db.listFiscalDocuments(filters || {}); });
+ipcMain.handle('fiscalization:autoIssueEnabled', (_event, payload) => {
+  if (payload && payload.save != null) {
+    requireAdmin();
+    db.setSetting('fiscal_auto_issue_on_sale', payload.save ? '1' : '0');
+    return { enabled: payload.save ? true : false };
+  }
+  requireAccountReady();
+  return { enabled: db.getSetting('fiscal_auto_issue_on_sale', '0') === '1' };
+});
 ipcMain.handle('reports:summary', (_event, range) => { requireManagerOrAdmin(); return db.getSalesSummary(range); });
 ipcMain.handle('reports:topProducts', (_event, range) => { requireManagerOrAdmin(); return db.getTopProducts(range); });
 ipcMain.handle('reports:daily', (_event, range) => { requireManagerOrAdmin(); return db.getDailySales(range); });

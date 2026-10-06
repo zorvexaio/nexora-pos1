@@ -2,7 +2,7 @@
 'use strict';
 const fs = require('fs');
 const assert = require('assert');
-const db = fs.readFileSync('database/db.js', 'utf8');
+const db = require('./lib/db-source').read();
 const schema = fs.readFileSync('database/schema.sql', 'utf8');
 const main = fs.readFileSync('main.js', 'utf8');
 function pass(label) { console.log(`PASS: ${label}`); }

@@ -82,7 +82,19 @@ function render() {
     return true;
   });
 
-  emptyState.style.display = filtered.length === 0 ? 'block' : 'none';
+  if (filtered.length === 0) {
+    emptyState.style.display = 'block';
+    if (typeof renderPageEmptyState === 'function') {
+      renderPageEmptyState(emptyState, {
+        icon: '☰',
+        title: (typeof ts === 'function' ? ts('لا توجد سجلات مطابقة') : 'لا توجد سجلات مطابقة'),
+        message: (typeof ts === 'function' ? ts('عدّل عوامل التصفية أو وسّع البحث.') : 'عدّل عوامل التصفية أو وسّع البحث.'),
+      });
+    }
+  } else {
+    emptyState.style.display = 'none';
+    emptyState.innerHTML = '';
+  }
   logsBody.innerHTML = filtered
     .map((log) => {
       let detailsText = '';

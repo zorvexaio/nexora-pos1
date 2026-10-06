@@ -3,63 +3,74 @@
 <head>
   <meta charset="UTF-8" />
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: file:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-src 'none';">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>Nexora POS</title>
+  <link rel="stylesheet" href="tokens.css" />
   <link rel="stylesheet" href="style.css" />
 </head>
-<body class="login-body">
-  <select id="langSwitcher" class="lang-switcher lang-switcher-floating" title="اللغة / Dil / Language">
+<body class="login-body login-body-v4">
+  <a href="#loginForm" class="skip-link">تخطي إلى تسجيل الدخول</a>
+
+  <label class="visually-hidden" for="langSwitcher">اللغة</label>
+  <select id="langSwitcher" class="lang-switcher lang-switcher-floating" title="اللغة / Dil / Language" aria-label="Language">
     <option value="ar">AR</option>
     <option value="tr">TR</option>
     <option value="en">EN</option>
   </select>
-  <div class="login-card">
-    <div class="login-logo-row">
-      <span id="loginBrandMark" class="brand-mark" aria-hidden="true">N</span>
-    </div>
-    <div class="login-brand" id="loginBrandTitle" data-i18n="login.title">نظام نقاط البيع</div>
-    <div id="bootstrapInfo" class="payment-error hidden" style="margin-bottom:12px"></div>
 
-    <div class="login-mode-tabs">
-      <button type="button" id="passwordModeBtn" class="login-mode-tab active">كلمة المرور</button>
-      <button type="button" id="pinModeBtn" class="login-mode-tab">PIN</button>
-    </div>
-
-    <form id="loginForm">
-      <div class="form-field full">
-        <label data-i18n="login.username">اسم المستخدم</label>
-        <input id="usernameInput" type="text" autofocus autocomplete="username" required />
+  <main id="mainContent" class="login-stage" role="main">
+    <div class="login-card login-card-v4" role="region" aria-labelledby="loginBrandTitle">
+      <div class="login-logo-row">
+        <span id="loginBrandMark" class="brand-mark brand-mark-v4" aria-hidden="true">N</span>
       </div>
-      <div class="form-field full">
-        <label data-i18n="login.password">كلمة المرور</label>
-        <input id="passwordInput" type="password" autocomplete="current-password" required />
-      </div>
-      <div id="loginError" class="payment-error hidden"></div>
-      <button type="submit" id="loginBtn" class="btn btn-primary login-btn" data-i18n="login.submit">دخول</button>
-    </form>
+      <h1 class="login-brand" id="loginBrandTitle" data-i18n="login.title">نظام نقاط البيع</h1>
+      <p class="login-tagline" id="loginTagline" data-i18n="login.tagline">ادخل للمتابعة إلى الكاشير</p>
+      <div id="bootstrapInfo" class="payment-error hidden" style="margin-bottom:12px" role="status" aria-live="polite"></div>
 
-    <div id="pinPad" class="pin-pad hidden">
-      <div id="pinDisplay" class="pin-display">— — — —</div>
-      <div id="pinError" class="payment-error hidden"></div>
-      <div class="pin-grid">
-        <button type="button" class="pin-key" data-digit="1">1</button>
-        <button type="button" class="pin-key" data-digit="2">2</button>
-        <button type="button" class="pin-key" data-digit="3">3</button>
-        <button type="button" class="pin-key" data-digit="4">4</button>
-        <button type="button" class="pin-key" data-digit="5">5</button>
-        <button type="button" class="pin-key" data-digit="6">6</button>
-        <button type="button" class="pin-key" data-digit="7">7</button>
-        <button type="button" class="pin-key" data-digit="8">8</button>
-        <button type="button" class="pin-key" data-digit="9">9</button>
-        <button type="button" id="pinClearBtn" class="pin-key pin-key-secondary">مسح</button>
-        <button type="button" class="pin-key" data-digit="0">0</button>
-        <button type="button" id="pinBackspaceBtn" class="pin-key pin-key-secondary">⌫</button>
+      <div class="login-mode-tabs login-mode-tabs-v4" role="tablist" aria-label="Login method">
+        <button type="button" id="passwordModeBtn" class="login-mode-tab active" role="tab" aria-selected="true" aria-controls="loginForm">كلمة المرور</button>
+        <button type="button" id="pinModeBtn" class="login-mode-tab" role="tab" aria-selected="false" aria-controls="pinPad">PIN</button>
+      </div>
+
+      <form id="loginForm" role="tabpanel" aria-labelledby="passwordModeBtn">
+        <div class="form-field full">
+          <label for="usernameInput" data-i18n="login.username">اسم المستخدم</label>
+          <input id="usernameInput" type="text" autofocus autocomplete="username" required aria-required="true" />
+        </div>
+        <div class="form-field full">
+          <label for="passwordInput" data-i18n="login.password">كلمة المرور</label>
+          <div class="password-field-wrap">
+            <input id="passwordInput" type="password" autocomplete="current-password" required aria-required="true" />
+            <button type="button" id="togglePasswordBtn" class="password-toggle-btn" aria-pressed="false" aria-label="إظهار كلمة المرور" title="إظهار / إخفاء">👁</button>
+          </div>
+        </div>
+        <div id="loginError" class="payment-error hidden" role="alert" aria-live="assertive"></div>
+        <button type="submit" id="loginBtn" class="btn btn-primary login-btn" data-i18n="login.submit">دخول</button>
+      </form>
+
+      <div id="pinPad" class="pin-pad hidden" role="tabpanel" aria-labelledby="pinModeBtn" aria-hidden="true">
+        <div id="pinDisplay" class="pin-display" aria-live="polite" aria-atomic="true">— — — —</div>
+        <div id="pinError" class="payment-error hidden" role="alert" aria-live="assertive"></div>
+        <div class="pin-grid" role="group" aria-label="PIN keypad">
+          <button type="button" class="pin-key" data-digit="1" aria-label="1">1</button>
+          <button type="button" class="pin-key" data-digit="2" aria-label="2">2</button>
+          <button type="button" class="pin-key" data-digit="3" aria-label="3">3</button>
+          <button type="button" class="pin-key" data-digit="4" aria-label="4">4</button>
+          <button type="button" class="pin-key" data-digit="5" aria-label="5">5</button>
+          <button type="button" class="pin-key" data-digit="6" aria-label="6">6</button>
+          <button type="button" class="pin-key" data-digit="7" aria-label="7">7</button>
+          <button type="button" class="pin-key" data-digit="8" aria-label="8">8</button>
+          <button type="button" class="pin-key" data-digit="9" aria-label="9">9</button>
+          <button type="button" class="pin-key pin-key-action" id="pinClearBtn" aria-label="Clear">C</button>
+          <button type="button" class="pin-key" data-digit="0" aria-label="0">0</button>
+          <button type="button" class="pin-key pin-key-action" id="pinBackspaceBtn" aria-label="Backspace">⌫</button>
+        </div>
       </div>
     </div>
-
-    <div class="login-hint" data-i18n="login.hint">في أول تشغيل سيظهر رمز دخول مؤقت، ويجب تغييره مباشرة بعد الدخول.</div>
-  </div>
+  </main>
 
   <script src="i18n.js"></script>
+  <script src="common.js"></script>
   <script src="login.js"></script>
 </body>
 </html>

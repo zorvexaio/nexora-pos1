@@ -4,6 +4,8 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: file:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-src 'none';">
   <meta charset="UTF-8" />
   <title>المحاسبة</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <link rel="stylesheet" href="../tokens.css" />
   <link rel="stylesheet" href="../style.css" />
   <style>
     .accounting-table td.num, .accounting-table th.num { text-align: left; direction: ltr; font-variant-numeric: tabular-nums; }
@@ -16,9 +18,11 @@
   </style>
 </head>
 <body>
-  <div class="app">
+  <a href="#mainContent" class="skip-link">تخطي إلى المحتوى</a>
+
+  <div class="app" id="mainContent">
     <header class="topbar">
-      <div class="brand" data-i18n="app.brand">نقطة البيع</div>
+      <div class="brand brand-premium"><span class="brand-mark" aria-hidden="true">N</span><span data-i18n="app.brand">Nexora POS</span></div>
       <nav class="nav-links">
         <a href="../index.html" data-i18n="nav.pos">الكاشير</a><a href="quick-cashier.html" data-setting="quickCashier" data-i18n="nav.quickCashier">الكاشير السريع</a>
         <a href="tables.html" data-business="restaurant" data-i18n="nav.tables">الطاولات</a>
@@ -78,6 +82,7 @@
           <label style="display:flex;align-items:center;gap:6px;">من <input id="overviewFrom" type="date" /></label>
           <label style="display:flex;align-items:center;gap:6px;">إلى <input id="overviewTo" type="date" /></label>
           <button id="overviewLoadBtn" class="btn btn-secondary">تحديث</button>
+          <button id="accountingExportCsvBtn" class="btn btn-secondary" type="button">تصدير CSV للجدول النشط</button>
         </div>
 
         <h3 style="margin-top:16px;">كيف كان أداؤك بهالفترة؟</h3>
@@ -101,7 +106,7 @@
           "صافي قيمة مشروعك" = كل اللي تملكه (كاش + مخزون + ديون العملاء إلك) ناقص كل اللي عليك
           (ديون للموردين وغيرها) — يعني لو صفّيت كل شيء اليوم، هاد يقريباً اللي بيضل معك.
         </p>
-        <p style="color:#9ca3af;font-size:13px;margin-top:14px">
+        <p style="color:var(--text-faint);font-size:13px;margin-top:14px">
           بدك تفاصيل أكتر (كل عملية لحالها، أو التأكد إن دفاتر الحسابات متوازنة بدقة محاسبية)؟
           افتح "قائمة الدخل" أو "المركز المالي" لنفس الأرقام بتفصيل أكبر، أو "دفتر الأستاذ"
           لكل حركة أثّرت على حساب معيّن.

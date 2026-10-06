@@ -79,9 +79,17 @@ function renderMovements(movements) {
   if (!movements.length) {
     body.innerHTML = '';
     empty.classList.remove('hidden');
+    if (typeof renderPageEmptyState === 'function') {
+      renderPageEmptyState(empty, {
+        icon: '▭',
+        title: (typeof ts === 'function' ? ts('لا توجد حركات صندوق') : 'لا توجد حركات صندوق'),
+        message: (typeof ts === 'function' ? ts('السلف ودفعات الموردين تظهر هنا عند تسجيلها.') : 'السلف ودفعات الموردين تظهر هنا عند تسجيلها.'),
+      });
+    }
     return;
   }
   empty.classList.add('hidden');
+  empty.innerHTML = '';
   body.innerHTML = movements
     .map((m) => {
       const time = formatDbDateTime(m.created_at);

@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: file:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-src 'none';">
   <title>Nexora POS</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <style>
     html, body {
       margin: 0; height: 100%; width: 100%;
@@ -39,7 +40,9 @@
   </style>
 </head>
 <body>
-  <div class="splash-box">
+  <a href="#mainContent" class="skip-link">تخطي إلى المحتوى</a>
+
+  <div class="splash-box" id="mainContent">
     <div class="splash-logo" id="splashLogo">N</div>
     <div class="splash-title" id="splashTitle" data-i18n="login.title">نظام نقاط البيع</div>
     <div class="splash-subtitle" id="splashSubtitle" data-i18n="splash.loading">جارٍ التحميل...</div>

@@ -6,7 +6,7 @@ const ROOT = process.cwd();
 function check(condition, label) { assert(condition, `Missing regression guard: ${label}`); }
 
 const main = fs.readFileSync('main.js', 'utf8');
-const db = fs.readFileSync('database/db.js', 'utf8');
+const db = require('./lib/db-source').read();
 const pos = fs.readFileSync('renderer/pos.js', 'utf8');
 
 function mustContain(source, text, label) {

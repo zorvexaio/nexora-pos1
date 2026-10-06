@@ -7,6 +7,15 @@ const money = require('../core/money');
 const accounting = require('../finance/accounting');
 const permissions = require('../core/permissions');
 const root = path.resolve(__dirname, '..');
+function readDatabaseSources(root) {
+  // الكود قُسِّم من database/db.js إلى database/domains/*.js — نقرأ الكل كنص واحد.
+  const dbDir = path.join(root, 'database');
+  const files = [path.join(dbDir, 'db.js')];
+  const domains = path.join(dbDir, 'domains');
+  if (fs.existsSync(domains)) for (const f of fs.readdirSync(domains).sort()) if (f.endsWith('.js')) files.push(path.join(domains, f));
+  return files.map((f) => fs.readFileSync(f, 'utf8')).join('\n');
+}
+
 
 assert.strictEqual(money.toMinor('10.50', 2), 1050);
 assert.strictEqual(money.multiplyMinorQuantity(123, 0.5), 62);
@@ -26,7 +35,7 @@ assert.throws(() => accounting.validateJournalLines([
 const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
 assert.ok(/^(?:0\.(?:48|49|50|51|52)\.)/.test(pkg.version));
 assert.strictEqual(pkg.devDependencies.electron, '44.2.0');
-const db = fs.readFileSync(path.join(root, 'database', 'db.js'), 'utf8');
+const db = readDatabaseSources(root);
 {
   // كان يطابق قائمة ثابتة (10..15) فيفشل تلقائياً مع أي ترحيلة لاحقة (فشل فعلياً منذ v16).
   const m = db.match(/CURRENT_SCHEMA_VERSION\s*=\s*(\d+)/);
@@ -39,7 +48,7 @@ assert.match(db, /sync_outbox/);
 assert.match(db, /createPortableBackup/);
 assert.match(db, /trg_\$\{table\}_money_minor_ai/);
 assert.match(db, /postSaleAccountingInTransaction/);
-assert.match(db, /'1300','2100','2200','4000','4100','5000'/);
+assert.match(db, /'1300','Inventory'[\s\S]*'2100','Tax Payable'[\s\S]*'2200','Customer Store Credit'[\s\S]*'4000','Sales Revenue'[\s\S]*'4100','Delivery Revenue'[\s\S]*'5000','Cost of Goods Sold'/);
 assert.match(db, /recordSyncOutboxEvent/);
 assert.match(db, /saveFiscalDocument/);
 console.log('V0.48.0 ENGINEERING REGRESSION: PASS');

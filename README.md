@@ -1,4 +1,25 @@
-# Nexora POS — v0.52.29
+# Nexora POS — v0.52.32
+
+## v0.52.32 — Admin UX parity
+
+- علامة تجارية موحّدة على صفحات الإدارة
+- جداول وفلاتر وبطاقات أوضح
+- sticky table headers + hover states
+
+## v0.52.31 — Perfect-source push (A11y + UX + packaging)
+
+- Skip links + viewport على كل الصفحات
+- فصل `tokens.css` عن نظام التصميم
+- مساعدة اختصارات (`?`) + F2/F4/Esc
+- سكربت `npm run pack:customer` لحزمة عميل نظيفة
+- CORE_SHA256 متزامن مع الملفات
+
+## v0.52.30 — Hardening (A11y + Integrity + UX)
+
+- إعادة توليد CORE_SHA256 ومواءمة VERSION.
+- Skip links، focus-visible، أهداف لمس ≥44px، تباين عالٍ.
+- إظهار/إخفاء كلمة المرور، F4 للدفع، تحسين لوحة PIN.
+- توسيع FiscalizationRegistry دون ادعاء امتثال دولة.
 
 ## v0.52.29 — كمية الكاشير + شريط جانبي + overrides أمنية
 

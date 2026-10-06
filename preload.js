@@ -253,8 +253,11 @@ contextBridge.exposeInMainWorld('api', {
   },
   fiscalization: {
     providers: () => ipcRenderer.invoke('fiscalization:providers'),
+    status: (provider) => ipcRenderer.invoke('fiscalization:status', provider),
     issue: (payload) => ipcRenderer.invoke('fiscalization:issue', payload),
+    cancel: (payload) => ipcRenderer.invoke('fiscalization:cancel', payload),
     list: (filters) => ipcRenderer.invoke('fiscalization:list', filters),
+    autoIssueEnabled: (payload) => ipcRenderer.invoke('fiscalization:autoIssueEnabled', payload),
   },
   license: {
     deviceFingerprint: () => ipcRenderer.invoke('license:deviceFingerprint'),

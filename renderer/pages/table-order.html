@@ -4,16 +4,18 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: file:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-src 'none';">
   <meta charset="UTF-8" />
   <title>طلب الطاولة</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <link rel="stylesheet" href="../tokens.css" />
   <link rel="stylesheet" href="../style.css" />
 </head>
 <body>
+  <a href="#mainContent" class="skip-link">تخطي إلى المحتوى</a>
+
   <div class="app">
     <header class="topbar">
-      <div class="brand">
-        <button id="backToTablesBtn" type="button" class="btn btn-secondary btn-sm back-to-tables" data-i18n="tableOrder.backToTables">← الطاولات</button>
-        <span id="tableTitle">طلب طاولة</span>
-      </div>
+      <div class="brand brand-premium"><span class="brand-mark" aria-hidden="true">N</span><span data-i18n="app.brand">Nexora POS</span></div>
       <div class="topbar-right">
+        <button type="button" id="backToTablesBtn" class="btn btn-secondary btn-sm" data-i18n="tableOrder.backToTables">← الطاولات</button>
         <select id="langSwitcher" class="lang-switcher" title="اللغة / Dil / Language">
           <option value="ar">AR</option>
           <option value="tr">TR</option>
@@ -28,7 +30,7 @@
       </div>
     </header>
 
-    <div class="main">
+    <div class="main" id="mainContent">
       <section class="products-panel">
         <div class="search-row">
           <input id="searchInput" type="text" data-i18n-placeholder="tableOrder.searchPlaceholder" placeholder="ابحث عن منتج أو امسح باركود..." autofocus />

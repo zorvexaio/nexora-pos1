@@ -1,7 +1,7 @@
 const fs=require('fs');
 const path=require('path');
 const root=path.resolve(__dirname,'..');
-const db=fs.readFileSync(path.join(root,'database','db.js'),'utf8');
+const db=require('./lib/db-source').read();
 const pos=fs.readFileSync(path.join(root,'renderer','pos.js'),'utf8');
 const i18n=fs.readFileSync(path.join(root,'renderer','i18n.js'),'utf8');
 const pkg=JSON.parse(fs.readFileSync(path.join(root,'package.json'),'utf8'));
@@ -35,7 +35,7 @@ ok('category and supplier creation validate names', /function createCategory\(c\
 ok('i18n has no duplicate keys in ar/tr/en', ['ar','tr','en'].every(lang=>{const b=langBlock(lang); return !!b && !hasDuplicateKeys(b);}));
 ok('sales snapshot tax inclusivity survives item writes', /tax_inclusive/.test(db) && /item\.taxInclusive \? 1 : 0/.test(db) && /item\.tax_inclusive \? 1 : 0/.test(db));
 ok('returns use post-tax discounted merchandise amounts', /refundableAmountMinor\(saleItem/.test(db) && /saleItemsTotalBeforeDiscount/.test(db) && /saleDiscountPool/.test(db));
-ok('cashier discount cap is fail-safe', /Number\(getSetting\('max_cashier_discount_percent'/.test(db) && /Number\.isFinite\(value\) \? Math\.min\(100, Math\.max\(0, value\)\) : 10/.test(db));
+ok('cashier discount cap is fail-safe', /Number\(getSetting\((?:db, )?'max_cashier_discount_percent'/.test(db) && /Number\.isFinite\(value\) \? Math\.min\(100, Math\.max\(0, value\)\) : 10/.test(db));
 ok('opening/closing cash sessions validate actor and money', /مبلغ افتتاح الصندوق غير صالح/.test(db) && /المبلغ الفعلي في الصندوق غير صالح/.test(db) && /لا يمكن إغلاق جلسة صندوق/.test(db));
 const preloadChannels=new Set([...preload.matchAll(/\.(?:invoke|send|sendSync)\(\s*['"]([^'"]+)['"]/g)].map(m=>m[1]));
 const mainHandlers=new Set([...main.matchAll(/ipcMain\.handle\(\s*['"]([^'"]+)['"]/g)].map(m=>m[1]));

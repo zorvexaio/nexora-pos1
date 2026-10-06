@@ -1,5 +1,5 @@
 const fs = require('fs');
-const dbSource = fs.readFileSync('database/db.js','utf8');
+const dbSource = require('./lib/db-source').read();
 const pkg = JSON.parse(fs.readFileSync('package.json','utf8'));
 const schema = fs.readFileSync('database/schema.sql','utf8');
 const assertions = [

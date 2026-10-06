@@ -1,6 +1,6 @@
 const fs=require('fs');
 const path=require('path');
-const db=fs.readFileSync(path.join(__dirname,'..','database','db.js'),'utf8');
+const db=require('./lib/db-source').read();
 const main=fs.readFileSync(path.join(__dirname,'..','main.js'),'utf8');
 const pos=fs.readFileSync(path.join(__dirname,'..','renderer','pos.js'),'utf8');
 const schema=fs.readFileSync(path.join(__dirname,'..','database','schema.sql'),'utf8');

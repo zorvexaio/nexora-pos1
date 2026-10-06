@@ -120,7 +120,15 @@ async function handleSearchKeydown(e) {
 function renderProducts() {
   productsGrid.innerHTML = '';
   if (products.length === 0) {
-    productsGrid.innerHTML = `<p style="color:#9ca3af">${t('pos.noProducts')}</p>`;
+    if (typeof renderPageEmptyState === 'function') {
+      renderPageEmptyState(productsGrid, {
+        icon: '▣',
+        title: t('pos.noProducts'),
+        message: (typeof ts === 'function' ? ts('لا منتجات مطابقة للبحث أو الفئة.') : ''),
+      });
+    } else {
+      productsGrid.innerHTML = `<p style="color:#9ca3af">${t('pos.noProducts')}</p>`;
+    }
     return;
   }
   for (const p of products) {

@@ -1,0 +1,379 @@
+/* Nexora POS — 08-receipt-v2.css — Receipt clarity + kitchen ticket (split from style.css) */
+/* ===== فاتورة أوضح: خطوط أكبر + إبراز العروض (v0.52.18) ===== */
+.receipt-body .receipt { font-size: 19px; line-height: 1.45; }
+.receipt-body .receipt-brand { font-size: 25px; }
+.receipt-body .receipt-meta-block { font-size: 16.5px; }
+.receipt-body .receipt-cols-head { font-size: 14px; }
+.receipt-body .receipt-item-calc { font-size: 18px; }
+.receipt-body .kt-order-big { font-size: 28px; }
+.receipt-body .kt-order-big .kt-order-no { font-size: 32px; }
+.receipt-body .kitchen-item { font-size: 20px; }
+.receipt-body .kitchen-item-qty { font-size: 20px; min-width: 2.8em; }
+
+.receipt-body .receipt-meta { font-size: 17.5px; }
+.receipt-body .receipt-item-name { font-size: 20px; font-weight: 800; }
+.receipt-body .receipt-item-qty, .receipt-body .receipt-item-unit { font-size: 17.5px; }
+.receipt-body .receipt-item-offer-badge { font-size: 17px; }
+.receipt-body .receipt-item-total { font-size: 20px; font-weight: 800; }
+.receipt-body .receipt-item-note { font-size: 17.5px; }
+.receipt-body .receipt-offer-line { font-size: 18.5px; }
+.receipt-body .receipt-row { font-size: 19px; }
+.receipt-body .receipt-total { font-size: 26px; }
+.receipt-body .receipt-footer { font-size: 19px; }
+.receipt-body[data-paper-width='58'] .receipt { font-size: 16.5px; }
+.receipt-body[data-paper-width='58'] .receipt-item-name { font-size: 17.5px; }
+.receipt-body[data-paper-width='58'] .receipt-item-total { font-size: 17.5px; }
+.receipt-body[data-paper-width='58'] .receipt-item-qty, .receipt-body[data-paper-width='58'] .receipt-item-unit { font-size: 15.5px; }
+.receipt-body[data-paper-width='58'] .receipt-row { font-size: 16px; }
+.receipt-body[data-paper-width='58'] .receipt-offer-line { font-size: 16px; }
+.receipt-body[data-paper-width='58'] .receipt-total { font-size: 21px; }
+
+.kitchen-ticket { font-size: 19px; line-height: 1.4; }
+.kitchen-ticket .kitchen-item-name { font-size: 20px; font-weight: 800; }
+.kitchen-ticket .kitchen-item-qty { font-size: 22px; font-weight: 900; }
+.kitchen-ticket .kitchen-item-note { font-size: 16.5px; }
+.kitchen-ticket .kitchen-order-note { font-size: 18px; }
+.kitchen-ticket .kitchen-delivery-time { font-size: 17px; }
+.kitchen-ticket .receipt-meta, .kitchen-ticket .receipt-brand { font-size: 19px; }
+.kitchen-ticket .kitchen-offer-title { font-size: 21px; font-weight: 900; }
+.receipt-body[data-paper-width='58'] .kitchen-ticket { font-size: 16.5px; }
+.receipt-body[data-paper-width='58'] .kitchen-ticket .kitchen-item-name { font-size: 17.5px; }
+.receipt-body[data-paper-width='58'] .kitchen-ticket .kitchen-item-qty { font-size: 19px; }
+
+/* ===================================================================
+   شاشة "الكاشير السريع" — بيع باللمس فقط بلا كيبورد (زبون بقالة/سوبرماركت):
+   لوحة أرقام كبيرة لإدخال الكود يدوياً + شبكة صور للأصناف + سلة + دفع.
+   كل الأزرار هنا أكبر من المعتاد لأنها مصمَّمة لأصابع تلمس شاشة مباشرة،
+   لا لمؤشر فأرة دقيق. =================================================== */
+.qc-page {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  height: 100vh;
+  padding: 14px 16px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.qc-layout {
+  display: flex;
+  gap: 12px;
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+  align-items: stretch;
+}
+/* السلة + الدفع دائماً على اليسار بصرياً */
+html[dir="rtl"] .qc-keypad-panel { order: 1; }
+html[dir="rtl"] .qc-products-panel { order: 2; }
+html[dir="rtl"] .qc-cart-panel { order: 3; }
+html[dir="ltr"] .qc-cart-panel { order: 1; }
+html[dir="ltr"] .qc-products-panel { order: 2; }
+html[dir="ltr"] .qc-keypad-panel { order: 3; }
+
+.qc-keypad-panel {
+  width: 260px; flex-shrink: 0; background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 14px; display: flex; flex-direction: column; gap: 12px;
+  box-shadow: var(--shadow-sm); overflow-y: auto;
+}
+.qc-code-display-wrap { display: flex; flex-direction: column; gap: 6px; }
+.qc-code-display-wrap label { font-size: 13px; font-weight: 700; color: var(--text-soft); }
+.qc-code-display {
+  width: 100%; box-sizing: border-box; font-size: 24px; font-weight: 900; text-align: center;
+  padding: 12px 8px; border-radius: 12px; border: 2px solid var(--line-strong); background: var(--surface-soft);
+  color: var(--text); font-variant-numeric: tabular-nums; letter-spacing: .02em;
+}
+.qc-keypad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.qc-key {
+  height: 58px; border-radius: 12px; border: 1px solid var(--line-strong); background: var(--surface-soft);
+  font-size: 22px; font-weight: 800; color: var(--text); cursor: pointer; box-shadow: var(--shadow-sm);
+  transition: transform .08s ease, background .12s ease;
+}
+.qc-key:active { transform: scale(.94); background: var(--primary-light); }
+.qc-key-clear { font-size: 15px; color: var(--danger); }
+.qc-key-back { font-size: 20px; }
+.qc-qty-row { display: flex; align-items: center; justify-content: space-between; font-weight: 800; font-size: 14px; }
+.qc-qty-stepper { display: flex; align-items: center; gap: 10px; background: var(--surface-soft); border: 1px solid var(--line-strong); border-radius: 999px; padding: 4px 6px; }
+.qc-qty-stepper-sm { padding: 2px 4px; gap: 6px; }
+.qc-qty-btn {
+  width: 40px; height: 40px; border-radius: 50%; border: 0; background: var(--primary); color: #fff;
+  font-size: 20px; font-weight: 900; cursor: pointer; display: grid; place-items: center; line-height: 1;
+}
+.qc-qty-stepper-sm .qc-qty-btn { width: 28px; height: 28px; font-size: 15px; }
+.qc-qty-btn:active { transform: scale(.9); }
+.qc-qty-value { min-width: 28px; max-width: 70px; text-align: center; font-weight: 900; font-size: 17px; font-variant-numeric: tabular-nums; border: none; background: transparent; color: inherit; font-family: inherit; padding: 2px 4px; border-radius: 6px; }
+.qc-qty-value:focus { outline: 2px solid var(--accent, #4f46e5); background: rgba(0,0,0,0.04); }
+.qc-add-btn {
+  height: 62px; border-radius: 14px; border: 0; background: var(--success, #16a34a); color: #fff;
+  font-size: 18px; font-weight: 900; cursor: pointer; box-shadow: 0 10px 24px rgba(22,163,74,.35);
+}
+.qc-add-btn:active { transform: scale(.97); }
+.qc-code-msg { text-align: center; font-weight: 800; padding: 8px; border-radius: 10px; }
+.qc-code-msg.error { background: #fef2f2; color: var(--danger); }
+.qc-code-msg.hidden { display: none; }
+
+.qc-products-panel { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 10px; overflow: hidden; }
+.qc-category-tabs .category-tab { font-size: 14.5px; padding: 10px 18px; }
+.qc-products-grid {
+  flex: 1; overflow-y: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 10px; align-content: start;
+}
+.qc-tile { cursor: pointer; padding: 0; overflow: hidden; }
+.qc-tile-image { display: flex; flex-direction: column; gap: 0; }
+.qc-tile-img { width: 100%; aspect-ratio: 1 / 1; object-fit: cover; display: block; }
+.qc-tile-price {
+  position: absolute; top: 8px; inset-inline-end: 8px; box-shadow: 0 4px 10px rgba(0,0,0,.18);
+}
+.qc-tile-image { position: relative; }
+.qc-tile-caption { padding: 8px 9px; font-size: 14px; text-align: center; }
+.qc-empty-hint { grid-column: 1 / -1; text-align: center; color: var(--text-faint); font-weight: 700; padding: 30px 0; }
+
+.qc-cart-panel {
+  width: 340px;
+  flex-shrink: 0;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  padding: 14px 12px;
+  overflow: hidden;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+}
+.qc-cart-head {
+  flex-shrink: 0;
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--line);
+}
+.qc-cart-head h2 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 800;
+}
+.qc-cart-view {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.qc-cart-items, .qc-cart-panel .cart-items {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+.qc-cart-item { padding: 8px 10px; }
+.qc-cart-item-name, .cart-item-name { font-weight: 800; font-size: 14px; margin-bottom: 6px; }
+.qc-cart-item-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.qc-cart-item-total { font-weight: 900; font-variant-numeric: tabular-nums; }
+.qc-cart-remove { background: transparent; border: 0; font-size: 17px; cursor: pointer; padding: 4px 6px; }
+.qc-cart-summary { padding-top: 10px; flex-shrink: 0; border-top: 1px solid var(--line); margin-top: 8px; }
+.qc-total-row { display: flex; justify-content: space-between; align-items: baseline; font-size: 16px; font-weight: 900; margin-bottom: 10px; }
+.qc-total-row span:last-child { font-size: 22px; color: var(--text); }
+.qc-empty-hint {
+  padding: 28px 12px !important;
+  text-align: center;
+  color: var(--text-faint);
+  font-weight: 700;
+  font-size: 13.5px;
+  line-height: 1.55;
+}
+
+/* الدفع داخل عمود السلة (اليسار) — ليس في منتصف الشاشة */
+.qc-payment-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  background: var(--surface);
+  border-radius: inherit;
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+}
+.qc-payment-overlay.hidden { display: none; }
+.qc-cart-panel.paying .qc-cart-view { display: none; }
+.qc-payment-box {
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  background: transparent;
+  border-radius: 0;
+  padding: 12px 10px 14px;
+  box-shadow: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow-y: auto;
+}
+.qc-payment-back {
+  align-self: flex-start;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-weight: 800;
+  font-size: 13px;
+  color: var(--text-soft);
+  cursor: pointer;
+  padding: 6px 12px;
+}
+.qc-payment-back:hover { color: var(--text); border-color: var(--line-strong); }
+.qc-payment-total-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 14px;
+  font-weight: 800;
+  padding: 10px 12px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+.qc-payment-total-row span:last-child {
+  font-size: 26px;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  font-weight: 900;
+}
+.qc-method-tabs { display: flex; gap: 6px; }
+.qc-method-tab {
+  flex: 1;
+  height: 44px;
+  border-radius: 10px;
+  border: 1px solid var(--line-strong);
+  background: var(--bg);
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--text-soft);
+  cursor: pointer;
+}
+.qc-method-tab.active {
+  border-color: var(--text);
+  color: #fff;
+  background: var(--text);
+}
+body[data-theme="dark"] .qc-method-tab.active {
+  background: #fff;
+  color: #0c0d10;
+  border-color: #fff;
+}
+.qc-change-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 14px;
+  font-weight: 800;
+  padding: 8px 4px 0;
+}
+.qc-change-row span:last-child { color: var(--success); font-size: 18px; }
+.qc-confirm-pay-btn {
+  margin-top: auto;
+  flex-shrink: 0;
+  height: 50px !important;
+  border-radius: 12px !important;
+}
+.qc-payment-box .qc-keypad .qc-key { height: 48px; font-size: 18px; }
+.qc-payment-box .qc-code-display { font-size: 20px; padding: 10px 8px; }
+
+@media (prefers-color-scheme: dark) {
+  .qc-code-msg.error { background: rgba(220,38,38,.12); }
+}
+
+/* شاشة صغيرة (تابلت 10 إنش وما دونه): الأعمدة الثلاثة تضيق قليلاً بدل أن تفيض. */
+@media (max-width: 900px) {
+  .qc-layout { flex-direction: column; height: auto; overflow: visible; }
+  .qc-page { height: auto; overflow: visible; }
+  .qc-keypad-panel, .qc-cart-panel { width: 100%; }
+  .qc-products-grid { max-height: 50vh; }
+}
+
+/* نافذة الدفع الموحّدة: بيانات الطلب (الزبون/التوصيل/الوقت) + الدفع في شاشة واحدة */
+.payment-modal { max-width: 560px; max-height: 92vh; overflow-y: auto; }
+.payment-order-info {
+  background: var(--surface-soft); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 12px; margin: 10px 0 14px;
+}
+.payment-order-info .form-field:last-child { margin-bottom: 0 !important; }
+
+/* اسم المستلم على تذكرة المطبخ — بنفس بروز وقت التسليم */
+.kitchen-customer-name { font-weight: 900; font-size: 1.15em; text-align: center; margin: 6px 0; padding: 4px 0; border-top: 1px dashed #000; border-bottom: 1px dashed #000; }
+
+/* ====================================================================== */
+/* تصميم الفاتورة وتذكرة المطبخ الجديد — أحجام em نسبةً لخط .receipt/.kitchen-ticket */
+/* فتتكيّف تلقائياً مع ورق 80mm و58mm. الاعتماد على الإطارات والسُمك بدل الألوان  */
+/* لأن الطابعات الحرارية تطبع أبيض/أسود فقط.                                    */
+/* ====================================================================== */
+
+/* ---- تذكرة المطبخ ---- */
+.kt-title { text-align: center; font-weight: 700; font-size: .95em; margin-bottom: 4px; }
+.kt-order { text-align: center; font-weight: 900; font-size: 1.7em; line-height: 1.2; padding: 6px 4px; margin-bottom: 6px; border: 3px solid #000; border-radius: 6px; }
+.kt-order-no { unicode-bidi: isolate; }
+.kt-type { text-align: center; font-weight: 900; font-size: 1.45em; padding: 4px 0; margin-bottom: 6px; border-top: 2px solid #000; border-bottom: 2px solid #000; }
+.kt-info { margin: 4px 0 6px; }
+.kt-row { display: flex; gap: 8px; align-items: baseline; padding: 2px 0; }
+.kt-label { font-weight: 500; white-space: nowrap; }
+.kt-value { font-weight: 800; min-width: 0; word-break: break-word; }
+.kt-row-customer .kt-value { font-size: 1.3em; font-weight: 900; }
+.kt-when { text-align: center; margin: 6px 0; padding: 6px 8px; border: 2.5px solid #000; border-radius: 6px; font-weight: 800; }
+.kt-when-label { display: block; }
+.kt-when-value { display: inline-block; font-size: 1.5em; font-weight: 900; unicode-bidi: isolate; white-space: nowrap; }
+.kt-sep { border-top: 4px double #000; margin: 8px 0 6px; }
+.kt-count { margin-top: 8px; padding-top: 6px; border-top: 2px solid #000; text-align: center; font-weight: 800; }
+/* الأصناف: صفّ لكل صنف بخط فاصل رفيع، والكمية بخط أكبر ملاصقة للاسم */
+.kitchen-ticket .kitchen-item { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; padding: 5px 0; border-bottom: 1px dashed #000; }
+.kitchen-ticket .kitchen-items > .kitchen-item:last-child { border-bottom: 0; }
+.kitchen-ticket .kitchen-item-qty { min-width: 2.1em; font-size: 1.3em; font-weight: 900; }
+.kitchen-ticket .kitchen-item-name { flex: 1; min-width: 0; font-size: 1.15em; font-weight: 800; }
+.kitchen-ticket .kitchen-item-note { flex-basis: 100%; }
+.kitchen-ticket .kitchen-offer-item { border-bottom: 0; padding: 3px 0; }
+
+/* ---- الفاتورة ---- */
+.rc-invoice-no { text-align: center; font-weight: 900; font-size: 1.15em; padding: 5px 4px; margin: 6px 0; border: 2px solid #000; border-radius: 6px; }
+.rc-invoice-no-value { font-size: 1.15em; unicode-bidi: isolate; }
+.rc-info { margin: 4px 0 8px; }
+.rc-info-row { display: flex; gap: 8px; align-items: baseline; padding: 2px 0; }
+.rc-info-label { font-weight: 500; white-space: nowrap; }
+.rc-info-value { font-weight: 800; min-width: 0; word-break: break-word; }
+.rc-items-head { display: flex; justify-content: space-between; font-weight: 800; padding: 3px 0; margin-top: 4px; border-top: 2px solid #000; border-bottom: 2px solid #000; }
+.receipt-items { gap: 0; }
+.receipt .receipt-item { padding: 5px 0; border-bottom: 1px dashed #000; }
+.receipt .receipt-items > .receipt-item:last-child { border-bottom: 0; }
+.receipt-item-unit-line { font-size: .85em; font-weight: 500; }
+.rc-count { margin-top: 4px; padding-top: 4px; border-top: 1px solid #000; font-weight: 700; text-align: center; font-size: .9em; }
+.rc-section-title { font-weight: 800; text-align: center; margin: 2px 0 4px; }
+/* الإجمالي: صندوق بإطار سميك يلفت النظر أول ما تنظر للفاتورة */
+.receipt .receipt-total { border: 3px solid #000; border-radius: 6px; padding: 6px 8px; margin-top: 8px; }
+.receipt .receipt-row { padding: 2px 0; }
+@media print {
+  .kt-order, .kt-when, .rc-invoice-no, .receipt .receipt-total { border-color: #000 !important; }
+  .kt-type, .rc-items-head, .kt-count, .rc-count { border-color: #000 !important; }
+  .kt-sep { border-color: #000 !important; }
+  .kitchen-ticket .kitchen-item { border-color: #000 !important; }
+}
+.receipt-body .receipt .receipt-item-qty { font-weight: 900; color: #111827; }
+/* ورق 58mm: خطوط أصغر قليلاً كي لا يلتف رقم الطلب/الفاتورة على سطرين */
+.receipt-body[data-paper-width='58'] .kt-order { font-size: 1.3em; }
+.receipt-body[data-paper-width='58'] .kt-type { font-size: 1.25em; }
+.receipt-body[data-paper-width='58'] .rc-invoice-no { font-size: .95em; }
+.receipt-body[data-paper-width='58'] .rc-invoice-no-value { font-size: 1em; }
+.receipt-body[data-paper-width='58'] .kt-when-value { font-size: 1.3em; }
+.receipt-body[data-paper-width='58'] .rc-info-row, .receipt-body[data-paper-width='58'] .kt-row { flex-wrap: wrap; gap: 2px 6px; }
+
+.input-error { border-color: #dc2626 !important; box-shadow: 0 0 0 2px rgba(220,38,38,.25); }
+
+
+/* كشف حساب العميل: ماذا اشترى + التاريخ + المبلغ */
+.ledger-entry { gap: 4px; }
+.ledger-entry .ledger-type { font-weight: 800; }
+.ledger-entry .ledger-inv { font-weight: 700; color: var(--primary); margin-inline-start: 6px; font-size: 12.5px; }
+.ledger-entry .ledger-date { font-variant-numeric: tabular-nums; color: var(--text-soft); font-size: 12.5px; }
+.ledger-entry .ledger-items {
+  font-size: 12.5px; color: var(--text-soft); line-height: 1.4;
+  padding: 2px 0 4px; word-break: break-word;
+}
+.ledger-entry .ledger-amt-debt { color: var(--warning); font-weight: 800; }
+.ledger-entry .ledger-amt-pay { color: var(--success); font-weight: 800; }
+
+

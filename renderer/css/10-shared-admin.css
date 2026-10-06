@@ -1,0 +1,1271 @@
+/* Nexora POS — 10-shared-admin.css — Shared cards, admin polish blocks (split from style.css) */
+/* ==========================================================================
+   صفحة إتمام الدفع الكاملة — كل العناصر ظاهرة بدون تمرير
+   ========================================================================== */
+#paymentModal.payment-page,
+.payment-page {
+  position: fixed;
+  inset: 0;
+  z-index: 900;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  /* ليس modal-overlay — صفحة كاملة */
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  padding: 0;
+  overflow: hidden;
+  animation: studioIn .18s var(--ease-out);
+}
+.payment-page.hidden { display: none !important; }
+
+.payment-page-inner {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  max-height: 100vh;
+  width: 100%;
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 16px 20px 18px;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.payment-page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-shrink: 0;
+  margin-bottom: 14px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+}
+.payment-page-header h2 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: -.02em;
+}
+.payment-page-close {
+  height: 40px;
+  padding: 0 18px;
+  border-radius: 10px;
+  flex-shrink: 0;
+}
+
+/* شبكة عمودين: طلب | دفع — كل شيء مرئي */
+.payment-page-grid {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  overflow: hidden;
+  align-content: start;
+}
+
+.payment-col {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.payment-page .payment-order-info {
+  margin: 0;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex: 1;
+  min-height: 0;
+}
+.payment-page .payment-order-info .form-field {
+  margin-bottom: 0 !important;
+}
+.payment-page .order-type-row {
+  margin-bottom: 0;
+}
+
+.delivery-fields-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 10px;
+}
+.delivery-fields-grid .delivery-person-field {
+  grid-column: 1 / -1;
+}
+.field-hint {
+  font-size: 11px;
+  color: var(--text-faint);
+  margin-top: 3px;
+}
+
+.payment-page .customer-field {
+  margin: 0;
+  padding: 12px 14px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+}
+
+.payment-page .payment-total {
+  margin: 0;
+  padding: 18px 16px;
+  font-size: 36px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.payment-page .payment-total > span:first-child {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-soft);
+  letter-spacing: .04em;
+}
+#paymentTotalDisplay {
+  font-size: 1em;
+  line-height: 1.1;
+}
+
+.payment-page .payment-methods {
+  margin: 0;
+  flex-shrink: 0;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 6px;
+}
+.payment-page .payment-methods .method-option {
+  min-height: 52px;
+  padding: 8px 4px;
+  font-size: 12px;
+}
+
+.payment-page .payment-fields {
+  margin: 0;
+  flex-shrink: 0;
+}
+.mixed-fields-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.payment-page-actions {
+  margin-top: auto;
+  flex-shrink: 0;
+  padding-top: 8px;
+}
+.payment-page-actions #confirmPaymentBtn {
+  width: 100%;
+  height: 52px;
+  border-radius: 12px;
+  font-size: 16px;
+  font-weight: 800;
+  background: var(--text);
+  color: #fff;
+  border: 0;
+}
+body[data-theme="dark"] .payment-page-actions #confirmPaymentBtn {
+  background: #fff;
+  color: #0c0d10;
+}
+
+.payment-page .payment-error {
+  margin: 0;
+  flex-shrink: 0;
+}
+
+/* شاشات أقصر: ضغط المسافات بدل التمرير */
+@media (max-height: 720px) {
+  .payment-page-inner { padding: 10px 16px 12px; }
+  .payment-page-header { margin-bottom: 8px; padding-bottom: 8px; }
+  .payment-page-header h2 { font-size: 17px; }
+  .payment-page .payment-total { padding: 12px; font-size: 28px; }
+  .payment-page .payment-methods .method-option { min-height: 44px; font-size: 11px; }
+  .payment-page-actions #confirmPaymentBtn { height: 46px; font-size: 15px; }
+  .payment-page .form-field input,
+  .payment-page .form-field select { height: 38px; }
+  .payment-col { gap: 8px; }
+  .payment-page-grid { gap: 12px; }
+}
+
+/* شاشات ضيقة: عمود واحد لكن بدون تمرير قدر الإمكان */
+@media (max-width: 800px) {
+  .payment-page-grid {
+    grid-template-columns: 1fr;
+    overflow-y: auto; /* فقط على الشاشات الضيقة جداً */
+  }
+  .payment-page .payment-methods {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+/* إخفاء أي قواعد modal قديمة تتعارض مع الصفحة */
+.payment-page .modal,
+#paymentModal.payment-page .modal {
+  max-width: none;
+  width: 100%;
+  box-shadow: none;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  background: transparent;
+  animation: none;
+}
+
+/* اسم الزبون في أعلى صفحة الدفع */
+.payment-customer-top {
+  flex-shrink: 0;
+  margin: 0 0 14px;
+  padding: 14px 16px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: var(--shadow-sm);
+  position: relative;
+  z-index: 5;
+}
+.payment-customer-top > label {
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--text);
+  margin-bottom: 8px;
+}
+.payment-customer-top #customerNameInput {
+  height: 48px;
+  font-size: 16px;
+  font-weight: 700;
+  border-radius: 12px;
+  border: 1.5px solid var(--line-strong);
+}
+.payment-customer-top #customerNameInput:focus {
+  border-color: var(--primary);
+  box-shadow: var(--focus-ring);
+}
+.payment-customer-top .customer-results {
+  z-index: 20;
+}
+.payment-customer-top .field-hint {
+  margin-top: 6px;
+  font-size: 11.5px;
+}
+
+
+/* ==========================================================================
+   استعادة الأزرق لهوية البيع (بدل الأسود في Studio)
+   ========================================================================== */
+.checkout-btn,
+.checkout-btn:hover:not(:disabled) {
+  background: linear-gradient(135deg, var(--brand-indigo-mid), var(--brand-indigo), var(--brand-indigo-dark)) !important;
+  color: #fff !important;
+  box-shadow: 0 8px 22px var(--brand-glow) !important;
+}
+.checkout-btn:disabled {
+  background: var(--line-strong) !important;
+  color: var(--text-faint) !important;
+  box-shadow: none !important;
+}
+body[data-theme="dark"] .checkout-btn:not(:disabled) {
+  background: linear-gradient(135deg, var(--brand-indigo-mid), var(--brand-indigo)) !important;
+  color: #fff !important;
+}
+
+.btn-primary,
+#confirmPaymentBtn,
+.payment-page-actions #confirmPaymentBtn,
+.login-btn {
+  background: linear-gradient(135deg, var(--brand-indigo-mid), var(--brand-indigo)) !important;
+  color: #fff !important;
+  box-shadow: 0 6px 18px var(--brand-glow) !important;
+  border: 0 !important;
+}
+.btn-primary:hover,
+#confirmPaymentBtn:hover,
+.payment-page-actions #confirmPaymentBtn:hover,
+.login-btn:hover {
+  background: linear-gradient(135deg, var(--brand-indigo), var(--brand-indigo-dark)) !important;
+  filter: brightness(1.05);
+}
+body[data-theme="dark"] #confirmPaymentBtn,
+body[data-theme="dark"] .payment-page-actions #confirmPaymentBtn,
+body[data-theme="dark"] .login-btn {
+  background: linear-gradient(135deg, var(--brand-indigo-mid), var(--brand-indigo)) !important;
+  color: #fff !important;
+}
+
+.category-tab.active {
+  background: linear-gradient(135deg, var(--brand-indigo), var(--brand-indigo-mid)) !important;
+  border-color: transparent !important;
+  color: #fff !important;
+  box-shadow: 0 4px 14px var(--brand-glow) !important;
+}
+body[data-theme="dark"] .category-tab.active {
+  background: linear-gradient(135deg, var(--brand-indigo), var(--brand-indigo-mid)) !important;
+  color: #fff !important;
+  border-color: transparent !important;
+}
+
+.payment-methods .method-option:has(input:checked),
+.order-type-row .method-option:has(input:checked),
+.method-option:has(input:checked) {
+  background: var(--primary-light) !important;
+  border-color: var(--primary) !important;
+  color: var(--primary) !important;
+  box-shadow: 0 0 0 1px var(--primary) !important;
+}
+body[data-theme="dark"] .payment-methods .method-option:has(input:checked),
+body[data-theme="dark"] .order-type-row .method-option:has(input:checked) {
+  background: var(--primary-light) !important;
+  border-color: var(--primary) !important;
+  color: var(--primary) !important;
+}
+
+.qc-method-tab.active {
+  background: var(--primary) !important;
+  border-color: var(--primary) !important;
+  color: #fff !important;
+}
+body[data-theme="dark"] .qc-method-tab.active {
+  background: var(--primary) !important;
+  color: #fff !important;
+}
+
+.cart-count {
+  background: linear-gradient(135deg, var(--brand-indigo), var(--brand-indigo-dark)) !important;
+  color: #fff !important;
+  box-shadow: 0 4px 12px var(--brand-glow) !important;
+}
+body[data-theme="dark"] .cart-count {
+  background: linear-gradient(135deg, var(--brand-indigo), var(--brand-indigo-dark)) !important;
+  color: #fff !important;
+}
+
+.nav-links a.active {
+  background: var(--primary-light) !important;
+  color: var(--primary) !important;
+}
+.nav-links a.active .nav-ico {
+  background: var(--primary) !important;
+  color: #fff !important;
+}
+.nav-links a .nav-ico {
+  display: grid !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  width: 22px !important;
+  height: 22px !important;
+  flex-shrink: 0 !important;
+  background: var(--surface-strong);
+  color: var(--text-soft);
+  border-radius: 7px;
+  place-items: center;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.price-badge {
+  color: var(--primary) !important;
+  border-color: var(--primary-border) !important;
+  background: var(--primary-light) !important;
+}
+
+.payment-total #paymentTotalDisplay,
+#paymentTotalDisplay {
+  color: var(--primary) !important;
+  background: none !important;
+  -webkit-background-clip: unset !important;
+  background-clip: unset !important;
+}
+.qc-total-row span:last-child,
+.qc-payment-total-row span:last-child {
+  color: var(--primary) !important;
+}
+
+
+/* ==========================================================================
+   كاشير: بحث أعلى + بطاقات أصغر بلا أفاتار حرف
+   ========================================================================== */
+.products-panel .search-row {
+  margin-bottom: 10px;
+  order: -1;
+}
+.products-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.products-panel .category-tabs-wrap {
+  margin-bottom: 8px;
+}
+.products-panel .products-grid {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.product-card .card-avatar {
+  display: none !important;
+}
+
+.products-grid {
+  gap: 8px !important;
+  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)) !important;
+}
+.product-card {
+  min-height: 0 !important;
+  padding: 8px 9px !important;
+  gap: 6px !important;
+  border-radius: 10px !important;
+}
+.product-card .name {
+  font-size: 12.5px !important;
+  font-weight: 700 !important;
+  -webkit-line-clamp: 2 !important;
+  line-height: 1.3 !important;
+}
+.product-card .card-meta-row {
+  margin-top: 2px !important;
+}
+.price-badge {
+  font-size: 12px !important;
+  padding: 2px 6px !important;
+  border-radius: 6px !important;
+}
+.product-card .stock {
+  font-size: 10px !important;
+}
+@media (min-width: 1400px) {
+  .products-grid {
+    grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)) !important;
+  }
+}
+
+/* ==========================================================================
+   نافذة إتمام الدفع — تصميم مدمج جديد (Payment Sheet)
+   أصغر من الصفحة الكاملة، مركّزة، سريعة الاستخدام
+   ========================================================================== */
+
+#paymentModal.payment-page.payment-sheet,
+.payment-page.payment-sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(15, 23, 42, 0.45);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-sizing: border-box;
+}
+
+.payment-page.payment-sheet.hidden {
+  display: none !important;
+}
+
+.payment-sheet .payment-page-inner.payment-sheet-card {
+  width: min(440px, 100%);
+  max-height: min(88vh, 720px);
+  display: flex;
+  flex-direction: column;
+  background: var(--surface, #fff);
+  border: 1px solid var(--line, #e2e8f0);
+  border-radius: 18px;
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.06) inset,
+    0 24px 48px rgba(15, 23, 42, 0.22);
+  overflow: hidden;
+  animation: paymentSheetIn 0.2s ease-out;
+}
+
+@keyframes paymentSheetIn {
+  from { opacity: 0; transform: translateY(10px) scale(0.98); }
+  to   { opacity: 1; transform: none; }
+}
+
+.payment-sheet-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px 10px;
+  border-bottom: 1px solid var(--line, #e2e8f0);
+  flex-shrink: 0;
+}
+
+.payment-sheet-title-wrap h2 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--text, #0f172a);
+  line-height: 1.25;
+}
+
+.payment-sheet-sub {
+  margin: 3px 0 0;
+  font-size: 11.5px;
+  color: var(--text-muted, #64748b);
+  font-weight: 500;
+  line-height: 1.3;
+}
+
+.payment-sheet-close {
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  border: 1px solid var(--line, #e2e8f0);
+  background: var(--surface-2, #f8fafc);
+  color: var(--text-muted, #64748b);
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.payment-sheet-close:hover {
+  background: var(--danger-soft, #fef2f2);
+  color: var(--danger, #dc2626);
+  border-color: #fecaca;
+}
+
+.payment-sheet-scroll {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 12px 16px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* إجمالي بارز ومضغوط */
+.payment-sheet .payment-sheet-total {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 2px;
+  padding: 14px 12px;
+  margin: 0;
+  border-radius: 14px;
+  background: linear-gradient(145deg, #1e3a8a 0%, #312e81 55%, #4c1d95 100%);
+  color: #fff;
+  box-shadow: 0 10px 24px rgba(49, 46, 129, 0.28);
+  border: none;
+}
+.payment-sheet-total-label {
+  font-size: 11px;
+  font-weight: 600;
+  opacity: 0.85;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.payment-sheet-total-value {
+  font-size: 28px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.03em;
+  line-height: 1.15;
+}
+
+/* طرق الدفع — شبكة مضغوطة */
+.payment-sheet .payment-sheet-methods {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 6px;
+  margin: 0;
+}
+.payment-sheet .payment-sheet-methods .method-option {
+  margin: 0;
+  min-height: 40px;
+  padding: 6px 4px;
+  border-radius: 10px;
+  border: 1.5px solid var(--line, #e2e8f0);
+  background: var(--surface-2, #f8fafc);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: border-color 0.12s, background 0.12s, box-shadow 0.12s, transform 0.1s;
+  font-size: 12px;
+  font-weight: 700;
+  text-align: center;
+  line-height: 1.2;
+}
+.payment-sheet .payment-sheet-methods .method-option span {
+  pointer-events: none;
+}
+.payment-sheet .payment-sheet-methods .method-option input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+.payment-sheet .payment-sheet-methods .method-option:hover {
+  border-color: var(--primary, #4f46e5);
+  background: #fff;
+}
+.payment-sheet .payment-sheet-methods .method-option:has(input:checked) {
+  border-color: var(--primary, #4f46e5);
+  background: color-mix(in srgb, var(--primary, #4f46e5) 12%, #fff);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary, #4f46e5) 18%, transparent);
+  color: var(--primary, #4f46e5);
+}
+body[data-theme="dark"] .payment-sheet .payment-sheet-methods .method-option:has(input:checked) {
+  background: color-mix(in srgb, var(--primary, #818cf8) 22%, #1e1b4b);
+  color: #c7d2fe;
+}
+
+/* حقول النقد / المختلط */
+.payment-sheet .payment-sheet-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--surface-2, #f8fafc);
+  border: 1px solid var(--line, #e2e8f0);
+}
+.payment-sheet .payment-sheet-fields .form-field {
+  margin: 0 !important;
+}
+.payment-sheet .payment-sheet-fields label {
+  font-size: 11.5px;
+  font-weight: 700;
+  margin-bottom: 4px;
+  color: var(--text-muted, #64748b);
+}
+.payment-sheet .payment-sheet-fields input {
+  height: 40px !important;
+  font-size: 16px !important;
+  font-weight: 700;
+  border-radius: 10px !important;
+  border: 1.5px solid var(--line-strong, #cbd5e1) !important;
+  padding: 0 12px !important;
+}
+.payment-sheet .payment-sheet-fields input:focus {
+  border-color: var(--primary, #4f46e5) !important;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary, #4f46e5) 20%, transparent);
+  outline: none;
+}
+.payment-sheet .mixed-fields-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.payment-sheet .payment-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 4px 2px 0;
+}
+.payment-sheet .payment-change-row span:last-child,
+.payment-sheet #mixedRemainingDisplay,
+.payment-sheet #changeDueDisplay {
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+  color: var(--primary, #4f46e5);
+  font-size: 15px;
+}
+
+/* نوع الطلب */
+.payment-sheet .payment-sheet-order {
+  padding: 0;
+  margin: 0;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+}
+.payment-sheet-chips {
+  display: grid !important;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  margin: 0 0 8px;
+}
+.payment-sheet-chips .method-option {
+  min-height: 36px;
+  margin: 0;
+  border-radius: 10px;
+  border: 1.5px solid var(--line, #e2e8f0);
+  background: var(--surface, #fff);
+  font-size: 12.5px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.payment-sheet-chips .method-option input {
+  position: absolute;
+  opacity: 0;
+}
+.payment-sheet-chips .method-option:has(input:checked) {
+  border-color: var(--primary, #4f46e5);
+  background: color-mix(in srgb, var(--primary, #4f46e5) 10%, #fff);
+  color: var(--primary, #4f46e5);
+}
+
+.payment-sheet-delivery-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.payment-sheet-delivery-grid .delivery-person-field {
+  grid-column: 1 / -1;
+}
+.payment-sheet .delivery-fields .form-field {
+  margin: 0 0 8px !important;
+}
+.payment-sheet .delivery-fields label {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--text-muted, #64748b);
+}
+.payment-sheet .delivery-fields input {
+  height: 38px !important;
+  border-radius: 10px !important;
+  font-size: 14px !important;
+}
+.payment-sheet .field-hint {
+  font-size: 10.5px;
+  margin-top: 3px;
+  opacity: 0.85;
+}
+
+/* زبون مضغوط */
+.payment-sheet .payment-sheet-customer {
+  margin: 0 !important;
+  padding: 10px 12px !important;
+  border-radius: 12px !important;
+  box-shadow: none !important;
+  background: var(--surface-2, #f8fafc) !important;
+  border: 1px solid var(--line, #e2e8f0) !important;
+}
+.payment-sheet .payment-sheet-customer > label {
+  font-size: 11.5px !important;
+  margin-bottom: 4px !important;
+  font-weight: 700 !important;
+  color: var(--text-muted, #64748b) !important;
+}
+.payment-sheet .payment-sheet-customer #customerNameInput {
+  height: 40px !important;
+  font-size: 14px !important;
+  font-weight: 600 !important;
+  border-radius: 10px !important;
+}
+.payment-sheet .selected-customer {
+  margin-top: 6px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  font-size: 12.5px;
+}
+.payment-sheet .loyalty-redeem {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--line, #e2e8f0);
+}
+.payment-sheet .loyalty-redeem-row {
+  display: flex;
+  gap: 6px;
+}
+.payment-sheet .loyalty-redeem-row input {
+  flex: 1;
+  height: 36px !important;
+}
+.payment-sheet .loyalty-redeem-row button {
+  height: 36px;
+  padding: 0 10px;
+  font-size: 12px;
+  border-radius: 8px;
+}
+
+.payment-sheet .payment-error {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 10px;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+/* تذييل التأكيد */
+.payment-sheet-footer {
+  flex-shrink: 0;
+  padding: 12px 16px 14px;
+  border-top: 1px solid var(--line, #e2e8f0);
+  background: var(--surface, #fff);
+}
+.payment-sheet-confirm,
+.payment-sheet .payment-sheet-confirm {
+  width: 100%;
+  height: 48px !important;
+  border-radius: 12px !important;
+  font-size: 15px !important;
+  font-weight: 800 !important;
+  letter-spacing: -0.01em;
+  border: none !important;
+  background: linear-gradient(135deg, #4f46e5, #3730a3) !important;
+  color: #fff !important;
+  box-shadow: 0 8px 20px rgba(79, 70, 229, 0.35) !important;
+  cursor: pointer;
+  transition: transform 0.12s, box-shadow 0.12s, filter 0.12s;
+}
+.payment-sheet-confirm:hover:not(:disabled) {
+  filter: brightness(1.06);
+  box-shadow: 0 10px 24px rgba(79, 70, 229, 0.42) !important;
+}
+.payment-sheet-confirm:active:not(:disabled) {
+  transform: scale(0.98);
+}
+.payment-sheet-confirm:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  box-shadow: none !important;
+}
+
+body[data-theme="dark"] .payment-sheet .payment-page-inner.payment-sheet-card {
+  background: var(--surface, #0f172a);
+  border-color: var(--line, #1e293b);
+}
+body[data-theme="dark"] .payment-sheet .payment-sheet-fields,
+body[data-theme="dark"] .payment-sheet .payment-sheet-customer {
+  background: rgba(15, 23, 42, 0.6) !important;
+}
+
+/* شاشات ضيقة */
+@media (max-width: 480px) {
+  .payment-sheet .payment-page-inner.payment-sheet-card {
+    width: 100%;
+    max-height: 92vh;
+    border-radius: 16px;
+  }
+  .payment-sheet .payment-sheet-methods {
+    grid-template-columns: repeat(3, 1fr);
+  }
+  .payment-sheet-total-value {
+    font-size: 24px;
+  }
+}
+
+/* إلغاء تخطيط الصفحة الكاملة القديم عند تفعيل الـ sheet */
+.payment-sheet .payment-page-grid,
+.payment-sheet .payment-col {
+  display: contents;
+}
+
+/* ==========================================================================
+   Nexora UI v4 — تحسين شامل للواجهة وسهولة الاستخدام
+   ========================================================================== */
+
+:root {
+  --v4-radius: 14px;
+  --v4-radius-sm: 10px;
+  --v4-gap: 12px;
+  --v4-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --bg: #f4f5f8;
+  --surface: #ffffff;
+  --surface-soft: #f9fafb;
+  --line: #e8e9ef;
+  --line-strong: #d7d9e2;
+  --text: #111827;
+  --text-soft: #4b5563;
+  --text-faint: #9ca3af;
+  --primary: #4f46e5;
+  --primary-hover: #4338ca;
+  --primary-light: #eef2ff;
+  --primary-border: #c7d2fe;
+  --brand-indigo: #4f46e5;
+  --brand-indigo-dark: #3730a3;
+  --brand-indigo-mid: #6366f1;
+  --brand-glow: rgba(79, 70, 229, 0.22);
+  --shadow-sm: 0 1px 2px rgba(17, 24, 39, 0.04);
+  --shadow: 0 4px 14px rgba(17, 24, 39, 0.06);
+  --shadow-lg: 0 18px 40px rgba(17, 24, 39, 0.1);
+  --focus-ring: 0 0 0 3px rgba(79, 70, 229, 0.22);
+}
+
+body[data-theme="dark"] {
+  --bg: #0b1220;
+  --surface: #111827;
+  --surface-soft: #0f172a;
+  --line: #1f2937;
+  --line-strong: #374151;
+  --text: #f3f4f6;
+  --text-soft: #9ca3af;
+  --text-faint: #6b7280;
+  --primary-light: rgba(99, 102, 241, 0.16);
+  --primary-border: rgba(129, 140, 248, 0.35);
+}
+
+/* أزرار عامة أوضح */
+.btn {
+  border-radius: var(--v4-radius-sm) !important;
+  font-weight: 700 !important;
+  letter-spacing: -0.01em;
+  transition: transform 0.12s var(--v4-ease), box-shadow 0.12s, background 0.12s, border-color 0.12s !important;
+}
+.btn-primary {
+  background: linear-gradient(135deg, var(--brand-indigo-mid), var(--brand-indigo-dark)) !important;
+  border: none !important;
+  box-shadow: 0 6px 16px var(--brand-glow) !important;
+}
+.btn-primary:hover:not(:disabled) {
+  filter: brightness(1.05);
+  transform: translateY(-1px);
+}
+.btn-secondary {
+  background: var(--surface) !important;
+  border: 1px solid var(--line-strong) !important;
+  color: var(--text) !important;
+}
+
+/* حقول أوضح للمس */
+.form-field input,
+.form-field select,
+.form-field textarea {
+  border-radius: var(--v4-radius-sm) !important;
+  border-color: var(--line-strong) !important;
+  transition: border-color 0.12s, box-shadow 0.12s !important;
+}
+.form-field input:focus,
+.form-field select:focus,
+.form-field textarea:focus {
+  border-color: var(--primary) !important;
+  box-shadow: var(--focus-ring) !important;
+  outline: none !important;
+}
+
+/* شريط علوي / تنقل */
+.topbar {
+  border-bottom: 1px solid var(--line) !important;
+  background: color-mix(in srgb, var(--surface) 92%, transparent) !important;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+/* تبويبات الأقسام */
+.category-tabs {
+  gap: 8px !important;
+  padding-bottom: 12px !important;
+}
+.category-tab {
+  border-radius: 999px !important;
+  padding: 9px 16px !important;
+  font-weight: 800 !important;
+  border: 1px solid var(--line) !important;
+  background: var(--surface) !important;
+  box-shadow: var(--shadow-sm);
+  transition: background 0.12s, color 0.12s, border-color 0.12s, transform 0.12s !important;
+}
+.category-tab:hover {
+  border-color: var(--primary-border) !important;
+  transform: translateY(-1px);
+}
+.category-tab.active {
+  background: var(--primary) !important;
+  color: #fff !important;
+  border-color: var(--primary) !important;
+  box-shadow: 0 6px 14px var(--brand-glow) !important;
+}
+
+/* بطاقات المنتجات */
+.product-card {
+  border-radius: var(--v4-radius) !important;
+  border: 1px solid var(--line) !important;
+  padding: 12px !important;
+  min-height: 96px !important;
+  box-shadow: var(--shadow-sm) !important;
+  transition: transform 0.14s var(--v4-ease), box-shadow 0.14s, border-color 0.14s !important;
+}
+.product-card:hover {
+  transform: translateY(-3px) !important;
+  border-color: var(--primary-border) !important;
+  box-shadow: var(--shadow) !important;
+}
+.product-card .name {
+  font-size: 15px !important;
+  font-weight: 800 !important;
+  line-height: 1.3 !important;
+}
+.price-badge {
+  background: var(--primary-light) !important;
+  color: var(--primary) !important;
+  border-radius: 999px !important;
+  font-weight: 800 !important;
+  padding: 4px 10px !important;
+}
+
+/* سلة المبيعات */
+.cart-panel {
+  border-inline-start: 1px solid var(--line) !important;
+  background: var(--surface) !important;
+}
+.cart-item {
+  border-radius: var(--v4-radius-sm) !important;
+  border: 1px solid var(--line) !important;
+  background: var(--surface-soft) !important;
+  transition: border-color 0.12s, background 0.12s !important;
+}
+.cart-item:hover {
+  border-color: var(--primary-border) !important;
+  background: var(--surface) !important;
+}
+.cart-count {
+  box-shadow: 0 4px 12px var(--brand-glow) !important;
+}
+.cart-summary {
+  border-top: 1px solid var(--line) !important;
+  padding-top: 10px !important;
+}
+.cart-summary .row.total {
+  font-size: 17px !important;
+  font-weight: 900 !important;
+  margin-top: 6px !important;
+  padding-top: 8px !important;
+  border-top: 1px dashed var(--line) !important;
+}
+
+/* زر إتمام البيع */
+.checkout-sticky-footer {
+  padding-top: 10px !important;
+}
+.checkout-btn {
+  height: 50px !important;
+  border-radius: 12px !important;
+  font-size: 15.5px !important;
+  font-weight: 900 !important;
+  letter-spacing: -0.01em !important;
+  background: linear-gradient(135deg, var(--brand-indigo-mid), var(--brand-indigo-dark)) !important;
+  box-shadow: 0 10px 24px var(--brand-glow) !important;
+}
+.checkout-btn:hover:not(:disabled) {
+  filter: brightness(1.05);
+  transform: translateY(-1px);
+}
+.checkout-hint {
+  text-align: center;
+  font-size: 11px;
+  color: var(--text-faint);
+  margin-top: 6px;
+}
+
+/* نوافذ منبثقة عامة */
+.modal-overlay {
+  background: rgba(15, 23, 42, 0.48) !important;
+  backdrop-filter: blur(6px) !important;
+  -webkit-backdrop-filter: blur(6px) !important;
+}
+.modal {
+  border-radius: 18px !important;
+  border: 1px solid var(--line) !important;
+  box-shadow: var(--shadow-lg) !important;
+  padding: 20px 22px !important;
+}
+.modal h2 {
+  font-size: 18px !important;
+  font-weight: 900 !important;
+  letter-spacing: -0.02em !important;
+}
+
+/* صفحات الإدارة — جداول وأزرار أوضح */
+.page-shell,
+.page-content,
+.content-wrap {
+  gap: var(--v4-gap);
+}
+table.data-table,
+.pro-table,
+table {
+  border-collapse: separate;
+  border-spacing: 0;
+}
+table th {
+  font-size: 12px !important;
+  font-weight: 800 !important;
+  color: var(--text-soft) !important;
+  letter-spacing: 0.02em;
+}
+table td {
+  font-size: 13.5px !important;
+}
+table tr:hover td {
+  background: color-mix(in srgb, var(--primary) 4%, var(--surface));
+}
+
+/* شريط جانبي للصفحات */
+.sidebar a,
+.nav-link,
+.side-nav a {
+  border-radius: 10px !important;
+  font-weight: 700 !important;
+  transition: background 0.12s, color 0.12s !important;
+}
+.sidebar a:hover,
+.nav-link:hover,
+.side-nav a:hover {
+  background: var(--primary-light) !important;
+  color: var(--primary) !important;
+}
+.sidebar a.active,
+.nav-link.active,
+.side-nav a.active {
+  background: var(--primary) !important;
+  color: #fff !important;
+}
+
+
+/* ---- Settings internal tabs (v0.52.33) ---- */
+.settings-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 4px;
+  margin: 0 0 18px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+}
+.settings-tab {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--text-soft);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 10px 14px;
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: background .15s var(--ease-out), color .15s var(--ease-out);
+  min-height: 40px;
+}
+.settings-tab:hover {
+  background: var(--surface-soft);
+  color: var(--text);
+}
+.settings-tab.active,
+.settings-tab[aria-selected="true"] {
+  background: var(--primary-light);
+  color: var(--primary);
+  box-shadow: inset 0 0 0 1px var(--primary-border);
+}
+.settings-tab:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+.settings-panel[data-settings-tab] {
+  display: none;
+}
+.settings-panel[data-settings-tab].is-active-tab {
+  display: block;
+}
+body[data-theme="dark"] .settings-tabs {
+  background: var(--surface);
+  border-color: var(--line);
+}
+body[data-theme="dark"] .settings-tab.active,
+body[data-theme="dark"] .settings-tab[aria-selected="true"] {
+  background: var(--primary-light);
+  color: var(--brand-indigo-mid);
+}
+@media (max-width: 720px) {
+  .settings-tabs { gap: 4px; }
+  .settings-tab { padding: 8px 10px; font-size: 12px; }
+}
+
+/* Invoice fiscal panel (reports modal) */
+.invoice-fiscal-panel {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+.invoice-fiscal-panel h3 {
+  color: var(--text);
+  font-weight: 700;
+}
+
+/* Returns — inline return panel under selected sale */
+.returns-inline-panel {
+  margin-top: 14px;
+  border: 1px solid var(--primary-border);
+  box-shadow: var(--shadow);
+  background: var(--surface);
+  animation: returnsPanelIn .22s var(--ease-out);
+}
+@keyframes returnsPanelIn {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .returns-inline-panel { animation: none; }
+}
+.returns-inline-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.returns-inline-header h2 {
+  margin: 0;
+  font-size: 16px;
+}
+.returns-sale-row.is-selected {
+  outline: 2px solid var(--primary);
+  outline-offset: 1px;
+  background: var(--primary-light);
+  border-radius: var(--radius);
+}
+.returns-sale-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.returns-sale-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  transition: background .15s var(--ease-out), border-color .15s var(--ease-out);
+}
+.returns-sale-row:hover {
+  border-color: var(--line-strong);
+  background: var(--surface-soft);
+}
+.returns-sale-row > div:last-child {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.returns-sale-row .btn { min-height: 36px; }
+
+.returns-inline-panel .form-field.full:has(#confirmReturnBtn) {
+  position: sticky;
+  bottom: 8px;
+  background: var(--surface);
+  padding: 10px 0 4px;
+  z-index: 2;
+  border-top: 1px solid var(--line);
+  margin-top: 8px;
+}

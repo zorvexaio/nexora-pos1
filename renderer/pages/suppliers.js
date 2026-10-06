@@ -56,10 +56,29 @@ function renderSupplierKpis(purchases) {
   $('kpiDraftPurchases').textContent = draftCount.toLocaleString('en-US');
 }
 function renderSuppliers() {
-  $('suppliersBody').innerHTML = suppliers.map((s) => `<tr><td>${esc(s.name)}</td><td>${esc(s.phone || '—')}</td><td>${Number(s.balance).toFixed(2)}</td><td>
+  if (!suppliers.length) {
+    $('suppliersBody').innerHTML = '';
+    const host = document.getElementById('suppliersEmptyState');
+    if (host) {
+      host.style.display = 'block';
+      if (typeof renderPageEmptyState === 'function') {
+        renderPageEmptyState(host, {
+          icon: '⬡',
+          title: (typeof ts === 'function' ? ts('لا يوجد موردون بعد') : 'لا يوجد موردون بعد'),
+          message: (typeof ts === 'function' ? ts('أضف مورداً لبدء أوامر الشراء والحسابات.') : 'أضف مورداً لبدء أوامر الشراء والحسابات.'),
+          actionText: (typeof ts === 'function' ? ts('إضافة مورد') : 'إضافة مورد'),
+          onAction: () => { const b = document.getElementById('addSupplierBtn'); if (b) b.click(); }
+        });
+      }
+    }
+  } else {
+    const host = document.getElementById('suppliersEmptyState');
+    if (host) { host.style.display = 'none'; host.innerHTML = ''; }
+    $('suppliersBody').innerHTML = suppliers.map((s) => `<tr><td>${esc(s.name)}</td><td>${esc(s.phone || '—')}</td><td>${Number(s.balance).toFixed(2)}</td><td>
     <button class="btn btn-secondary btn-sm" data-action="edit" data-id="${s.id}">تعديل</button>
     ${Number(s.balance) > 0 ? `<button class="btn btn-primary btn-sm" data-action="pay" data-id="${s.id}">دفع</button>` : ''}
   </td></tr>`).join('');
+  }
   $('suppliersBody').querySelectorAll('[data-action="edit"]').forEach((b) => b.addEventListener('click', () => openSupplier(suppliers.find((s) => s.id === Number(b.dataset.id)))));
   $('suppliersBody').querySelectorAll('[data-action="pay"]').forEach((b) => b.addEventListener('click', () => openSupplierPayment(suppliers.find((s) => s.id === Number(b.dataset.id)))));
 }
@@ -94,7 +113,26 @@ async function saveSupplierPayment(e) {
 }
 // فواتير الفروع الأخرى تصل عبر المزامنة وتظهر هون للاطّلاع فقط (اسم الفرع يوضّح ذلك) — زر
 // "استلام" يظهر فقط لفاتورة فرعك الحالي، لأن الاستلام يُحرّك مخزون هذا الجهاز تحديداً.
-function renderPurchases(items) { $('purchasesBody').innerHTML = items.map((p) => { const isOwnBranch = !currentBranch || p.branch_id === currentBranch.id; const branchTag = !isOwnBranch ? ` <span class="role-badge">${esc(p.branch_name || '')}</span>` : ''; const statusBadge = p.status === 'received' ? `<span class="status-badge tone-success">${ts(p.invoice_type === 'expense' ? 'مسجّلة' : 'مستلمة')}</span>` : `<span class="status-badge tone-warning">${ts('مسودة')}</span>`; const paid = Number(p.paid_amount || 0); const due = Math.max(0, Number(p.total || 0) - paid); const isExpense = p.invoice_type === 'expense'; const typeCell = isExpense ? `<span class="status-badge tone-info">${ts('مصروف')}</span> ${esc(ts(p.expense_category_name || ''))}` : `<span class="status-badge">${ts('بضاعة')}</span>`; return `<tr><td>${esc(p.supplier_name)}${branchTag}</td><td title="${esc([p.invoice_date, p.reference_number].filter(Boolean).join(' · '))}">${typeCell}</td><td>${Number(p.total).toFixed(2)}</td><td>${paid.toFixed(2)} / ${due.toFixed(2)}</td><td>${statusBadge}</td><td>${p.status === 'draft' && isOwnBranch ? `<button class="btn btn-primary btn-sm" data-id="${p.id}">${ts('استلام')}</button>` : ''}</td></tr>`; }).join(''); $('purchasesBody').querySelectorAll('button').forEach((b) => b.addEventListener('click', async () => { if (await confirmDialog(ts('سيُضاف المخزون وتُحدّث التكلفة والحسابات. متابعة؟'), { tone: 'warning' })) { try { await window.api.purchases.receive(Number(b.dataset.id)); await refresh(); } catch (error) { showToast(ts('تعذّر الاستلام: ') + error.message, 'error'); } } })); }
+function renderPurchases(items) {
+  const emptyHost = document.getElementById('purchasesEmptyState');
+  if (!items || !items.length) {
+    $('purchasesBody').innerHTML = '';
+    if (emptyHost) {
+      emptyHost.style.display = 'block';
+      if (typeof renderPageEmptyState === 'function') {
+        renderPageEmptyState(emptyHost, {
+          icon: '▤',
+          title: (typeof ts === 'function' ? ts('لا توجد فواتير شراء') : 'لا توجد فواتير شراء'),
+          message: (typeof ts === 'function' ? ts('أنشئ أمر شراء أو سجّل مصروفاً للمورد.') : 'أنشئ أمر شراء أو سجّل مصروفاً للمورد.'),
+          actionText: (typeof ts === 'function' ? ts('شراء جديد') : 'شراء جديد'),
+          onAction: () => { const b = document.getElementById('addPurchaseBtn') || document.querySelector('[data-action="new-purchase"]'); if (b) b.click(); else if (typeof openPurchase === 'function') openPurchase(); }
+        });
+      }
+    }
+    return;
+  }
+  if (emptyHost) { emptyHost.style.display = 'none'; emptyHost.innerHTML = ''; }
+  $('purchasesBody').innerHTML = items.map((p) => { const isOwnBranch = !currentBranch || p.branch_id === currentBranch.id; const branchTag = !isOwnBranch ? ` <span class="role-badge">${esc(p.branch_name || '')}</span>` : ''; const statusBadge = p.status === 'received' ? `<span class="status-badge tone-success">${ts(p.invoice_type === 'expense' ? 'مسجّلة' : 'مستلمة')}</span>` : `<span class="status-badge tone-warning">${ts('مسودة')}</span>`; const paid = Number(p.paid_amount || 0); const due = Math.max(0, Number(p.total || 0) - paid); const isExpense = p.invoice_type === 'expense'; const typeCell = isExpense ? `<span class="status-badge tone-info">${ts('مصروف')}</span> ${esc(ts(p.expense_category_name || ''))}` : `<span class="status-badge">${ts('بضاعة')}</span>`; return `<tr><td>${esc(p.supplier_name)}${branchTag}</td><td title="${esc([p.invoice_date, p.reference_number].filter(Boolean).join(' · '))}">${typeCell}</td><td>${Number(p.total).toFixed(2)}</td><td>${paid.toFixed(2)} / ${due.toFixed(2)}</td><td>${statusBadge}</td><td>${p.status === 'draft' && isOwnBranch ? `<button class="btn btn-primary btn-sm" data-id="${p.id}">${ts('استلام')}</button>` : ''}</td></tr>`; }).join(''); $('purchasesBody').querySelectorAll('button').forEach((b) => b.addEventListener('click', async () => { if (await confirmDialog(ts('سيُضاف المخزون وتُحدّث التكلفة والحسابات. متابعة؟'), { tone: 'warning' })) { try { await window.api.purchases.receive(Number(b.dataset.id)); await refresh(); } catch (error) { showToast(ts('تعذّر الاستلام: ') + error.message, 'error'); } } })); }
 function openSupplier(s = null) { editingSupplier = s; $('supplierForm').reset(); $('supplierModalTitle').textContent = s ? t('suppliers.editSupplier') : t('suppliers.newSupplier'); if (s) { $('supplierName').value=s.name; $('supplierPhone').value=s.phone||''; $('supplierAddress').value=s.address||''; $('supplierNotes').value=s.notes||''; } $('supplierModal').classList.remove('hidden'); }
 async function saveSupplier(e) { e.preventDefault(); const data={name:$('supplierName').value.trim(),phone:$('supplierPhone').value.trim(),address:$('supplierAddress').value.trim(),notes:$('supplierNotes').value.trim()}; if(editingSupplier) await window.api.suppliers.update({...data,id:editingSupplier.id}); else await window.api.suppliers.create(data); $('supplierModal').classList.add('hidden'); await refresh(); }
 function openPurchase() { purchaseItems=[]; $('purchaseForm').reset(); $('quickAddProductRow').classList.add('hidden'); $('purchaseSupplier').innerHTML=suppliers.map((s)=>`<option value="${s.id}">${esc(s.name)}</option>`).join(''); $('purchaseProduct').innerHTML=products.map((p)=>`<option value="${p.id}">${esc(p.name)}</option>`).join(''); $('purchasePaymentMethod').value='credit'; $('purchasePaid').value='0'; updatePurchasePaymentFields(); renderPurchaseItems(); $('purchaseModal').classList.remove('hidden'); }

@@ -4,7 +4,7 @@ const path = require('path');
 const root = path.resolve(__dirname, '..');
 const read = (p) => fs.readFileSync(path.join(root, p), 'utf8');
 const main = read('main.js');
-const db = read('database/db.js');
+const db = require('./lib/db-source').read();
 const syncServer = read('server/sync-server.js');
 const syncClient = read('database/sync-client.js');
 const payroll = read('renderer/pages/payroll.js');

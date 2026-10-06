@@ -54,7 +54,21 @@ async function loadBundles() {
 
 function renderTable() {
   tableBody.innerHTML = '';
-  emptyState.style.display = bundles.length === 0 ? 'block' : 'none';
+  if (bundles.length === 0) {
+    emptyState.style.display = 'block';
+    if (typeof renderPageEmptyState === 'function') {
+      renderPageEmptyState(emptyState, {
+        icon: '◈',
+        title: (typeof ts === 'function' ? ts('لا توجد عروض بعد') : 'لا توجد عروض بعد'),
+        message: (typeof ts === 'function' ? ts('أنشئ حزمة أو عرضاً لزيادة متوسط الفاتورة.') : 'أنشئ حزمة أو عرضاً لزيادة متوسط الفاتورة.'),
+        actionText: (typeof ts === 'function' ? ts('إضافة عرض') : 'إضافة عرض'),
+        onAction: () => { const b = document.getElementById('addBundleBtn'); if (b) b.click(); }
+      });
+    }
+  } else {
+    emptyState.style.display = 'none';
+    emptyState.innerHTML = '';
+  }
 
   for (const b of bundles) {
     const tr = document.createElement('tr');
@@ -155,7 +169,19 @@ function addItemToBundle() {
 
 function renderItemsTable() {
   bundleItemsBody.innerHTML = '';
-  bundleItemsEmpty.style.display = currentItems.length === 0 ? 'block' : 'none';
+  if (currentItems.length === 0) {
+    bundleItemsEmpty.style.display = 'block';
+    if (typeof renderPageEmptyState === 'function') {
+      renderPageEmptyState(bundleItemsEmpty, {
+        icon: '＋',
+        title: (typeof ts === 'function' ? ts('لم تُضف منتجات للعرض') : 'لم تُضف منتجات للعرض'),
+        message: (typeof ts === 'function' ? ts('اختر منتجاً والكمية ثم أضفه للعرض.') : 'اختر منتجاً والكمية ثم أضفه للعرض.'),
+      });
+    }
+  } else {
+    bundleItemsEmpty.style.display = 'none';
+    bundleItemsEmpty.innerHTML = '';
+  }
   for (const item of currentItems) {
     const tr = document.createElement('tr');
     tr.innerHTML = `

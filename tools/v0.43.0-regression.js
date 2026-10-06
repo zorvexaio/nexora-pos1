@@ -18,7 +18,7 @@ const reports = read('renderer/pages/reports.js');
 const reportsHtml = read('renderer/pages/reports.html');
 const tables = read('renderer/pages/tables.js');
 const settings = read('renderer/pages/settings.js');
-const style = read('renderer/style.css');
+const style = require('./lib/renderer-css').read();
 
 ok('product release remains compatible with 0.43 baseline', (() => { const parts = String(pkg.version).split('.').map(Number); return parts[0] === 0 && parts[1] >= 43 && lock.version === pkg.version && lock.packages?.['']?.version === pkg.version; })());
 ok('POS has resilient product loading/error state', /setPageLoading\(productsGrid/.test(pos) && /تعذر تحميل المنتجات/.test(pos));
