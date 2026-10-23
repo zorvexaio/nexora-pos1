@@ -366,6 +366,11 @@ function updateQuantityBufferStatus(result = parseQuickQuantity(qtyBufferInput?.
   return result;
 }
 
+// عند تغيير اللغة تُعاد صياغة حالة الكمية بالنص الجديد (كانت تبقى بالنص العربي الذي بُني عند التهيئة)
+document.addEventListener('nexora:langchange', () => {
+  if (qtyBufferStatus && qtyBufferInput) { try { updateQuantityBufferStatus(); } catch (_) { /* تجاهل */ } }
+});
+
 function resetQuantityBuffer() {
   if (!qtyBufferInput) return;
   qtyBufferInput.value = '1';
@@ -404,22 +409,22 @@ function categoryChipGradient(seed) {
 // للكاشير (يلقط الصنف من شكله قبل ما يقرأ الاسم كامل)، مش بديل عن صورة حقيقية —
 // لو رُفعت صورة فعلية للمنتج/القسم لاحقاً هي الأولى دائماً (انظر renderProducts).
 const ITEM_ICON_KEYWORDS = [
-  ['🍗', ['فروج', 'دجاج', 'بروستد', 'تكة', 'طاووق']],
-  ['🌯', ['شاورما', 'شاوما', 'لفة', 'لفه']],
-  ['🍢', ['مشاوي', 'كباب', 'كفتة', 'كفته', 'شيش', 'لحم', 'لحمة', 'لحمه']],
-  ['🥤', ['كولا', 'بيبسي', 'عصير', 'مشروب', 'مياه', 'ماء', 'فانتا', 'سفن']],
-  ['🍕', ['بيتزا']],
-  ['🍔', ['برجر', 'همبرغر', 'همبرجر']],
-  ['🍟', ['بطاطا', 'بطاطس', 'فرايز']],
-  ['🥗', ['سلطة', 'سلطه']],
-  ['🍰', ['كيك', 'حلا', 'حلويات', 'حلويات', 'بقلاوة', 'كنافة']],
-  ['☕', ['قهوة', 'نسكافيه', 'اسبريسو', 'إسبريسو']],
-  ['🍵', ['شاي']],
-  ['🍞', ['خبز', 'صامولي', 'صامولى']],
-  ['🐟', ['سمك']],
-  ['🍳', ['بيض', 'فطور', 'فطار']],
-  ['🍚', ['رز', 'أرز', 'ارز']],
-  ['🍦', ['ايس كريم', 'آيس كريم', 'بوظة', 'بوظه']],
+  ['🍗', ['فروج', 'دجاج', 'بروستد', 'تكة', 'طاووق', 'tavuk', 'piliç', 'pilic', 'tavuk şiş', 'but', 'kanat']],
+  ['🌯', ['شاورما', 'شاوما', 'لفة', 'لفه', 'döner', 'dürüm', 'lavaş', 'wrap']],
+  ['🍢', ['مشاوي', 'كباب', 'كفتة', 'كفته', 'شيش', 'لحم', 'لحمة', 'لحمه', 'ızgara', 'kebap', 'köfte', 'şiş', 'et', 'kuzu', 'dana']],
+  ['🥤', ['كولا', 'بيبسي', 'عصير', 'مشروب', 'مياه', 'ماء', 'فانتا', 'سفن', 'kola', 'pepsi', 'meyve suyu', 'içecek', 'su', 'fanta', 'sprite', 'ayran', 'gazoz']],
+  ['🍕', ['بيتزا', 'pizza']],
+  ['🍔', ['برجر', 'همبرغر', 'همبرجر', 'burger', 'hamburger']],
+  ['🍟', ['بطاطا', 'بطاطس', 'فرايز', 'patates', 'patatez', 'kızarmış']],
+  ['🥗', ['سلطة', 'سلطه', 'salata']],
+  ['🍰', ['كيك', 'حلا', 'حلويات', 'حلويات', 'بقلاوة', 'كنافة', 'pasta', 'kek', 'tatlı', 'baklava', 'künefe', 'sütlaç']],
+  ['☕', ['قهوة', 'نسكافيه', 'اسبريسو', 'إسبريسو', 'kahve', 'nescafe', 'espresso', 'latte', 'americano']],
+  ['🍵', ['شاي', 'çay']],
+  ['🍞', ['خبز', 'صامولي', 'صامولى', 'ekmek', 'simit']],
+  ['🐟', ['سمك', 'balık']],
+  ['🍳', ['بيض', 'فطور', 'فطار', 'yumurta', 'kahvaltı', 'omlet', 'menemen']],
+  ['🍚', ['رز', 'أرز', 'ارز', 'pilav', 'pirinç']],
+  ['🍦', ['ايس كريم', 'آيس كريم', 'بوظة', 'بوظه', 'dondurma']],
 ];
 function guessItemIcon(name) {
   const n = String(name || '');
@@ -1133,6 +1138,104 @@ function applyCartDensity() {
   else if (effectiveLines > 4) cartItemsEl.classList.add('density-1');
 }
 
+// ---------- شاشة الزبون ----------
+// الحالة المرسلة للشاشة الثانية تُبنى من السلة نفسها ومن computeSaleTotals (نفس أرقام الكاشير حرفياً).
+// لا تُضمَّن أبداً التكاليف أو الأرباح أو ديون العملاء أو النقاط — الأمان مضمون أيضاً في lib/customer-display-state.js.
+let customerDisplayPushTimer = null;
+let customerThanksUntil = 0;
+let customerThanksTotal = null;
+let customerStoreName = '';
+
+function customerDisplayLang() {
+  const lang = document.documentElement.lang;
+  return lang === 'tr' || lang === 'en' ? lang : 'ar';
+}
+
+function buildCustomerDisplayState() {
+  const base = { lang: customerDisplayLang(), storeName: customerStoreName, currency: currencyConfig.base || '' };
+  if (!cart.length && Date.now() < customerThanksUntil) {
+    return { ...base, state: 'thanks', total: customerThanksTotal == null ? '' : fmt(customerThanksTotal) };
+  }
+  if (!cart.length) return { ...base, state: 'idle' };
+
+  const totals = computeSaleTotals();
+  const rows = [{ label: t('common.subtotal'), value: fmt(totals.subtotal) }];
+  if (totals.taxTotal > 0) rows.push({ label: t('common.tax'), value: fmt(totals.taxTotal) });
+  if (totals.discountTotal > 0) rows.push({ label: t('common.discountLabel'), value: `-${fmt(totals.discountTotal)}` });
+  if (totals.bundleDiscountTotal > 0) rows.push({ label: t('common.discountLabel'), value: `-${fmt(totals.bundleDiscountTotal)}` });
+  if (totals.deliveryFee > 0) rows.push({ label: t('pos.deliveryFee'), value: fmt(totals.deliveryFee) });
+
+  const hasSecondary = currencyConfig.secondary && currencyConfig.secondary !== currencyConfig.base;
+  return {
+    ...base,
+    state: 'cart',
+    items: cart.map((item) => ({
+      name: item.name,
+      qty: item.isWeighted ? `${Number(item.quantity).toFixed(3)} ${t('pos.kgUnit')}` : String(item.quantity),
+      unit: fmt(item.price),
+      line: fmt(item.price * item.quantity),
+    })),
+    totals: rows,
+    total: fmt(totals.grandTotal),
+    secondaryTotal: hasSecondary ? `${fmt(totals.grandTotal * currencyConfig.rate)} ${currencyConfig.secondary}` : '',
+  };
+}
+
+// تجميع التحديثات: تغييرات متتالية داخل 60 ms ترسل حالة واحدة بآخر قيم
+function pushCustomerDisplay() {
+  if (customerDisplayPushTimer) return;
+  customerDisplayPushTimer = setTimeout(() => {
+    customerDisplayPushTimer = null;
+    try { window.api?.customerDisplay?.update(buildCustomerDisplayState())?.catch?.(() => { /* الشاشة الثانية اختيارية */ }); } catch (_) { /* الشاشة الثانية اختيارية */ }
+  }, 60);
+}
+
+function showCustomerThanks(paidTotal) {
+  customerThanksTotal = paidTotal;
+  customerThanksUntil = Date.now() + 6000;
+  setTimeout(pushCustomerDisplay, 6100);
+}
+
+async function updateCustomerDisplayButton() {
+  const btn = document.getElementById('customerDisplayBtn');
+  if (!btn) return;
+  try {
+    const status = await window.api.customerDisplay.status();
+    btn.textContent = t(status.open ? 'customerDisplay.close' : 'customerDisplay.open');
+    btn.dataset.open = status.open ? '1' : '0';
+  } catch (_) { /* تجاهل */ }
+}
+
+async function toggleCustomerDisplay() {
+  const btn = document.getElementById('customerDisplayBtn');
+  if (btn) btn.disabled = true;
+  try {
+    const status = await window.api.customerDisplay.status();
+    if (status.open) {
+      await window.api.customerDisplay.close();
+      showToast(t('customerDisplay.closed'), 'info');
+    } else {
+      if (!customerStoreName) {
+        const branding = await window.api.branding.get().catch(() => null);
+        customerStoreName = branding?.storeName || '';
+      }
+      const opened = await window.api.customerDisplay.open();
+      pushCustomerDisplay();
+      showToast(t(opened.onSecondary ? 'customerDisplay.opened' : 'customerDisplay.openedWindowed'), opened.onSecondary ? 'success' : 'info');
+    }
+  } catch (err) {
+    showToast(err.message || t('customerDisplay.failed'), 'error');
+  } finally {
+    if (btn) btn.disabled = false;
+    updateCustomerDisplayButton();
+  }
+}
+
+document.getElementById('customerDisplayBtn')?.addEventListener('click', toggleCustomerDisplay);
+// تغيّر اللغة يغيّر لغة الشاشة الثانية أيضاً
+document.addEventListener('nexora:langchange', () => { pushCustomerDisplay(); updateCustomerDisplayButton(); });
+updateCustomerDisplayButton();
+
 function renderCart() {
   cartItemsEl.replaceChildren();
   const cartItemCount = document.getElementById('cartItemCount');
@@ -1205,6 +1308,7 @@ function renderCart() {
 
   saveDraftCart();
   refreshOpenPayment();
+  pushCustomerDisplay();
 }
 
 cartItemsEl.addEventListener('click', (event) => {
@@ -1444,8 +1548,7 @@ function refreshOpenPayment() {
 function requireCustomerName() {
   const name = customerNameInput ? customerNameInput.value.trim() : '';
   if (name) return true;
-  // الرسالة داخل نافذة الدفع نفسها (لا تعتمد على التوست في زاوية الشاشة) + توست احتياطي
-  showPaymentError(t('pos.customerNameRequired'));
+  if (!paymentModal.classList.contains('hidden')) showPaymentError(t('pos.customerNameRequired'));
   showToast(t('pos.customerNameRequired'), 'error');
   if (customerNameInput) {
     customerNameInput.scrollIntoView({ block: 'center', behavior: 'smooth' });
@@ -1476,7 +1579,7 @@ async function requireOpenShiftOrWarn() {
 async function checkout() {
   if (cart.length === 0) return;
   if (!(await requireOpenShiftOrWarn())) return;
-  // لا نتحقق من الاسم هنا: الحقل موجود داخل نافذة الدفع
+  // اسم الزبون والتوصيل والوقت صارت داخل نافذة الدفع: الاسم يُفحص عند تأكيد الدفع (confirmPayment)
   currentSaleTotals = computeSaleTotals();
   const { subtotal, discountTotal } = currentSaleTotals;
 
@@ -1594,14 +1697,10 @@ function openPaymentModal() {
   mixedCashInput.value = '';
   mixedCardInput.value = '';
   paymentError.classList.add('hidden');
-  // لا نمسح اسم الزبون هنا — يُستعاد من المسودة إن وُجد؛ الربط بسجل العميل يُعاد عند الاختيار
-  selectedCustomerId = null;
-  selectedCustomerBox.classList.add('hidden');
+  // اسم الزبون والتوصيل والوقت داخل هذه النافذة: لا نعيد ضبطها هنا حتى لا تضيع بيانات المسودة
   if (customerResults) customerResults.classList.add('hidden');
-  resetLoyaltyState();
   updatePaymentView();
   paymentModal.classList.remove('hidden');
-  // ركّز على اسم الزبون إن كان فارغاً (إلزامي)، وإلا على المبلغ المستلم
   if (customerNameInput && !customerNameInput.value.trim()) {
     customerNameInput.focus();
   } else {
@@ -1727,7 +1826,7 @@ async function confirmPayment() {
     changeDue = cashAmount - total;
     // cashAmount هو ما استلمه الكاشير فعلياً. لا نستبدله بصافي الفاتورة، لأن
     // الخلفية تحفظ الاستلام والباقي كقيمتين منفصلتين وتتحقق من تطابقهما.
-  } else if (method === 'card') {
+  } else if (method === 'card' || method === 'transfer') {
     cardAmount = total;
   } else if (method === 'mixed') {
     cashAmount = parseLocaleNumber(mixedCashInput.value) || 0;
@@ -1767,7 +1866,10 @@ async function confirmPayment() {
     customerName: customerNameInput ? customerNameInput.value.trim() || null : null,
     notes: orderNoteInput.value.trim() || null,
     grandTotal: total,
-    paymentMethod: method,
+    // التحويل البنكي خيار مستقل في الواجهة، ويُحفظ محاسبياً كحساب «البنك» (نفس مسار البطاقة)
+    // مع وسم المزوّد bank_transfer ليظهر منفصلاً في الفاتورة والتقارير دون المساس بمنطق المال.
+    paymentMethod: method === 'transfer' ? 'card' : method,
+    paymentProvider: method === 'transfer' ? 'bank_transfer' : null,
     cashAmount,
     cardAmount,
     changeDue,
@@ -1794,6 +1896,7 @@ async function confirmPayment() {
       if (fo.error) showToast(`⚠️ الفوترة التلقائية: ${fo.error}`, 'error');
       else if (fo.status) showToast(`${ts('فوترة تلقائية')}: ${fo.status}${fo.provider ? ` · ${fo.provider}` : ''}`, fo.status === 'submitted' ? 'success' : 'info');
     }
+    showCustomerThanks(computeSaleTotals().grandTotal);
     cart = [];
     clearDraftCart();
     renderCart();
@@ -1836,6 +1939,21 @@ function resetOrderExtras() {
 function showPaymentError(msg) {
   paymentError.textContent = msg;
   paymentError.classList.remove('hidden');
+}
+
+// نتيجة الطباعة/الفوترة التلقائية تصل بعد حفظ البيع (تعمل في الخلفية كي لا تُجمّد شاشة الدفع)
+if (window.api && window.api.sales && typeof window.api.sales.onPostOutcome === 'function') {
+  window.api.sales.onPostOutcome((r) => {
+    const po = r && r.printOutcome;
+    const inv = r && r.invoiceNumber ? ` #${r.invoiceNumber}` : '';
+    if (po && po.kitchen && po.kitchen.success === false) showToast(`⚠️ لم تُطبع تذكرة المطبخ${inv}: ${po.kitchen.reason || 'خطأ غير معروف'}`, 'error');
+    if (po && po.receipt && po.receipt.success === false) showToast(`⚠️ لم تُطبع الفاتورة${inv}: ${po.receipt.reason || 'خطأ غير معروف'}`, 'error');
+    const fo = r && r.fiscalOutcome;
+    if (fo) {
+      if (fo.error) showToast(`⚠️ الفوترة التلقائية: ${fo.error}`, 'error');
+      else if (fo.status) showToast(`فوترة تلقائية: ${fo.status}${fo.provider ? ` · ${fo.provider}` : ''}`, fo.status === 'submitted' ? 'success' : 'info');
+    }
+  });
 }
 
 init();

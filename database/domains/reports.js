@@ -138,10 +138,11 @@ function getSalesSummary(range = {}) {
 
   const byMethod = h.db
     .prepare(
-      `SELECT payment_method, COUNT(*) AS count, COALESCE(SUM(grand_total),0) AS total
+      `SELECT CASE WHEN payment_method = 'card' AND payment_provider = 'bank_transfer' THEN 'transfer' ELSE payment_method END AS payment_method,
+              COUNT(*) AS count, COALESCE(SUM(grand_total),0) AS total
        FROM sales
        WHERE branch_id = ? AND status IN ('completed','partially_refunded') AND created_at BETWEEN ? AND ?
-       GROUP BY payment_method`
+       GROUP BY 1`
     )
     .all(branch.id, from, to);
 
@@ -427,7 +428,7 @@ function getInvoiceList(range = {}) {
   const limit = Math.min(Number(range.limit) || 200, 500);
   const search = String(range.search || '').trim();
 
-  let sql = `SELECT s.id, s.invoice_number, s.created_at, s.payment_method, s.status,
+  let sql = `SELECT s.id, s.invoice_number, s.created_at, s.payment_method, s.payment_provider, s.status,
                     s.subtotal, s.tax_total, s.discount_total, s.grand_total, s.due_amount,
                     COALESCE(c.name, s.customer_name_manual) AS customer_name
              FROM sales s LEFT JOIN customers c ON c.id = s.customer_id

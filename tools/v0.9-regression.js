@@ -1,4 +1,6 @@
 const fs=require('fs');
+// ملاحظة: فحوص الدمج/التقسيم والتسعير أُحلّت محل نسخها النصية باختبارات سلوكية:
+// tools/table-merge-split-behavior.js و tools/open-order-pricing-behavior.js
 const db=require('./lib/db-source').read();
 const main=fs.readFileSync('main.js','utf8');
 const schema=fs.readFileSync('database/schema.sql','utf8');
@@ -7,8 +9,6 @@ const checks=[
 ['open table item pricing is server-side', /const setOpenSaleItemsTx = db\.transaction\(\(saleId, items\) => \{[\s\S]*SELECT p\.id,p\.price,p\.cost,p\.tax_rate/m.test(db)],
 ['open table totals are recalculated before payment', /recalculateOpenSale\(saleId\);[\s\S]*validatePaymentAmounts\(total/m.test(db)],
 ['open table close writes payment ledger', /INSERT INTO payment_transactions\(uuid,branch_id,sale_id,shift_id,method,currency_code,amount/m.test(db)],
-['merge preserves historical cost', /item\.cost_at_sale \|\| 0\);/m.test(db)],
-['split recomputes line total', /const lineTotal = Number\(item\.unit_price\) \* Number\(item\.quantity\);/m.test(db)],
 ['inventory adjustment validates product', /SELECT id, is_active, track_inventory(?:, cost)? FROM products WHERE id=\?/m.test(db)],
 ['inventory adjustment rejects zero', /!Number\.isFinite\(changeQty\) \|\| changeQty===0/m.test(db)],
 ['schema keeps unique invoice numbers', /invoice_number TEXT UNIQUE/m.test(schema)],

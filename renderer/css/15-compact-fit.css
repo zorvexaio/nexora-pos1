@@ -113,3 +113,48 @@ body[data-theme="dark"] .report-tab.active {
 /* لون النص الثانوي: كان #9ca3af (تباين ~2.5:1 على الأبيض) → أغمق في الفاتح، وأفتح في الداكن */
 :root, body { --text-faint: #6b7280; }
 body[data-theme="dark"] { --text-faint: #9ca3af; }
+
+/* ==========================================================================
+   إصلاح التجميد: التطبيق يعمل بدون تسريع GPU (app.disableHardwareAcceleration في main.js)،
+   وكان backdrop-filter: blur() على شاشة كاملة (نافذة الدفع + النوافذ المنبثقة + الشريط العلوي)
+   يُحسب على المعالج (CPU) عند كل إعادة رسم — أي نقرة على طريقة دفع (مختلط/بطاقة/آجل)
+   أو كتابة رقم كانت تُعيد تغبيش الشاشة بالكامل فيتجمّد التطبيق.
+   الحل: إلغاء التغبيش نهائياً واستبداله بتعتيم ثابت أغمق قليلاً (نفس الشكل تقريباً، بلا كلفة).
+   ========================================================================== */
+*, *::before, *::after {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+.payment-page.payment-sheet,
+#paymentModal.payment-page.payment-sheet { background: rgba(15, 23, 42, 0.62) !important; }
+.modal-overlay { background: rgba(15, 23, 42, 0.62) !important; }
+.command-palette-backdrop { background: rgba(9, 11, 24, 0.68) !important; }
+.pro-modal { background: rgba(15, 23, 42, 0.6) !important; }
+/* الشريط العلوي: كان شبه شفاف فوق blur — نجعله صلباً */
+.topbar { background: var(--surface) !important; }
+/* نافذة الدفع: بلا حركة دخول (تُعاد عند كل فتح وتُجبر على إعادة رسم كامل) */
+.payment-sheet .payment-page-inner.payment-sheet-card { animation: none !important; }
+
+/* ==========================================================================
+   إصلاح: أزرار طريقة الدفع / «الآن» لا تستجيب في نافذة الدفع.
+   السبب: حقول الراديو الخفية داخل .method-option كانت position:absolute بلا عنصر أب مُموضَع،
+   وقاعدة عامة تجعل عرضها 100% وارتفاعها 38px، فيتمدد حقل «تحديد وقت» الشفاف على عرض الشاشة كلها
+   (opacity:0 لكنه يستقبل النقر) ويغطي صف طرق الدفع — فأي نقرة على بطاقة/تحويل/مختلط/آجل أو «الآن»
+   كانت تصيب ذلك الحقل الخفي بدل الزر. «رصيد» وحده كان يعمل لأنه في الصف الثاني خارج المنطقة المغطاة.
+   الحل: نجعل كل زر هو المرجع لموضع حقله، ونحصر الحقل الخفي داخل حدود زره فقط.
+   ========================================================================== */
+.payment-sheet .method-option { position: relative; }
+.payment-sheet .method-option > input[type="radio"],
+.payment-sheet .method-option > input[type="checkbox"] {
+  position: absolute !important;
+  inset: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  min-height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  opacity: 0 !important;
+  cursor: pointer;
+  pointer-events: auto !important;
+}
+.payment-sheet .method-option > span { position: relative; z-index: 1; pointer-events: none; }

@@ -42,7 +42,8 @@ const deliveryFeesTotal = document.getElementById('deliveryFeesTotal');
 const deliveryByPersonBody = document.getElementById('deliveryByPersonBody');
 const deliveryEmpty = document.getElementById('deliveryEmpty');
 
-const paymentMethodLabel = (method) => ({ cash: t('common.cash'), card: t('common.card'), mixed: t('common.mixed'), credit: t('common.credit') }[method] || method);
+const paymentMethodLabel = (method) => ({ cash: t('common.cash'), card: t('common.card'), transfer: t('common.transfer'), mixed: t('common.mixed'), credit: t('common.credit') }[method] || method);
+const effectiveMethod = (row) => (row && row.payment_method === 'card' && row.payment_provider === 'bank_transfer' ? 'transfer' : row && row.payment_method);
 const STATUS_LABELS = { completed: ts('مكتملة'), refunded: ts('مرتجعة'), partially_refunded: ts('مرتجعة جزئياً') };
 const STATUS_TONE = { completed: 'success', refunded: 'danger', partially_refunded: 'warning' };
 
@@ -167,7 +168,10 @@ async function openInvoiceDetail(saleId) {
         <div><span>الضريبة</span><b>${formatMoney(sale.tax_total)}</b></div>
         <div><span>الخصم</span><b>${formatMoney(sale.discount_total)}</b></div>
         <div class="strong"><span>الإجمالي</span><b>${formatMoney(sale.grand_total)}</b></div>
-        <div><span>طريقة الدفع</span><b id="invoiceCurrentMethod">${paymentMethodLabel(sale.payment_method) || escapeHtml(sale.payment_method)}</b></div>
+        <div><span>طريقة الدفع</span><b id="invoiceCurrentMethod">${paymentMethodLabel(effectiveMethod(sale)) || escapeHtml(sale.payment_method)}</b></div>
+      </div>
+      <div class="no-print" style="display:flex;justify-content:flex-end;margin-top:12px;">
+        <button type="button" class="btn btn-secondary btn-sm" id="reprintReceiptBtn">${escapeHtml(t('reports.reprintReceipt', 'طباعة الفاتورة'))}</button>
       </div>
       <div class="invoice-fiscal-panel no-print" id="invoiceFiscalPanel">
         <div class="panel-heading" style="margin-top:14px;margin-bottom:8px;">
@@ -210,6 +214,21 @@ async function openInvoiceDetail(saleId) {
       </div>` : ''}
     `;
     wireInvoiceFiscalPanel(sale);
+    const reprintBtn = document.getElementById('reprintReceiptBtn');
+    if (reprintBtn) {
+      reprintBtn.addEventListener('click', async () => {
+        reprintBtn.disabled = true;
+        try {
+          const result = await window.api.receipt.open(sale.id);
+          if (result && result.success === false) throw new Error(result.reason || '');
+          showToast(t('reports.reprintSent', 'تم إرسال الفاتورة للطباعة'), 'success');
+        } catch (error) {
+          showToast(t('reports.reprintFailed', 'تعذرت الطباعة: ') + (error.message || ''), 'error');
+        } finally {
+          reprintBtn.disabled = false;
+        }
+      });
+    }
     if (canCorrect) wirePaymentCorrectionForm(sale);
   } catch (error) {
     invoiceModalBody.innerHTML = `<div class="empty-state">تعذر تحميل تفاصيل الفاتورة: ${escapeHtml(error.message || String(error))}</div>`;
@@ -583,7 +602,7 @@ function renderInvoices(items) {
       <td>${escapeHtml(inv.invoice_number || inv.id)}</td>
       <td>${formatDateTime(inv.created_at)}</td>
       <td>${escapeHtml(inv.customer_name || '—')}</td>
-      <td>${paymentMethodLabel(inv.payment_method) || escapeHtml(inv.payment_method)}</td>
+      <td>${paymentMethodLabel(effectiveMethod(inv)) || escapeHtml(inv.payment_method)}</td>
       <td>${formatMoney(inv.grand_total)}</td>
       <td><span class="status-badge tone-${STATUS_TONE[inv.status] || 'slate'}">${STATUS_LABELS[inv.status] || escapeHtml(inv.status)}</span></td>
     `;

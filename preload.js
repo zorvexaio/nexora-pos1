@@ -104,6 +104,11 @@ contextBridge.exposeInMainWorld('api', {
   },
   sales: {
     create: (sale) => ipcRenderer.invoke('sale:create', sale),
+    onPostOutcome: (callback) => {
+      const handler = (_event, payload) => callback(payload);
+      ipcRenderer.on('sale:postOutcome', handler);
+      return () => ipcRenderer.removeListener('sale:postOutcome', handler);
+    },
     quote: (payload) => ipcRenderer.invoke('sale:quote', payload),
     list: (filters) => ipcRenderer.invoke('sales:list', filters),
     get: (id) => ipcRenderer.invoke('sales:get', id),
@@ -263,6 +268,18 @@ contextBridge.exposeInMainWorld('api', {
     deviceFingerprint: () => ipcRenderer.invoke('license:deviceFingerprint'),
     status: () => ipcRenderer.invoke('license:status'),
     activate: (fileContent) => ipcRenderer.invoke('license:activate', fileContent),
+  },
+  // شاشة الزبون: الواجهة ترسل الحالة المنقّاة فقط، والشاشة الثانية تستقبل فقط
+  customerDisplay: {
+    open: () => ipcRenderer.invoke('customerDisplay:open'),
+    close: () => ipcRenderer.invoke('customerDisplay:close'),
+    status: () => ipcRenderer.invoke('customerDisplay:status'),
+    update: (state) => ipcRenderer.invoke('customerDisplay:update', state),
+    onUpdate: (callback) => {
+      const handler = (_event, data) => callback(data);
+      ipcRenderer.on('customerDisplay:update', handler);
+      return () => ipcRenderer.removeListener('customerDisplay:update', handler);
+    },
   },
   branding: {
     get: () => ipcRenderer.invoke('branding:get'),

@@ -1,0 +1,31 @@
+/* Nexora POS — 17: السلة نظيفة (أصناف + ملخص + زر الدفع فقط).
+   اسم الزبون ونوع الطلب (سفري/توصيل) والوقت والتوصيل صارت داخل نافذة الدفع بعد الضغط على إتمام البيع. */
+.cart-panel .cart-head,
+.cart-panel .cart-summary,
+.cart-panel .extra-options { flex-shrink: 0; }
+.cart-panel .cart-items { flex: 1 0 140px; }
+.cart-panel .checkout-sticky-footer { background: var(--surface); }
+
+/* عمود بيانات الطلب في نافذة الدفع */
+.payment-sheet .payment-sheet-col-order { display: flex; flex-direction: column; gap: 8px; }
+.payment-sheet .customer-field { position: relative; }
+.payment-sheet .customer-results {
+  position: absolute; top: calc(100% + 4px); inset-inline: 0; z-index: 20;
+  background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--radius);
+  box-shadow: var(--shadow-lg); max-height: 200px; overflow-y: auto; padding: 6px;
+}
+.payment-sheet .loyalty-redeem-row { display: flex; gap: 6px; }
+.payment-sheet .loyalty-redeem-row input { flex: 1; }
+.payment-sheet .input-error { border-color: #b91c1c !important; }
+.payment-sheet .delivery-person-field { grid-column: 1 / -1; }
+.payment-sheet .field-hint { font-size: 11px; color: var(--text-faint, inherit); margin-top: 2px; }
+
+/* تصغير بطاقات المنتجات قليلاً جداً */
+.products-grid { gap: 6px !important; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)) !important; }
+@media (min-width: 1400px) {
+  .products-grid { grid-template-columns: repeat(auto-fill, minmax(108px, 1fr)) !important; }
+}
+.product-card { padding: 6px 8px !important; gap: 4px !important; border-radius: 9px !important; }
+.product-card .name { font-size: 12px !important; line-height: 1.25 !important; }
+.price-badge { font-size: 11.5px !important; padding: 2px 5px !important; }
+.product-card .stock { font-size: 9.5px !important; }

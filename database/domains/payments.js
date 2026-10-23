@@ -31,7 +31,7 @@ const correctSalePaymentMethodTx = h.db.transaction((payload) => {
     throw new Error('لا يمكن تصحيح طريقة الدفع إلا على فاتورة مكتملة أو مرتجعة جزئياً.');
   }
 
-  if (payload.actorUserId != null && !userCanModifySales(payload.actorUserId)) throw new Error('تصحيح طريقة الدفع يتطلب مديراً أو مديراً عاماً أو كاشيراً فوّضه المدير العام.');
+  if (payload.actorUserId != null && !h.userCanModifySales(payload.actorUserId)) throw new Error('تصحيح طريقة الدفع يتطلب مديراً أو مديراً عاماً أو كاشيراً فوّضه المدير العام.');
   const reason = String(payload.reason || '').trim();
   if (!reason) throw new Error('سبب التصحيح مطلوب.');
   if (reason.length > 500) throw new Error('سبب التصحيح طويل جداً.');
@@ -185,7 +185,7 @@ const modifyCompletedSaleItemsTx = h.db.transaction((payload = {}) => {
   if (reason.length > 500) throw new Error('سبب تعديل الفاتورة طويل جداً.');
   const actor = h.db.prepare('SELECT id, role, is_active FROM users WHERE id=? AND branch_id=?').get(Number(payload.actorUserId || 0), branch.id);
   // مدير/أدمن بحكم الدور، أو كاشير فوّضه المدير العام بعلامة "تعديل الفواتير" (تُقرأ من القاعدة هنا أيضاً: لا نثق بالواجهة).
-  if (!actor || !actor.is_active || !userCanModifySales(actor.id)) throw new Error('تعديل الفاتورة يتطلب مديراً أو مديراً عاماً أو كاشيراً فوّضه المدير العام.');
+  if (!actor || !actor.is_active || !h.userCanModifySales(actor.id)) throw new Error('تعديل الفاتورة يتطلب مديراً أو مديراً عاماً أو كاشيراً فوّضه المدير العام.');
 
   const oldItems = h.db.prepare('SELECT si.*, p.name AS product_name, p.track_inventory, p.unit FROM sale_items si JOIN products p ON p.id=si.product_id WHERE si.sale_id=? ORDER BY si.id').all(saleId);
   const returned = h.db.prepare(`SELECT sale_item_id, COALESCE(SUM(quantity),0) q FROM return_items ri JOIN returns r ON r.id=ri.return_id WHERE r.sale_id=? GROUP BY sale_item_id`).all(saleId);

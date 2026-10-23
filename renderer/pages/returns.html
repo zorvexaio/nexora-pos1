@@ -118,7 +118,7 @@
             <div id="modifyCart" class="modify-cart"></div>
             <div id="modifyDiscountBox" class="modify-discount-box">
               <label data-i18n="returns.modifyDiscount">الخصم</label>
-              <div class="modify-discount-fields"><select id="modifyDiscountType"><option value="none" data-i18n="returns.noDiscount">بدون خصم</option><option value="percent" data-i18n="returns.percentDiscount">نسبة %</option><option value="fixed" data-i18n="returns.fixedDiscount">مبلغ ثابت</option></select><input id="modifyDiscountValue" type="number" min="0" step="0.01" value="0" disabled /></div>
+              <div class="modify-discount-fields"><select id="modifyDiscountType"><option value="none" data-i18n="returns.noDiscount">بدون خصم</option><option value="percent" data-i18n="returns.percentDiscount">نسبة %</option><option value="fixed" data-i18n="returns.fixedDiscount">مبلغ ثابت</option></select><input id="modifyDiscountValue" type="text" inputmode="decimal" autocomplete="off" value="0" disabled /></div>
             </div>
             <div id="modifyTotals" class="modify-totals"></div>
             <label data-i18n="returns.reasonLabel">سبب التعديل</label>
@@ -148,8 +148,8 @@
           <div class="pro-modal-head"><div><h2 data-i18n="returns.paymentModifyTitle">تعديل طريقة الدفع</h2><p id="paymentModifyInvoice"></p></div><button id="closePaymentModify" class="pro-close">×</button></div>
           <div class="pro-form">
             <div class="form-field"><label data-i18n="returns.newPaymentMethod">الطريقة الجديدة</label><select id="paymentModifyMethod"><option value="cash">نقداً</option><option value="card">بطاقة</option><option value="mixed">مختلط</option><option value="credit">آجل</option></select></div>
-            <div class="form-field" id="paymentMixedFields"><label data-i18n="returns.cashAmount">النقد</label><input id="paymentModifyCash" type="number" min="0" step="0.01"></div>
-            <div class="form-field" id="paymentCardField"><label data-i18n="returns.cardAmount">البطاقة</label><input id="paymentModifyCard" type="number" min="0" step="0.01"></div>
+            <div class="form-field" id="paymentMixedFields"><label data-i18n="returns.cashAmount">النقد</label><input id="paymentModifyCash" type="text" inputmode="decimal" autocomplete="off"></div>
+            <div class="form-field" id="paymentCardField"><label data-i18n="returns.cardAmount">البطاقة</label><input id="paymentModifyCard" type="text" inputmode="decimal" autocomplete="off"></div>
             <div class="form-field"><label data-i18n="returns.reasonLabel">السبب</label><input id="paymentModifyReason" maxlength="500"></div>
             <div class="pro-form-help" data-i18n="returns.closedShiftWarning">إذا كانت الوردية الأصلية مغلقة، لن يُعاد كتابة رصيدها التاريخي؛ سيُحفظ التصحيح في التدقيق.</div>
             <div class="pro-form-actions"><button id="savePaymentModify" class="btn btn-primary" data-i18n="returns.saveModification">حفظ التعديل</button></div>

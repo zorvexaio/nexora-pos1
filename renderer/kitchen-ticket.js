@@ -31,18 +31,20 @@ async function init() {
   const saleId = parseInt(params.get('saleId'), 10);
   let deltaItems = null;
   if (params.get('delta') === '1' && params.get('deltaItems')) {
-    try { deltaItems = JSON.parse(atob(params.get('deltaItems').replace(/-/g,'+').replace(/_/g,'/'))); } catch { deltaItems = null; }
+    try { const bin = atob(params.get('deltaItems').replace(/-/g,'+').replace(/_/g,'/')); deltaItems = JSON.parse(new TextDecoder('utf-8').decode(Uint8Array.from(bin, (c) => c.charCodeAt(0)))); } catch { deltaItems = null; }
   }
   const ticketEl = document.getElementById('ticket');
 
   if (!saleId) {
     ticketEl.textContent = t('kitchen.invalidOrder');
+    document.body.dataset.printError = 'invalid-order';
     return;
   }
 
   const sale = await window.api.sales.get(saleId);
   if (!sale) {
     ticketEl.textContent = t('kitchen.notFound');
+    document.body.dataset.printError = 'order-not-found';
     return;
   }
 
@@ -205,4 +207,4 @@ function escapeHtml(str) {
   return div.innerHTML;
 }
 
-init();
+init().catch((err) => { document.body.dataset.printError = String((err && err.message) || err || 'init-failed').slice(0, 200); });

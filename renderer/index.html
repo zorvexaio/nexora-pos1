@@ -78,9 +78,8 @@
 
       <!-- عمود السلة -->
       <aside class="cart-panel" aria-label="السلة">
-        <div class="cart-head"><div><div class="section-kicker">NEXORA</div><h2 data-i18n="pos.cart">السلة</h2></div><span id="cartItemCount" class="cart-count">0</span></div>
+        <div class="cart-head"><div><div class="section-kicker">NEXORA</div><h2 data-i18n="pos.cart">السلة</h2></div><div class="cart-head-actions"><button type="button" id="customerDisplayBtn" class="btn btn-secondary btn-sm" data-i18n="customerDisplay.open">شاشة الزبون</button> <span id="cartItemCount" class="cart-count">0</span></div></div>
         <div id="cartItems" class="cart-items" aria-live="polite"></div>
-
         <details id="extraOptionsSection" class="extra-options">
           <summary data-i18n="pos.extraOptionsNoteDiscount">خيارات إضافية (ملاحظة، خصم)</summary>
         <div class="form-field" style="margin-bottom:10px;">
@@ -115,7 +114,7 @@
         </div>
         <div class="checkout-sticky-footer">
           <button id="checkoutBtn" class="checkout-btn" data-i18n="pos.checkout" disabled aria-describedby="checkoutHint">إتمام البيع</button>
-          <div id="checkoutHint" class="checkout-hint">Ctrl + Enter للدفع</div>
+          <div id="checkoutHint" class="checkout-hint" data-i18n="pos.checkoutHint">Ctrl + Enter للدفع</div>
         </div>
       </aside>
     </div>
@@ -222,6 +221,10 @@
             <span data-i18n="common.card">بطاقة</span>
           </label>
           <label class="method-option">
+            <input type="radio" name="paymentMethod" value="transfer" />
+            <span data-i18n="common.transfer">تحويل</span>
+          </label>
+          <label class="method-option">
             <input type="radio" name="paymentMethod" value="mixed" />
             <span data-i18n="common.mixed">مختلط</span>
           </label>
@@ -265,6 +268,28 @@
 
         </div>
         <div class="payment-sheet-col payment-sheet-col-order">
+        <!-- بيانات الطلب تظهر هنا بعد الضغط على إتمام البيع: الزبون ثم نوع الطلب والوقت والتوصيل -->
+        <!-- الزبون + الولاء -->
+        <div class="form-field full customer-field payment-customer-top payment-sheet-customer">
+          <label data-i18n="pos.customerNameLabel">اسم الزبون</label>
+          <div class="customer-picker">
+            <input id="customerNameInput" type="text" maxlength="120" autocomplete="off" data-i18n-placeholder="pos.customerNamePlaceholder" placeholder="مطلوب — اكتب اسم الزبون" required aria-required="true" />
+            <div id="customerResults" class="customer-results hidden"></div>
+          </div>
+          <div id="selectedCustomerBox" class="selected-customer hidden">
+            <span id="selectedCustomerLabel"></span>
+            <button type="button" id="clearCustomerBtn">✕</button>
+          </div>
+          <div id="loyaltyRedeemBox" class="loyalty-redeem hidden">
+            <label data-i18n="pos.redeemPoints">استبدال نقاط الولاء</label>
+            <div class="loyalty-redeem-row">
+              <input id="loyaltyPointsInput" type="text" inputmode="numeric" min="0" step="1" value="0" />
+              <button type="button" id="loyaltyMaxBtn" data-i18n="pos.useMaxPoints">الحد الأقصى</button>
+            </div>
+            <div id="loyaltyRedeemHint" class="field-hint"></div>
+          </div>
+        </div>
+
         <!-- نوع الطلب -->
         <div class="payment-order-info payment-sheet-order">
           <div class="order-type-row payment-sheet-chips">
@@ -308,27 +333,6 @@
                 <datalist id="deliveryPersonList"></datalist>
               </div>
             </div>
-          </div>
-        </div>
-
-        <!-- الزبون + الولاء -->
-        <div class="form-field full customer-field payment-customer-top payment-sheet-customer">
-          <label data-i18n="pos.customerNameLabel">اسم الزبون</label>
-          <div class="customer-picker">
-            <input id="customerNameInput" type="text" maxlength="120" autocomplete="off" data-i18n-placeholder="pos.customerNamePlaceholder" placeholder="مطلوب — اكتب اسم الزبون" required aria-required="true" />
-            <div id="customerResults" class="customer-results hidden"></div>
-          </div>
-          <div id="selectedCustomerBox" class="selected-customer hidden">
-            <span id="selectedCustomerLabel"></span>
-            <button type="button" id="clearCustomerBtn">✕</button>
-          </div>
-          <div id="loyaltyRedeemBox" class="loyalty-redeem hidden">
-            <label data-i18n="pos.redeemPoints">استبدال نقاط الولاء</label>
-            <div class="loyalty-redeem-row">
-              <input id="loyaltyPointsInput" type="text" inputmode="numeric" min="0" step="1" value="0" />
-              <button type="button" id="loyaltyMaxBtn" data-i18n="pos.useMaxPoints">الحد الأقصى</button>
-            </div>
-            <div id="loyaltyRedeemHint" class="field-hint"></div>
           </div>
         </div>
 

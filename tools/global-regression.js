@@ -1,7 +1,15 @@
 const fs = require('fs');
 const path = require('path');
 const root = path.join(__dirname, '..');
-const read = (p) => fs.readFileSync(path.join(root,p),'utf8');
+const readDbSource = () => {
+  // database/db.js صار واجهة فوق database/domains/*.js — نجمع المصادر كلها للفحص
+  const dir = path.join(root, 'database');
+  const files = [path.join(dir, 'db.js')];
+  const domains = path.join(dir, 'domains');
+  if (fs.existsSync(domains)) for (const f of fs.readdirSync(domains)) if (f.endsWith('.js')) files.push(path.join(domains, f));
+  return files.map((f) => fs.readFileSync(f, 'utf8')).join('\n');
+};
+const read = (p) => (p === 'database/db.js' ? readDbSource() : fs.readFileSync(path.join(root,p),'utf8'));
 const checks = [
   ['global profile schema', /organization_profile/],
   ['tax profiles schema', /CREATE TABLE IF NOT EXISTS tax_profiles/],

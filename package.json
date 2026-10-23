@@ -1,6 +1,6 @@
 {
   "name": "nexora-pos",
-  "version": "0.52.41",
+  "version": "0.52.43",
   "description": "Nexora POS - Hardened global-ready offline-first POS platform",
   "main": "main.js",
   "author": "Zorvexa / Nexora POS",
@@ -164,9 +164,6 @@
   },
   "overrides": {
     "brace-expansion": "^2.1.7",
-    "minimatch@10": {
-      "brace-expansion": "^5.0.8"
-    },
     "fast-uri": "^3.1.8",
     "http-cache-semantics": "^4.2.1"
   }

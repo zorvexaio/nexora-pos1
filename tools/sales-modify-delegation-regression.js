@@ -78,7 +78,7 @@ try {
   ok(/pos\.refund|requireManagerOrAdmin|requirePermission/.test(refundHandler), 'refunds remain restricted (delegated cashiers cannot refund)');
   ok(/allowIf/.test(returns) && /canRefund/.test(returns) && /allowIf/.test(common), 'returns page admits delegated cashiers and hides the refund button for them');
   ok(/data-sales-modify/.test(users) && /promptDialog\(/.test(users) && /setSalesModify/.test(users), 'users page: checkbox next to the user + reason prompt');
-  ok(/title="\$\{escapeHtml\(why\)\}"/.test(users), 'the checkbox carries the "why" explanation');
+  ok(/title="\$\{(escapeHtml|escAttr)\(why\)\}"/.test(users), 'the checkbox carries the "why" explanation');
 
   // ---- invoice list for the Returns area ----
   const shift = db.openShift(0, admin.id);

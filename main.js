@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, clipboard, Menu } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, clipboard, Menu, screen } = require('electron');
 const path = require('path');
 const { pathToFileURL } = require('url');
 const fs = require('fs');
@@ -11,9 +11,10 @@ const { createSyncServer } = require('./server/sync-server');
 const { startBeacon, startListener, getLocalIPv4Addresses } = require('./server/lan-discovery');
 const { getOrCreateServerCert } = require('./server/lan-tls');
 const { pinnedRequest } = require('./server/pinned-request');
-const { captureWindowAndPrintNetwork } = require('./lib/network-print');
+const { captureWindowAndPrintNetwork, getNetworkPrinterCooldown } = require('./lib/network-print');
 const { assertPermission, permissionsForRole, hasPermission } = require('./core/permissions');
 const { planKitchenTicket } = require('./core/kitchen-plan');
+const { sanitizeCustomerDisplayState } = require('./lib/customer-display-state');
 const { FiscalizationRegistry } = require('./fiscalization');
 const fiscalizationRegistry = new FiscalizationRegistry();
 const PACKAGE_CONFIG = JSON.parse(fs.readFileSync(path.join(__dirname, 'package.json'), 'utf8'));
@@ -293,6 +294,25 @@ process.on('uncaughtException', (error) => {
   throw error;
 });
 
+// نوافذ الطباعة المخفية: إنشاؤها ثم تدميرها على ويندوز قد يسحب تركيز لوحة المفاتيح من نافذة الكاشير،
+// فتبدو الشاشة «متجمّدة» (النقر والكتابة لا يستجيبان) رغم أن التطبيق يعمل. نسجّل هل كانت النافذة الرئيسية
+// مركَّزة قبل الطباعة ونعيد التركيز لها بعد تدمير نافذة الطباعة.
+function wasMainWindowFocused() {
+  try { return !!(mainWindow && !mainWindow.isDestroyed() && mainWindow.isFocused()); } catch (_) { return false; }
+}
+function restoreMainWindowFocus(hadFocus) {
+  if (!hadFocus) return;
+  const refocus = () => {
+    try {
+      if (!mainWindow || mainWindow.isDestroyed() || mainWindow.isMinimized()) return;
+      mainWindow.focus();
+      mainWindow.webContents.focus();
+    } catch (_) { /* لا شيء نفعله إن أُغلقت النافذة */ }
+  };
+  refocus();
+  setTimeout(refocus, 150);
+}
+
 function printerSetting(name) { return db.getSetting(name, '0') === '1'; }
 
 // أسماء طابعات "PDF افتراضية" شائعة (لا طابعات فعلية) — نستثنيها من الطباعة التلقائية
@@ -324,6 +344,16 @@ async function resolvePrintDevice(win, configuredName) {
   return { deviceName: def.name };
 }
 
+// رسالة خطأ الشبكة مترجمة حسب اللغة (رسائل lib/network-print.js الأصلية عربية فقط)
+function networkPrintErrorReason(error) {
+  const code = error && error.code;
+  if (code === 'ETIMEDOUT') return mt('انتهت مهلة الاتصال بالطابعة. تحقق من عنوان IP والمنفذ 9100.', 'Connection to the printer timed out. Check the IP address and port 9100.', 'Yazıcıya bağlantı zaman aşımına uğradı. IP adresini ve 9100 portunu kontrol edin.');
+  if (code === 'ECONNREFUSED' || code === 'EHOSTUNREACH' || code === 'ENETUNREACH') return mt('تعذر الاتصال بالطابعة. تأكد أنها تعمل وأنها على نفس الشبكة.', 'Could not reach the printer. Make sure it is on and on the same network.', 'Yazıcıya ulaşılamadı. Açık ve aynı ağda olduğundan emin olun.');
+  if (code === 'ECONNRESET' || code === 'EPIPE') return mt('انقطع الاتصال أثناء الإرسال. أعد المحاولة.', 'The connection dropped while sending. Try again.', 'Gönderim sırasında bağlantı koptu. Tekrar deneyin.');
+  if (code === 'PRINTER_COOLDOWN') return mt('الطابعة لا تستجيب حالياً. تحقق من تشغيلها ثم أعد طباعة الفاتورة.', 'The printer is not responding right now. Check it, then reprint the invoice.', 'Yazıcı şu anda yanıt vermiyor. Kontrol edip faturayı yeniden yazdırın.');
+  return mt('تعذرت الطباعة عبر الشبكة.', 'Network printing failed.', 'Ağ üzerinden yazdırma başarısız oldu.');
+}
+
 // مسار الطباعة عبر الشبكة مباشرة (ESC/POS raw، بدون طابعة ويندوز مثبَّتة إطلاقاً):
 // نحمّل نفس صفحة الإيصال/تذكرة المطبخ في نافذة مخفية، ننتظر اكتمال رسمها،
 // نلتقطها كصورة، ونرسلها لعنوان IP الطابعة مباشرة عبر TCP.
@@ -338,12 +368,22 @@ function printAutomaticallyOverNetwork(fileName, saleId, modePrefix, label, prin
       resolve({ success: false, blocked: true, reason });
       return;
     }
+    // طابعة الشبكة غير متاحة (فشل قبل لحظات): لا ننشئ نافذة ولا نلتقط صورة — نفشل فوراً كي لا تتراكم المهام.
+    const cooldownMs = getNetworkPrinterCooldown(ip, port);
+    if (cooldownMs > 0) {
+      const reason = mt(`الطابعة ${ip}:${port} لا تستجيب حالياً (أعد المحاولة بعد ${Math.ceil(cooldownMs / 1000)} ث). تحقق من تشغيلها وعنوان IP، ثم أعد طباعة الفاتورة من تفاصيل الفاتورة في التقارير.`, `Printer ${ip}:${port} is not responding (try again in ${Math.ceil(cooldownMs / 1000)}s). Check it is on and the IP is correct, then reprint the invoice from its details in Reports.`, `${ip}:${port} yazıcısı yanıt vermiyor (${Math.ceil(cooldownMs / 1000)} sn sonra tekrar deneyin). Açık olduğundan ve IP'nin doğru olduğundan emin olun, sonra faturayı Raporlar'daki fatura ayrıntılarından yeniden yazdırın.`);
+      resolve({ success: false, blocked: true, reason });
+      return;
+    }
+    const mainHadFocus = wasMainWindowFocused();
     const win = new BrowserWindow({ show: false, width: 320, height: 600, webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true } });
+    trackPrintWindow(win);
     let settled = false;
     const finish = (result) => {
       if (settled) return;
       settled = true;
       if (!win.isDestroyed()) win.destroy();
+      restoreMainWindowFocus(mainHadFocus);
       resolve(result);
     };
     win.webContents.once('did-fail-load', (_event, errorCode, errorDescription) => {
@@ -353,7 +393,13 @@ function printAutomaticallyOverNetwork(fileName, saleId, modePrefix, label, prin
     });
     win.webContents.once('did-finish-load', () => {
       let attempts = 0;
-      const printWhenReady = () => win.webContents.executeJavaScript(`document.body && document.body.dataset.printReady === '1'`).then(async (ready) => {
+      const printWhenReady = () => win.webContents.executeJavaScript(`document.body && (document.body.dataset.printReady === '1' ? '1' : (document.body.dataset.printError ? 'E:' + document.body.dataset.printError : ''))`).then(async (ready) => {
+        if (typeof ready === 'string' && ready.startsWith('E:')) {
+          const reason = mt('تعذر تجهيز مستند الطباعة: ', 'Could not prepare the print document: ', 'Yazdırma belgesi hazırlanamadı: ') + ready.slice(2);
+          db.logAudit({ userId: currentUser?.id, action: 'automatic_print_failed', entityType: 'sale', entityId: saleId, level: 'error', details: { label, reason } });
+          finish({ success: false, reason });
+          return;
+        }
         if (!ready && attempts++ < 80) return setTimeout(printWhenReady, 50);
         if (!ready) {
           const reason = mt('انتهت مهلة تجهيز مستند الطباعة.', 'Preparing the print document timed out.', 'Yazdırma belgesi hazırlanırken zaman aşımına uğradı.');
@@ -367,8 +413,9 @@ function printAutomaticallyOverNetwork(fileName, saleId, modePrefix, label, prin
           db.logAudit({ userId: currentUser?.id, action: 'automatic_printed', entityType: 'sale', entityId: saleId, details: { label, network: `${ip}:${port}` } });
           finish({ success: true });
         } catch (error) {
+          const reason = networkPrintErrorReason(error);
           db.logAudit({ userId: currentUser?.id, action: 'automatic_print_failed', entityType: 'sale', entityId: saleId, level: 'error', details: { label, reason: error.message } });
-          finish({ success: false, reason: error.message });
+          finish({ success: false, reason });
         }
       }).catch((error) => {
         db.logAudit({ userId: currentUser?.id, action: 'automatic_print_failed', entityType: 'sale', entityId: saleId, level: 'error', details: { label, reason: error.message } });
@@ -390,7 +437,54 @@ function printAutomaticallyOverNetwork(fileName, saleId, modePrefix, label, prin
 // modePrefix: 'receipt' أو 'kitchen' — يحدد أي إعدادات وضع الشبكة نقرأ
 // (${modePrefix}_printer_mode / _ip / _port). القيمة الافتراضية للوضع هي
 // 'system' (طابعة ويندوز، السلوك الأصلي) حفاظاً على التوافق مع الإعدادات القديمة.
-function printAutomatically(fileName, saleId, enabledSetting, printerSettingName, label, enabledOverride = null, modePrefix = null, printQuery = {}, feedLinesAfter = 2) {
+// قبل إنشاء أي نافذة مخفية نتحقق من وجود طابعة فعلية (وضع طابعة ويندوز). بدون طابعة لا فائدة من
+// تحميل صفحة الطباعة وتدميرها عند كل بيع — كانت هذه النافذة تُنشأ وتُدمَّر مرتين لكل فاتورة (مطبخ + إيصال).
+// طابور طباعة متسلسل: كل بيع ينشئ نافذتين مخفيتين (مطبخ + إيصال) تطبعان معاً، ومع بيعين متتاليين بسرعة
+// تصير 4 نوافذ تطبع في نفس اللحظة على نفس الطابعة/الـspooler فيفشل بعضها أو يضيع. نُنفّذها واحدة بعد الأخرى،
+// مع مهلة قصوى لكل مهمة حتى لا تحجز طابعة معلّقة بقية الطابور.
+let printQueueTail = Promise.resolve();
+const PRINT_JOB_MAX_MS = 25000;
+// نوافذ المهمة الجارية: عند انتهاء المهلة تُغلق كي لا تستمر في الطباعة بالتوازي مع المهمة التالية
+let activePrintWindows = null;
+function trackPrintWindow(win) {
+  if (activePrintWindows) activePrintWindows.push(win);
+  return win;
+}
+function enqueuePrintJob(task) {
+  const run = printQueueTail.then(() => {
+    const jobWindows = [];
+    activePrintWindows = jobWindows;
+    let timer = null;
+    const timeout = new Promise((resolve) => {
+      timer = setTimeout(() => {
+        jobWindows.forEach((w) => { try { if (!w.isDestroyed()) w.destroy(); } catch (_) { /* تجاهل */ } });
+        resolve({ success: false, reason: mt('انتهت مهلة الطباعة.', 'Printing timed out.', 'Yazdırma zaman aşımına uğradı.') });
+      }, PRINT_JOB_MAX_MS);
+    });
+    return Promise.race([task(), timeout]).finally(() => {
+      clearTimeout(timer);
+      if (activePrintWindows === jobWindows) activePrintWindows = null;
+    });
+  });
+  printQueueTail = run.catch(() => {});
+  return run;
+}
+function printAutomatically(...args) {
+  return enqueuePrintJob(() => printAutomaticallyUnqueued(...args));
+}
+async function printAutomaticallyUnqueued(fileName, saleId, enabledSetting, printerSettingName, label, enabledOverride = null, modePrefix = null, printQuery = {}, feedLinesAfter = 2) {
+  if (enabledOverride === null ? !printerSetting(enabledSetting) : !enabledOverride) return { skipped: true };
+  const mode = modePrefix ? db.getSetting(`${modePrefix}_printer_mode`, 'system') : 'system';
+  if (mode !== 'network' && mainWindow && !mainWindow.isDestroyed()) {
+    const resolved = await resolvePrintDevice(mainWindow, db.getSetting(printerSettingName, '').trim());
+    if (resolved.blocked) {
+      db.logAudit({ userId: currentUser?.id, action: 'automatic_print_skipped_no_real_printer', entityType: 'sale', entityId: saleId, level: 'warning', details: { label, reason: resolved.reason } });
+      return { success: false, blocked: true, reason: resolved.reason };
+    }
+  }
+  return printAutomaticallyImpl(fileName, saleId, enabledSetting, printerSettingName, label, enabledOverride, modePrefix, printQuery, feedLinesAfter);
+}
+function printAutomaticallyImpl(fileName, saleId, enabledSetting, printerSettingName, label, enabledOverride = null, modePrefix = null, printQuery = {}, feedLinesAfter = 2) {
   if (enabledOverride === null ? !printerSetting(enabledSetting) : !enabledOverride) return Promise.resolve({ skipped: true });
   const deviceName = db.getSetting(printerSettingName, '').trim();
   const mode = modePrefix ? db.getSetting(`${modePrefix}_printer_mode`, 'system') : 'system';
@@ -398,12 +492,15 @@ function printAutomatically(fileName, saleId, enabledSetting, printerSettingName
     return printAutomaticallyOverNetwork(fileName, saleId, modePrefix, label, printQuery, feedLinesAfter);
   }
   return new Promise((resolve) => {
+    const mainHadFocus = wasMainWindowFocused();
     const win = new BrowserWindow({ show: false, webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true } });
+    trackPrintWindow(win);
     let settled = false;
     const finish = (result) => {
       if (settled) return;
       settled = true;
       if (!win.isDestroyed()) win.destroy();
+      restoreMainWindowFocus(mainHadFocus);
       resolve(result);
     };
     win.webContents.once('did-fail-load', (_event, errorCode, errorDescription) => {
@@ -413,7 +510,13 @@ function printAutomatically(fileName, saleId, enabledSetting, printerSettingName
     });
     win.webContents.once('did-finish-load', () => {
       let attempts = 0;
-      const printWhenReady = () => win.webContents.executeJavaScript(`document.body && document.body.dataset.printReady === '1'`).then(async (ready) => {
+      const printWhenReady = () => win.webContents.executeJavaScript(`document.body && (document.body.dataset.printReady === '1' ? '1' : (document.body.dataset.printError ? 'E:' + document.body.dataset.printError : ''))`).then(async (ready) => {
+        if (typeof ready === 'string' && ready.startsWith('E:')) {
+          const reason = mt('تعذر تجهيز مستند الطباعة: ', 'Could not prepare the print document: ', 'Yazdırma belgesi hazırlanamadı: ') + ready.slice(2);
+          db.logAudit({ userId: currentUser?.id, action: 'automatic_print_failed', entityType: 'sale', entityId: saleId, level: 'error', details: { label, reason } });
+          finish({ success: false, reason });
+          return;
+        }
         if (!ready && attempts++ < 80) return setTimeout(printWhenReady, 50);
         if (!ready) {
           const reason = mt('انتهت مهلة تجهيز مستند الطباعة.', 'Preparing the print document timed out.', 'Yazdırma belgesi hazırlanırken zaman aşımına uğradı.');
@@ -2008,6 +2111,9 @@ ipcMain.handle('sale:create', (_event, sale) => {
   // 'delivery' كانت مستبعدة من هذه القائمة سابقاً، فطلبات التوصيل المُنشأة من شاشة
   // الكاشير مباشرة (مش عبر الطاولات) ما كانت توصل للمطبخ تلقائياً أبداً — طلب توصيل
   // لازم يوصل للمطبخ زي أي طلب تاني عشان يتحضّر أصلاً.
+  // الطباعة والفوترة التلقائية تعمل في الخلفية: كانت تُنتظر هنا قبل إرجاع نتيجة البيع، فتبقى
+  // شاشة الدفع «جارٍ الحفظ» (تجمّد) حتى تنتهي الطابعة/الشبكة (حتى عشرات الثواني عند طابعة غير متصلة).
+  // البيع محفوظ فعلاً في قاعدة البيانات عند هذه النقطة؛ النتيجة تصل للواجهة لاحقاً عبر 'sale:postOutcome'.
   const printOutcome = { kitchen: null, receipt: null };
   const printJobs = [];
   if (['takeaway', 'in_store', 'delivery'].includes(sale.orderType)) {
@@ -2016,7 +2122,7 @@ ipcMain.handle('sale:create', (_event, sale) => {
   printJobs.push(autoPrintReceipt(result.id).then((r) => { printOutcome.receipt = r; }));
   // ننتظر نتيجة الطباعة (لا تمنع إرجاع نتيجة البيع، لكن تُرفَق به) عشان الواجهة تقدر
   // تنبّه الكاشير فوراً لو في مشكلة حقيقية بدل ما تفشل الطباعة بصمت تام كما كان يحدث سابقاً.
-  return Promise.all(printJobs).then(async () => {
+  const postJobs = Promise.all(printJobs).then(async () => {
     let fiscalOutcome = null;
     try {
       const autoIssue = db.getSetting('fiscal_auto_issue_on_sale', '0') === '1';
@@ -2059,6 +2165,16 @@ ipcMain.handle('sale:create', (_event, sale) => {
     }
     return { ...result, printOutcome, fiscalOutcome };
   });
+  postJobs.then((full) => {
+    try {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('sale:postOutcome', { saleId: result.id, invoiceNumber: result.invoiceNumber || null, printOutcome: full.printOutcome, fiscalOutcome: full.fiscalOutcome });
+      }
+    } catch (_) { /* النافذة أُغلقت — لا شيء نفعله */ }
+  }).catch((err) => {
+    try { db.logAudit({ userId: currentUser?.id, action: 'post_sale_jobs_failed', entityType: 'sale', entityId: result.id, level: 'error', details: { error: String(err && err.message ? err.message : err) } }); } catch (_) { /* ignore */ }
+  });
+  return { ...result, printOutcome: { kitchen: null, receipt: null, background: true }, fiscalOutcome: null };
 });
 ipcMain.handle('sales:list', (_event, filters) => { requireAccountReady(); return db.listSales(filters); });
 ipcMain.handle('sales:knownDeliveryPersons', () => { requireAccountReady(); return db.listKnownDeliveryPersons(); });
@@ -2261,6 +2377,96 @@ ipcMain.handle('shift:cashIn', (_event, payload) => { requireAccountReady(); ret
 ipcMain.handle('shift:cashOut', (_event, payload) => { requireAccountReady(); return db.addCashMovement({...payload,type:'cash_out',createdBy:currentUser.id}); });
 ipcMain.handle('shift:cashMovements', (_event, shiftId) => { requireAccountReady(); return db.getShiftCashMovements(shiftId, currentUser.id, currentUser.role); });
 
+// ---------- شاشة الزبون: نافذة ثانية تعرض السلة للزبون على الشاشة غير الأساسية ----------
+let customerDisplayWin = null;
+let customerDisplayOnSecondary = false;
+let customerDisplayLastState = null;
+
+// الشاشة الثانية = أي شاشة ليست الأساسية (التي عليها واجهة الكاشير)
+function pickCustomerDisplay() {
+  const primary = screen.getPrimaryDisplay();
+  return screen.getAllDisplays().find((d) => d.id !== primary.id) || null;
+}
+
+function isCustomerDisplayOpen() {
+  return Boolean(customerDisplayWin && !customerDisplayWin.isDestroyed());
+}
+
+// الرسائل تُقبل فقط من نافذة الكاشير الأساسية، لا من أي نافذة أخرى
+function assertCashierSender(event) {
+  if (!mainWindow || mainWindow.isDestroyed() || event.sender !== mainWindow.webContents) {
+    throw new Error(mt('طلب شاشة الزبون من مصدر غير مسموح.', 'Customer display request from an unauthorized source.', 'Müşteri ekranı isteği yetkisiz kaynaktan geldi.'));
+  }
+}
+
+function openCustomerDisplayWindow() {
+  if (isCustomerDisplayOpen()) {
+    customerDisplayWin.focus();
+    return { open: true, onSecondary: customerDisplayOnSecondary };
+  }
+  const secondary = pickCustomerDisplay();
+  customerDisplayOnSecondary = Boolean(secondary);
+  customerDisplayWin = new BrowserWindow({
+    show: false,
+    width: 1024,
+    height: 768,
+    title: 'Nexora — Customer display',
+    backgroundColor: '#0f172a',
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      backgroundThrottling: false,
+    },
+  });
+  customerDisplayWin.setMenuBarVisibility(false);
+  customerDisplayWin.loadFile(path.join(__dirname, 'renderer', 'customer-display.html'));
+  customerDisplayWin.webContents.once('did-finish-load', () => {
+    if (customerDisplayLastState && isCustomerDisplayOpen()) {
+      customerDisplayWin.webContents.send('customerDisplay:update', customerDisplayLastState);
+    }
+  });
+  customerDisplayWin.once('ready-to-show', () => {
+    if (!isCustomerDisplayOpen()) return;
+    if (secondary) {
+      // setBounds بعد الإظهار: على macOS تُهمل المواضع المحددة في الإنشاء أحياناً وتظهر النافذة على الشاشة الأساسية
+      customerDisplayWin.setBounds(secondary.bounds);
+      customerDisplayWin.setFullScreen(true);
+    }
+    customerDisplayWin.show();
+  });
+  customerDisplayWin.on('closed', () => { customerDisplayWin = null; });
+  return { open: true, onSecondary: customerDisplayOnSecondary };
+}
+
+function closeCustomerDisplayWindow() {
+  if (isCustomerDisplayOpen()) customerDisplayWin.close();
+  customerDisplayWin = null;
+  return { open: false };
+}
+
+ipcMain.handle('customerDisplay:open', (event) => {
+  requireAccountReady();
+  assertCashierSender(event);
+  return openCustomerDisplayWindow();
+});
+ipcMain.handle('customerDisplay:close', (event) => {
+  assertCashierSender(event);
+  return closeCustomerDisplayWindow();
+});
+ipcMain.handle('customerDisplay:status', (event) => {
+  assertCashierSender(event);
+  return { open: isCustomerDisplayOpen(), onSecondary: customerDisplayOnSecondary };
+});
+// تحديث الحالة: يُستدعى مع كل تغيير في السلة (مُجمَّع في الواجهة كل 60 ms)
+ipcMain.handle('customerDisplay:update', (event, raw) => {
+  assertCashierSender(event);
+  customerDisplayLastState = sanitizeCustomerDisplayState(raw);
+  if (isCustomerDisplayOpen()) customerDisplayWin.webContents.send('customerDisplay:update', customerDisplayLastState);
+  return { ok: true };
+});
+
 ipcMain.handle('currency:get', () => { requireAccountReady(); return ({
   base: db.getSetting('currency_base', 'USD'),
   secondary: db.getSetting('currency_secondary', 'TRY'),
@@ -2410,7 +2616,8 @@ ipcMain.handle('audit:clientEvent', (_event, payload = {}) => {
 ipcMain.handle('audit:list', () => { requireAdmin(); return db.listAuditLogs(); });
 
 // فتح نافذة فاتورة قابلة للطباعة (نافذة منفصلة صغيرة بحجم إيصال)
-ipcMain.handle('receipt:open', (_event, saleId) => { requireAccountReady(); if (!db.getSale(saleId, db.getCurrentBranch().id)) throw new Error(mt('الفاتورة غير موجودة في الفرع الحالي.', 'The invoice was not found in the current branch.', 'Fatura mevcut şubede bulunamadı.')); return autoPrintReceipt(saleId); });
+// إعادة طباعة يدوية من تفاصيل الفاتورة: تطبع دائماً (حتى لو الطباعة التلقائية معطّلة)
+ipcMain.handle('receipt:open', (_event, saleId) => { requireAccountReady(); if (!db.getSale(saleId, db.getCurrentBranch().id)) throw new Error(mt('الفاتورة غير موجودة في الفرع الحالي.', 'The invoice was not found in the current branch.', 'Fatura mevcut şubede bulunamadı.')); const width = db.getSetting('receipt_printer_paper_width', '80'); return printAutomatically('receipt.html', saleId, 'receipt_auto_print', 'receipt_printer_name', 'receipt', true, 'receipt', { paperWidth: width }, 2); });
 
 // طلب طباعة يصل من داخل نافذة الفاتورة نفسها
 ipcMain.handle('receipt:print', () => { requireAccountReady(); throw new Error(mt('الطباعة أصبحت تلقائية من إعدادات الطابعات.', 'Printing is now automatic from the printer settings.', 'Yazdırma artık yazıcı ayarlarından otomatik olarak yapılıyor.')); });

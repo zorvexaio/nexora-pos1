@@ -112,7 +112,7 @@ function renderReceipt(sale, branding, currency = {}) {
   const taxNumber = (currency && currency.taxNumber) ? String(currency.taxNumber).trim() : '';
   const logoUrl = branding && branding.logoPath ? 'file://' + branding.logoPath.replace(/\\/g, '/') : '';
   const bundlesList = (Array.isArray(sale.bundles) ? sale.bundles : []).filter((b) => b && Array.isArray(b.items) && b.items.length);
-  // أي صنف مذكور داخل حزمة يأخذ شارة هدية 🎁 صغيرة على اسمه في السطر نفسه، بدل الصندوق
+  // أي صنف مذكور داخل حزمة يأخذ شارة نصية صغيرة «[عرض]» على اسمه في السطر نفسه (بدون رموز تصويرية لأن بعض الطابعات الحرارية لا تطبعها)، بدل الصندوق
   // الكبير القديم اللي كان يكرّر أسماء الأصناف من جديد ويطوّل الفاتورة بلا داعٍ.
   const offerItemKeys = new Set();
   for (const b of bundlesList) {
@@ -156,7 +156,9 @@ function renderReceipt(sale, branding, currency = {}) {
     .join('');
 
   let paymentHtml = `<div class="receipt-row"><span>${t('receipt.paymentMethod')}</span><span>${
-    PAYMENT_LABELS[sale.payment_method] || escapeHtml(sale.payment_method || '')
+    (sale.payment_method === 'card' && sale.payment_provider === 'bank_transfer')
+      ? t('common.transfer')
+      : (PAYMENT_LABELS[sale.payment_method] || escapeHtml(sale.payment_method || ''))
   }</span></div>`;
 
   if (sale.payment_method === 'cash') {
@@ -312,4 +314,4 @@ function escapeHtml(str) {
   return div.innerHTML;
 }
 
-init();
+init().catch((err) => { document.body.dataset.printError = String((err && err.message) || err || "init-failed").slice(0, 200); });

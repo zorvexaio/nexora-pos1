@@ -13,6 +13,98 @@ let currentCategoryId = null;
 let paymentMethod = 'cash';
 let globalMinorUnit = 2; // يُحدَّث من الخادم عند التحميل (عدد الخانات العشرية الفعلي لعملة الفرع)
 let currentQuote = null; // آخر تسعير مؤكَّد من الخادم لمحتوى السلة الحالي، يُستخدم عند الدفع
+// ---------- شاشة الزبون (نفس منطق الكاشير الرئيسي، والأرقام من sale:quote) ----------
+// لا تُمرَّر التكاليف ولا الأرباح ولا الديون؛ الأمان مضمون أيضاً في lib/customer-display-state.js
+let customerDisplayPushTimer = null;
+let customerThanksUntil = 0;
+let customerThanksTotal = null;
+let customerStoreName = '';
+let customerQuote = null; // آخر تسعير من الخادم لمحتوى السلة الحالي (يُلغى مع أي تغيير)
+
+function customerDisplayLang() {
+  const lang = document.documentElement.lang;
+  return lang === 'tr' || lang === 'en' ? lang : 'ar';
+}
+
+function buildCustomerDisplayState() {
+  const base = { lang: customerDisplayLang(), storeName: customerStoreName, currency: '' };
+  if (!cart.length && Date.now() < customerThanksUntil) {
+    return { ...base, state: 'thanks', total: customerThanksTotal == null ? '' : fmt(customerThanksTotal) };
+  }
+  if (!cart.length) return { ...base, state: 'idle' };
+
+  const rows = [];
+  if (customerQuote) {
+    rows.push({ label: t('common.subtotal'), value: fmt(customerQuote.subtotal) });
+    if (Number(customerQuote.taxTotal) > 0) rows.push({ label: t('common.tax'), value: fmt(customerQuote.taxTotal) });
+  }
+  const grand = customerQuote ? customerQuote.grandTotal : cart.reduce((sum, i) => sum + i.price * i.quantity, 0);
+  return {
+    ...base,
+    state: 'cart',
+    items: cart.map((i) => ({
+      name: i.name,
+      qty: i.isWeighted ? `${formatQty(i.quantity)} ${t('pos.kgUnit')}` : formatQty(i.quantity),
+      unit: fmt(i.price),
+      line: fmt(i.price * i.quantity),
+    })),
+    totals: rows,
+    total: fmt(grand),
+    secondaryTotal: '',
+  };
+}
+
+function pushCustomerDisplay() {
+  if (customerDisplayPushTimer) return;
+  customerDisplayPushTimer = setTimeout(() => {
+    customerDisplayPushTimer = null;
+    try { window.api?.customerDisplay?.update(buildCustomerDisplayState())?.catch?.(() => { /* الشاشة الثانية اختيارية */ }); } catch (_) { /* الشاشة الثانية اختيارية */ }
+  }, 60);
+}
+
+function showCustomerThanks(paidTotal) {
+  customerThanksTotal = paidTotal;
+  customerThanksUntil = Date.now() + 6000;
+  setTimeout(pushCustomerDisplay, 6100);
+}
+
+async function updateCustomerDisplayButton() {
+  const btn = document.getElementById('customerDisplayBtn');
+  if (!btn) return;
+  try {
+    const status = await window.api.customerDisplay.status();
+    btn.textContent = t(status.open ? 'customerDisplay.close' : 'customerDisplay.open');
+  } catch (_) { /* تجاهل */ }
+}
+
+async function toggleCustomerDisplay() {
+  const btn = document.getElementById('customerDisplayBtn');
+  if (btn) btn.disabled = true;
+  try {
+    const status = await window.api.customerDisplay.status();
+    if (status.open) {
+      await window.api.customerDisplay.close();
+      showToast(t('customerDisplay.closed'));
+    } else {
+      if (!customerStoreName) {
+        const branding = await window.api.branding.get().catch(() => null);
+        customerStoreName = branding?.storeName || '';
+      }
+      const opened = await window.api.customerDisplay.open();
+      pushCustomerDisplay();
+      showToast(t(opened.onSecondary ? 'customerDisplay.opened' : 'customerDisplay.openedWindowed'));
+    }
+  } catch (err) {
+    showToast(err.message || t('customerDisplay.failed'), 'error');
+  } finally {
+    if (btn) btn.disabled = false;
+    updateCustomerDisplayButton();
+  }
+}
+
+document.getElementById('customerDisplayBtn')?.addEventListener('click', toggleCustomerDisplay);
+document.addEventListener('nexora:langchange', () => { pushCustomerDisplay(); updateCustomerDisplayButton(); });
+updateCustomerDisplayButton();
 const MAX_QTY = 9999; // نفس السقف المستخدم في quantity-buffer.js وpriceItemsFromDatabase على الخادم
 function notifyQtyMax() {
   showToast(tf('pos.qtyAccumulationMaximum', { max: MAX_QTY.toLocaleString() }), 'error');
@@ -33,6 +125,7 @@ const cashInput = document.getElementById('qcCashInput');
 const changeValueEl = document.getElementById('qcChangeValue');
 const cashTab = document.getElementById('qcCashTab');
 const cardTab = document.getElementById('qcCardTab');
+const transferTab = document.getElementById('qcTransferTab');
 const cashSection = document.getElementById('qcCashSection');
 const confirmPayBtn = document.getElementById('qcConfirmPayBtn');
 const payKeypadEl = document.getElementById('qcPayKeypad');
@@ -79,7 +172,21 @@ async function init() {
   document.getElementById('qcPaymentBack').addEventListener('click', closePayment);
   cashTab.addEventListener('click', () => setPaymentMethod('cash'));
   cardTab.addEventListener('click', () => setPaymentMethod('card'));
+  transferTab.addEventListener('click', () => setPaymentMethod('transfer'));
   confirmPayBtn.addEventListener('click', confirmPay);
+  // نتيجة الطباعة/الفوترة تصل بعد حفظ البيع (تعمل في الخلفية كي لا تُجمّد شاشة الدفع)
+  if (window.api && window.api.sales && typeof window.api.sales.onPostOutcome === 'function') {
+    window.api.sales.onPostOutcome((r) => {
+      const po = r && r.printOutcome;
+      if (po && po.kitchen && po.kitchen.success === false) showToast(`⚠️ ${t('quickCashier.kitchenPrintFailed', 'لم تُطبع تذكرة المطبخ')}: ${po.kitchen.reason || t('common.unknownError', 'خطأ غير معروف')}`, 'error');
+      if (po && po.receipt && po.receipt.success === false) showToast(`⚠️ ${t('quickCashier.receiptPrintFailed', 'لم تُطبع الفاتورة')}: ${po.receipt.reason || t('common.unknownError', 'خطأ غير معروف')}`, 'error');
+      const fo = r && r.fiscalOutcome;
+      if (fo) {
+        if (fo.error) showToast(`⚠️ ${t('quickCashier.fiscalFailed', 'الفوترة التلقائية')}: ${fo.error}`, 'error');
+        else if (fo.status) showToast(`${t('quickCashier.fiscalOk', 'فوترة تلقائية')}: ${fo.status}`, fo.status === 'submitted' ? 'success' : 'info');
+      }
+    });
+  }
 
   focusCodeInput();
 }
@@ -287,6 +394,8 @@ function renderCart() {
   cartTotalEl.textContent = fmt(roughTotal);
   checkoutBtn.disabled = cart.length === 0;
   currentQuote = null; // أي تغيير بالسلة يُلغي آخر تسعير مؤكَّد
+  customerQuote = null;
+  pushCustomerDisplay();
   requestLiveQuote();
 }
 const requestLiveQuote = debounce(async () => {
@@ -298,6 +407,8 @@ const requestLiveQuote = debounce(async () => {
     if (cart.length !== snapshotLength) return;
     globalMinorUnit = Number.isInteger(quote.minorUnit) ? quote.minorUnit : globalMinorUnit;
     cartTotalEl.textContent = fmt(quote.grandTotal);
+    customerQuote = quote;
+    pushCustomerDisplay();
   } catch (_) { /* يبقى المجموع التقريبي ظاهراً؛ التسعير الملزم الحقيقي يُعاد طلبه عند الدفع على أي حال */ }
 }, 250);
 
@@ -361,8 +472,9 @@ function setPaymentMethod(method) {
   paymentMethod = method;
   cashTab.classList.toggle('active', method === 'cash');
   cardTab.classList.toggle('active', method === 'card');
-  cashSection.classList.toggle('hidden', method === 'card');
-  if (method === 'card' && currentQuote) cashInput.value = fmt(currentQuote.grandTotal);
+  transferTab.classList.toggle('active', method === 'transfer');
+  cashSection.classList.toggle('hidden', method === 'card' || method === 'transfer');
+  if ((method === 'card' || method === 'transfer') && currentQuote) cashInput.value = fmt(currentQuote.grandTotal);
   updateChange();
 }
 
@@ -430,13 +542,15 @@ async function confirmPay() {
   try {
     const sale = {
       items: cart.map((i) => ({ productId: i.productId, quantity: i.quantity })),
-      paymentMethod,
+      // التحويل يُحفظ كحساب البنك (card) مع وسم المزوّد bank_transfer ليظهر منفصلاً في الفاتورة والتقارير
+      paymentMethod: paymentMethod === 'transfer' ? 'card' : paymentMethod,
+      paymentProvider: paymentMethod === 'transfer' ? 'bank_transfer' : null,
       // بدون هذا، main.js كان يفحص sale.orderType القادم من الواجهة (undefined هنا
       // دائماً) لا القيمة المحفوظة فعلياً بالفاتورة (in_store افتراضياً)، فتذكرة
       // المطبخ كانت لا تُرسل أبداً من هذه الشاشة بالذات رغم حفظ البيع بنجاح.
       orderType: 'in_store',
       cashAmount: paymentMethod === 'cash' ? received : 0,
-      cardAmount: paymentMethod === 'card' ? total : 0,
+      cardAmount: (paymentMethod === 'card' || paymentMethod === 'transfer') ? total : 0,
       changeDue: paymentMethod === 'cash' ? Math.max(0, received - total) : 0,
       clientRequestId: `qc-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
     };
@@ -452,8 +566,10 @@ async function confirmPay() {
       if (fo.error) showToast(`⚠️ ${t('quickCashier.fiscalFailed', 'الفوترة التلقائية')}: ${fo.error}`, 'error');
       else if (fo.status) showToast(`${t('quickCashier.fiscalOk', 'فوترة تلقائية')}: ${fo.status}`, fo.status === 'submitted' ? 'success' : 'info');
     }
+    showCustomerThanks(Number(currentQuote?.grandTotal || 0));
     cart = [];
     currentQuote = null;
+    customerQuote = null;
     renderCart();
     closePayment();
     await loadProducts(); // تحديث المخزون المعروض إن كان أي صنف يتتبّع كمية

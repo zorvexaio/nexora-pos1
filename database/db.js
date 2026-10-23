@@ -1548,6 +1548,7 @@ const _domainHelpers = {
   recordAuthFailure: (...a) => recordAuthFailure(...a),
   clearAuthFailures: (...a) => clearAuthFailures(...a),
   sanitizeUser: (...a) => sanitizeUser(...a),
+  userCanModifySales: (...a) => userCanModifySales(...a),
 };
 
 const _domains = {

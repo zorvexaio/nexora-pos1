@@ -327,6 +327,105 @@ async function applyRuntimeBranding() {
   } catch (_) {}
 }
 
+// ---- الشريط الجانبي: أقسام + إخفاء/إظهار ----
+// ترتيب الأقسام وروابطها (بالمفتاح data-i18n للرابط). أي رابط غير مذكور يبقى في آخر القائمة.
+const SIDEBAR_SECTIONS = [
+  { id: 'sales', key: 'nav.sectionSales', links: ['nav.pos', 'nav.quickCashier', 'nav.tables', 'nav.cashSession', 'nav.returns'] },
+  { id: 'catalog', key: 'nav.sectionCatalog', links: ['nav.products', 'nav.bundles', 'nav.inventory', 'nav.suppliers'] },
+  { id: 'finance', key: 'nav.sectionFinance', links: ['nav.customers', 'nav.reports', 'nav.accounting', 'nav.payroll', 'nav.audit'] },
+  { id: 'admin', key: 'nav.sectionAdmin', links: ['nav.users', 'nav.settings'] },
+];
+const SIDEBAR_HIDDEN_KEY = 'nexora_sidebar_hidden';
+const SIDEBAR_ICON_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M9 4v16"/></svg>';
+
+function setupSidebarSections() {
+  const nav = document.querySelector('.nav-links');
+  if (!nav || nav.dataset.sectioned === '1') return;
+  nav.dataset.sectioned = '1';
+  const links = Array.from(nav.querySelectorAll(':scope > a'));
+  const byKey = new Map(links.map((a) => [a.getAttribute('data-i18n'), a]));
+  const placed = new Set();
+  for (const section of SIDEBAR_SECTIONS) {
+    const members = section.links.map((k) => byKey.get(k)).filter(Boolean);
+    if (!members.length) continue;
+    const header = document.createElement('div');
+    header.className = 'nav-section';
+    header.dataset.section = section.id;
+    header.setAttribute('data-i18n', section.key);
+    header.setAttribute('role', 'presentation');
+    header.textContent = t(section.key);
+    nav.appendChild(header);
+    members.forEach((a) => { nav.appendChild(a); placed.add(a); });
+  }
+  links.filter((a) => !placed.has(a)).forEach((a) => nav.appendChild(a));
+}
+
+// يُخفي عنوان القسم إن لم يبقَ فيه أي رابط ظاهر لهذا المستخدم
+function refreshSidebarSections() {
+  document.querySelectorAll('.nav-links .nav-section').forEach((header) => {
+    let el = header.nextElementSibling;
+    let visible = false;
+    while (el && !el.classList.contains('nav-section')) {
+      if (el.tagName === 'A' && el.style.display !== 'none') { visible = true; break; }
+      el = el.nextElementSibling;
+    }
+    header.style.display = visible ? '' : 'none';
+  });
+}
+
+function readSidebarHidden() {
+  try { return window.localStorage.getItem(SIDEBAR_HIDDEN_KEY) === '1'; } catch (_) { return false; }
+}
+function writeSidebarHidden(hidden) {
+  try { window.localStorage.setItem(SIDEBAR_HIDDEN_KEY, hidden ? '1' : '0'); } catch (_) { /* تجاهل */ }
+}
+function applySidebarHidden(hidden) {
+  document.documentElement.setAttribute('data-sidebar', hidden ? 'hidden' : 'shown');
+  const toggle = document.getElementById('sidebarToggle');
+  if (toggle) {
+    const label = t(hidden ? 'nav.expandSidebar' : 'nav.collapseSidebar');
+    toggle.setAttribute('aria-expanded', String(!hidden));
+    toggle.setAttribute('aria-label', label);
+    toggle.title = label;
+  }
+  const openBtn = document.getElementById('sidebarOpenBtn');
+  if (openBtn) {
+    openBtn.hidden = !hidden;
+    const label = t('nav.expandSidebar');
+    openBtn.setAttribute('aria-label', label);
+    openBtn.title = label;
+  }
+}
+function toggleSidebar() {
+  const next = document.documentElement.getAttribute('data-sidebar') !== 'hidden';
+  writeSidebarHidden(next);
+  applySidebarHidden(next);
+}
+function setupSidebarToggle() {
+  if (!document.getElementById('sidebarToggle')) {
+    const brand = document.querySelector('.topbar .brand, .topbar .brand-premium');
+    if (brand) {
+      const toggle = document.createElement('button');
+      toggle.type = 'button';
+      toggle.id = 'sidebarToggle';
+      toggle.className = 'sidebar-toggle';
+      toggle.innerHTML = SIDEBAR_ICON_SVG;
+      toggle.addEventListener('click', toggleSidebar);
+      brand.appendChild(toggle);
+    }
+  }
+  if (!document.getElementById('sidebarOpenBtn')) {
+    const openBtn = document.createElement('button');
+    openBtn.type = 'button';
+    openBtn.id = 'sidebarOpenBtn';
+    openBtn.className = 'sidebar-open-btn';
+    openBtn.innerHTML = SIDEBAR_ICON_SVG;
+    openBtn.addEventListener('click', toggleSidebar);
+    document.body.appendChild(openBtn);
+  }
+  applySidebarHidden(readSidebarHidden());
+}
+
 function setupTopbar(user) {
   const nameEl = document.getElementById('currentUserName');
   const roleEl = document.getElementById('currentUserRoleBadge');
@@ -342,8 +441,11 @@ function setupTopbar(user) {
     });
   }
 
+  setupSidebarSections();
   applyNavVisibility(user);
+  refreshSidebarSections();
   applyNavIcons();
+  setupSidebarToggle();
   // بعد اكتمال ترجمة اللغة غير المتزامنة (قد تسبق أو تلحق setupTopbar)
   setTimeout(() => { try { applyNavIcons(); } catch (_) {} }, 0);
   setTimeout(() => { try { applyNavIcons(); } catch (_) {} }, 100);

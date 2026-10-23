@@ -4,7 +4,7 @@ const db=require('./lib/db-source').read();
 const main=fs.readFileSync(path.join(root,'main.js'),'utf8');
 const pkg=JSON.parse(fs.readFileSync(path.join(root,'package.json'),'utf8'));
 const checks=[
- ['release bumped to 0.45.0+', /^0\.45\./.test(pkg.version)],
+ ['release at or after 0.45.0', (() => { const [a,b,c] = String(pkg.version).split('.').map(Number); return a > 0 || b > 45 || (b === 45 && c >= 0); })()],
  ['payment currency is validated', /\^\[A-Z\]\{3\}\$/.test(db)],
  ['sync cannot enable without token', /config\.enabled && !String\(config\.token/.test(db)],
  ['restore validates the restored database before relaunch', /restoredValidation = db\.validateBackupFile\(dbPath\)/.test(main)],

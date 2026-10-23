@@ -2,7 +2,9 @@ const fs = require('fs');
 const path = require('path');
 const root = path.resolve(__dirname, '..');
 const main = fs.readFileSync(path.join(root, 'main.js'), 'utf8');
-const css = fs.readFileSync(path.join(root, 'renderer', 'style.css'), 'utf8');
+// الأنماط موزعة على renderer/css/*.css وstyle.css يستورد بقية الملفات فقط؛ نقرأ الكل
+const css = [path.join(root, 'renderer', 'style.css'), ...fs.readdirSync(path.join(root, 'renderer', 'css')).filter((f) => f.endsWith('.css')).map((f) => path.join(root, 'renderer', 'css', f))]
+  .map((f) => fs.readFileSync(f, 'utf8')).join('\n');
 const kitchen = fs.readFileSync(path.join(root, 'renderer', 'kitchen-ticket.js'), 'utf8');
 const receipt = fs.readFileSync(path.join(root, 'renderer', 'receipt.js'), 'utf8');
 const networkPrint = fs.readFileSync(path.join(root, 'lib', 'network-print.js'), 'utf8');
