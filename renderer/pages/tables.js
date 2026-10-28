@@ -126,7 +126,7 @@ function renderTables(tables) {
     if (deleteBtn) {
       deleteBtn.addEventListener('click', async (e) => {
         e.stopPropagation();
-        if (!(await confirmDialog(`${t('tables.confirmDeletePrefix','حذف')} "${table.name}"؟`, { tone: 'danger', confirmLabel: t('common.delete','حذف') }))) return;
+        if (!(await confirmDialog(`${t('tables.confirmDeletePrefix','حذف')} "${table.name}"${t('common.qm', '؟')}`, { tone: 'danger', confirmLabel: t('common.delete','حذف') }))) return;
         const result = await window.api.tables.delete(table.id);
         if (result && result.success === false) {
           showToast(result.message, 'error');

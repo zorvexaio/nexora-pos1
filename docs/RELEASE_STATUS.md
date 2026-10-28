@@ -38,7 +38,7 @@
 `REVOCATION_LIST_URL` لم يعد قيمة ثابتة داخل المصدر؛ يقرأ من `NEXORA_REVOCATION_LIST_URL`. يظل فارغاً افتراضياً حتى يتم توفير endpoint الإنتاج.
 
 ## Dependency baseline checked 2026-09-04
-- Electron 44.2.0 is the current stable release and is within Electron's three-supported-release policy. Electron 44.2.0 ships Chromium 152.0.7977.76 and Node 24.20.0.
+- Electron 44.10.0 is the validated runtime (security update over 44.2.0, which was affected by GHSA-fw47-9c62-h3vw and related advisories). Re-run the native/Electron release tests on the release machine before shipping.
 - better-sqlite3-multiple-ciphers 13.0.3 is the current stable npm version.
 - electron-updater 6.8.9 is the current npm latest.
 - electron-builder 26.15.7 is pinned in this project; npm currently exposes the 26.x line, and no upgrade is being forced without a compatibility build.

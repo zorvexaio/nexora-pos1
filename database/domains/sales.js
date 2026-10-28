@@ -496,7 +496,7 @@ const createSaleTx = h.db.transaction((sale) => {
     payment_provider: String(sale.paymentProvider || '').trim() || null,
     payment_currency: String(sale.paymentCurrency || h.getGlobalProfile().currency_code).trim().toUpperCase(),
     client_request_id: clientRequestId || null,
-    loyalty_points_awarded: sale.customerId ? Math.floor(grandTotal / h.getLoyaltySettings().earnPerCurrencyUnit) : 0,
+    loyalty_points_awarded: (sale.customerId && h.getLoyaltySettings().enabled) ? Math.floor(grandTotal / h.getLoyaltySettings().earnPerCurrencyUnit) : 0,
     loyalty_points_redeemed: loyaltyRedeemedPoints,
     loyalty_redeemed_value: sale.loyaltyRedeemedValue,
     loyalty_redeemed_value_minor: loyaltyRedeemedValueMinor,
@@ -571,7 +571,7 @@ const createSaleTx = h.db.transaction((sale) => {
   // نقاط ولاء: معدّل قابل للتعديل من الإعدادات (افتراضياً نقطة واحدة لكل 10 وحدات
   // عملة من إجمالي الفاتورة الفعلي — أي بعد خصم أي استبدال نقاط سابق على نفس الفاتورة،
   // فلا يمكن "تدوير" النقاط بلا نهاية عبر استبدالها ثم كسبها من نفس المبلغ).
-  if (sale.customerId) {
+  if (sale.customerId && h.getLoyaltySettings().enabled) {
     const points = Math.floor(sale.grandTotal / h.getLoyaltySettings().earnPerCurrencyUnit);
     if (points > 0) {
       h.db.prepare(`UPDATE customers SET loyalty_points = loyalty_points + ?, updated_at = datetime('now'), synced = 0 WHERE id = ? AND branch_id=?`).run(

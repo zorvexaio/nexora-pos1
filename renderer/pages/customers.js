@@ -61,7 +61,7 @@ function renderTable(customers) {
     tr.innerHTML = `
       <td>${escapeHtml(c.name || t('common.noName', 'بدون اسم'))}</td>
       <td>${escapeHtml(c.phone || '—')}</td>
-      <td>${c.loyalty_points}</td>
+      <td class="loyalty-only">${c.loyalty_points}</td>
       <td>${Number(c.balance || 0).toFixed(2)}</td>
       <td>${Number(c.store_credit_balance || 0) > 0 ? `<span class="status-badge tone-success">${Number(c.store_credit_balance).toFixed(2)}</span>` : Number(c.store_credit_balance || 0).toFixed(2)}</td>
       <td class="row-actions"><button class="btn btn-secondary btn-sm" data-action="ledger">${t('customers.statement', 'كشف حساب')}</button> <button class="btn btn-secondary btn-sm" data-action="edit">${t('common.edit', 'تعديل')}</button></td>

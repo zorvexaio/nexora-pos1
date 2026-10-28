@@ -173,7 +173,7 @@ function applyDeliveryDistancePricing() {
 }
 function updateDeliveryDistanceHint() {
   if (!deliveryDistanceHint) return;
-  deliveryDistanceHint.textContent = `سعر الكيلومتر: ${fmt(deliveryPricingConfig.pricePerKm)} — السعر الثابت بدون مسافة: ${fmt(deliveryPricingConfig.defaultFee)}`;
+  deliveryDistanceHint.textContent = tf('pos.deliveryDistanceHint', { perKm: fmt(deliveryPricingConfig.pricePerKm), fixed: fmt(deliveryPricingConfig.defaultFee) });
 }
 const discountTypeSelect = document.getElementById('discountTypeSelect');
 const discountValueInput = document.getElementById('discountValueInput');
@@ -1288,7 +1288,7 @@ function renderCart() {
   // اسم الحزمة (كما كتبه المدير عند إنشائها) يظهر كنص ظاهر بجانب الخصم مباشرة —
   // سابقاً كان يُوضع فقط داخل title (تلميح hover)، وهذا غير مرئي على شاشة كاشير باللمس.
   const namesJoined = bundleResult.appliedNames.join('، ');
-  bundleDiscountLabel.textContent = namesJoined ? `خصم الحزم (${namesJoined})` : 'خصم الحزم التلقائي';
+  bundleDiscountLabel.textContent = namesJoined ? tf('pos.bundleDiscountNamed', { names: namesJoined }) : t('pos.bundleDiscountAuto', 'خصم الحزم التلقائي');
   bundleDiscountRow.title = namesJoined;
 
   deliveryRow.classList.toggle('hidden', delivery <= 0);
@@ -1376,11 +1376,11 @@ function resetLoyaltyState() {
 
 function updateLoyaltyHint() {
   if (!loyaltyQuote) { loyaltyRedeemHint.textContent = ''; return; }
-  loyaltyRedeemHint.textContent = `الرصيد المتاح: ${loyaltyQuote.availablePoints} نقطة — أقصى استبدال ممكن بهذه الفاتورة: ${loyaltyQuote.maxRedeemablePoints} نقطة (خصم ${fmt(loyaltyQuote.maxRedeemableValue)})`;
+  loyaltyRedeemHint.textContent = tf('pos.loyaltyHint', { available: loyaltyQuote.availablePoints, max: loyaltyQuote.maxRedeemablePoints, value: fmt(loyaltyQuote.maxRedeemableValue) });
 }
 
 async function refreshLoyaltyQuote() {
-  if (!selectedCustomerId) { resetLoyaltyState(); return; }
+  if (!selectedCustomerId || !window.loyaltyEnabled) { resetLoyaltyState(); return; }
   try {
     loyaltyQuote = await window.api.loyalty.redemptionQuote(selectedCustomerId, currentSaleTotals.grandTotal);
   } catch (err) {
@@ -1463,7 +1463,7 @@ function renderCustomerResults(results, term = '') {
         (c) =>
           `<div class="customer-result" data-id="${c.id}">${escapeHtml(c.name || t('common.noName'))} — ${escapeHtml(
             c.phone || ''
-          )} <span class="points-tag">${c.loyalty_points} ${t('common.points')}</span></div>`
+          )} <span class="points-tag loyalty-only">${c.loyalty_points} ${t('common.points')}</span></div>`
       )
       .join('');
     customerResults.querySelectorAll('.customer-result').forEach((el) => {
@@ -1498,7 +1498,7 @@ function selectCustomer(c) {
   selectedCustomerId = c.id;
   // الاسم يُكتب مرة واحدة في نفس الحقل ويُحفظ على الفاتورة + يربط سجل العميل للآجل/الولاء
   if (customerNameInput) customerNameInput.value = c.name || '';
-  selectedCustomerLabel.textContent = `${c.name || t('common.noName')}${c.phone ? ' — ' + c.phone : ''} — ${c.loyalty_points || 0} ${t('common.points')}`;
+  selectedCustomerLabel.textContent = `${c.name || t('common.noName')}${c.phone ? ' — ' + c.phone : ''}${loyaltyPointsSuffix(c.loyalty_points)}`;
   selectedCustomerBox.classList.remove('hidden');
   customerResults.classList.add('hidden');
   if (customerNameInput) customerNameInput.classList.remove('input-error');
@@ -1889,8 +1889,8 @@ async function confirmPayment() {
     // نبّه الكاشير فوراً لو الطباعة التلقائية فشلت (طابعة غير متصلة/IP غلط/إلخ) بدل ما
     // يفشل الأمر بصمت وميعرفش السبب إلا لو فتح سجل التدقيق يدوياً.
     const po = result?.printOutcome;
-    if (po?.kitchen && po.kitchen.success === false) showToast(`⚠️ لم تُطبع تذكرة المطبخ: ${po.kitchen.reason || 'خطأ غير معروف'}`, 'error');
-    if (po?.receipt && po.receipt.success === false) showToast(`⚠️ لم تُطبع الفاتورة: ${po.receipt.reason || 'خطأ غير معروف'}`, 'error');
+    if (po?.kitchen && po.kitchen.success === false) showToast(`⚠️ ${t('pos.kitchenTicketNotPrinted')}: ${po.kitchen.reason || t('common.unknownError', 'خطأ غير معروف')}`, 'error');
+    if (po?.receipt && po.receipt.success === false) showToast(`⚠️ ${t('pos.receiptNotPrinted')}: ${po.receipt.reason || t('common.unknownError', 'خطأ غير معروف')}`, 'error');
     const fo = result?.fiscalOutcome;
     if (fo) {
       if (fo.error) showToast(`⚠️ الفوترة التلقائية: ${fo.error}`, 'error');
@@ -1946,8 +1946,8 @@ if (window.api && window.api.sales && typeof window.api.sales.onPostOutcome === 
   window.api.sales.onPostOutcome((r) => {
     const po = r && r.printOutcome;
     const inv = r && r.invoiceNumber ? ` #${r.invoiceNumber}` : '';
-    if (po && po.kitchen && po.kitchen.success === false) showToast(`⚠️ لم تُطبع تذكرة المطبخ${inv}: ${po.kitchen.reason || 'خطأ غير معروف'}`, 'error');
-    if (po && po.receipt && po.receipt.success === false) showToast(`⚠️ لم تُطبع الفاتورة${inv}: ${po.receipt.reason || 'خطأ غير معروف'}`, 'error');
+    if (po && po.kitchen && po.kitchen.success === false) showToast(`⚠️ ${t('pos.kitchenTicketNotPrinted')}${inv}: ${po.kitchen.reason || t('common.unknownError', 'خطأ غير معروف')}`, 'error');
+    if (po && po.receipt && po.receipt.success === false) showToast(`⚠️ ${t('pos.receiptNotPrinted')}${inv}: ${po.receipt.reason || t('common.unknownError', 'خطأ غير معروف')}`, 'error');
     const fo = r && r.fiscalOutcome;
     if (fo) {
       if (fo.error) showToast(`⚠️ الفوترة التلقائية: ${fo.error}`, 'error');

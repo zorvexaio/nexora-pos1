@@ -112,7 +112,7 @@ async function toggleActive(b) {
 }
 
 async function removeBundle(b) {
-  if (!(await confirmDialog(`${t('bundles.confirmDeletePrefix', 'حذف عرض')} "${b.name}"؟`, { tone: 'danger', confirmLabel: t('common.delete','حذف') }))) return;
+  if (!(await confirmDialog(`${t('bundles.confirmDeletePrefix', 'حذف عرض')} "${b.name}"${t('common.qm', '؟')}`, { tone: 'danger', confirmLabel: t('common.delete','حذف') }))) return;
   await window.api.bundles.delete(b.id);
   await loadBundles();
 }

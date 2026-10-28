@@ -2146,6 +2146,18 @@ Object.assign(TRANSLATIONS.en, {
   'common.noName': 'Unnamed',
 });
 
+Object.assign(TRANSLATIONS.ar, {
+  'settings.loyalty.enabledLabel': 'تفعيل نقاط الولاء',
+  'settings.loyalty.enabledHint': 'عند الإيقاف لا تُمنح نقاط ولا يُعرض الاستبدال، وتختفي النقاط من الكاشير وشاشة الزبائن. الأرصدة الحالية تبقى محفوظة.',
+});
+Object.assign(TRANSLATIONS.tr, {
+  'settings.loyalty.enabledLabel': 'Sadakat puanlarını etkinleştir',
+  'settings.loyalty.enabledHint': 'Kapatıldığında puan verilmez, kullanım seçeneği gösterilmez ve puanlar kasa ile müşteri ekranından gizlenir. Mevcut bakiyeler korunur.',
+});
+Object.assign(TRANSLATIONS.en, {
+  'settings.loyalty.enabledLabel': 'Enable loyalty points',
+  'settings.loyalty.enabledHint': 'When off, no points are earned, redemption is hidden, and points disappear from the cashier and customers screens. Existing balances are kept.',
+});
 Object.assign(TRANSLATIONS.ar, { 'pos.checkoutHint': 'Ctrl + Enter للدفع' });
 Object.assign(TRANSLATIONS.tr, { 'pos.checkoutHint': 'Ödeme için Ctrl + Enter' });
 Object.assign(TRANSLATIONS.en, { 'pos.checkoutHint': 'Ctrl + Enter to pay' });
@@ -5406,3 +5418,175 @@ Object.assign(TRANSLATIONS.ar, {"customerDisplay.open": "شاشة الزبون",
 Object.assign(TRANSLATIONS.tr, {"customerDisplay.open": "Müşteri ekranı", "customerDisplay.close": "Müşteri ekranını kapat", "customerDisplay.opened": "Müşteri ekranı ikinci ekranda açıldı", "customerDisplay.openedWindowed": "Bağlı ikinci ekran yok — müşteri ekranı bir pencerede açıldı; müşteriye bakan ekrana taşıyın", "customerDisplay.closed": "Müşteri ekranı kapatıldı", "customerDisplay.failed": "Müşteri ekranı açılamadı"});
 Object.assign(TRANSLATIONS.en, {"customerDisplay.open": "Customer display", "customerDisplay.close": "Close customer display", "customerDisplay.opened": "Customer display opened on the second screen", "customerDisplay.openedWindowed": "No second screen connected — the customer display opened in a window; move it to the screen facing the customer", "customerDisplay.closed": "Customer display closed", "customerDisplay.failed": "Could not open the customer display"});
 
+// ===== تغطية إضافية: نصوص ديناميكية (جولة تدقيق التركية) =====
+Object.assign(TRANSLATIONS.ar, {
+  "pos.deliveryDistanceHint": "سعر الكيلومتر: {perKm} — السعر الثابت بدون مسافة: {fixed}",
+  "pos.bundleDiscountNamed": "خصم الحزم ({names})",
+  "pos.bundleDiscountAuto": "خصم الحزم التلقائي",
+  "pos.loyaltyHint": "الرصيد المتاح: {available} نقطة — أقصى استبدال ممكن بهذه الفاتورة: {max} نقطة (خصم {value})",
+  "tableOrder.loyaltyHint": "الرصيد المتاح: {available} نقطة — أقصى استبدال: {max} نقطة (خصم {value})",
+  "pos.kitchenTicketNotPrinted": "لم تُطبع تذكرة المطبخ",
+  "pos.receiptNotPrinted": "لم تُطبع الفاتورة",
+  "common.unknownError": "خطأ غير معروف",
+  "common.qm": "؟"
+});
+Object.assign(TRANSLATIONS.tr, {
+  "pos.deliveryDistanceHint": "Kilometre fiyatı: {perKm} — Mesafesiz sabit fiyat: {fixed}",
+  "pos.bundleDiscountNamed": "Paket indirimi ({names})",
+  "pos.bundleDiscountAuto": "Otomatik paket indirimi",
+  "pos.loyaltyHint": "Kullanılabilir bakiye: {available} puan — bu faturada kullanılabilecek en fazla: {max} puan (indirim {value})",
+  "tableOrder.loyaltyHint": "Kullanılabilir bakiye: {available} puan — en fazla kullanım: {max} puan (indirim {value})",
+  "pos.kitchenTicketNotPrinted": "Mutfak fişi yazdırılamadı",
+  "pos.receiptNotPrinted": "Fatura yazdırılamadı",
+  "common.unknownError": "Bilinmeyen hata",
+  "common.qm": "?"
+});
+Object.assign(TRANSLATIONS.en, {
+  "pos.deliveryDistanceHint": "Price per km: {perKm} — Fixed price without distance: {fixed}",
+  "pos.bundleDiscountNamed": "Bundle discount ({names})",
+  "pos.bundleDiscountAuto": "Automatic bundle discount",
+  "pos.loyaltyHint": "Available balance: {available} points — maximum redeemable on this invoice: {max} points (discount {value})",
+  "tableOrder.loyaltyHint": "Available balance: {available} points — maximum redemption: {max} points (discount {value})",
+  "pos.kitchenTicketNotPrinted": "Kitchen ticket was not printed",
+  "pos.receiptNotPrinted": "Invoice was not printed",
+  "common.unknownError": "Unknown error",
+  "common.qm": "?"
+});
+Object.assign(STATIC_TRANSLATIONS.tr, {
+  "يوم": "gün",
+  "تفاصيل": "Ayrıntılar",
+  "عامل": "çalışan",
+  "اختصارات لوحة المفاتيح": "Klavye kısayolları",
+  "التركيز على البحث / الباركود": "Aramaya / barkoda odaklan",
+  "هذه المساعدة": "Bu yardım",
+  "سبب إعادة فتح الفترة": "Dönemi yeniden açma nedeni",
+  "الأساسي (حتى الآن)": "Temel (şimdiye kadar)",
+  "الدين المرحّل": "Devreden borç",
+  "المدفوع": "Ödenen",
+  "المتبقي": "Kalan",
+  "قسط ·": "taksit ·",
+  "شهرياً · بدء الخصم": "aylık · kesinti başlangıcı",
+  "المستحق حتى هذا الشهر:": "Bu aya kadar vadesi gelen:",
+  "· المسدد:": "· Ödenen:",
+  "· المتبقي:": "· Kalan:",
+  "· المتبقي": "· Kalan",
+  "المستحق:": "Vadesi gelen:",
+  "· المدفوع:": "· Ödenen:",
+  "الرصيد المتبقي:": "Kalan bakiye:",
+  "أدخل مبلغ التسديد المباشر:": "Doğrudan ödeme tutarını girin:",
+  "تسديد كامل رصيد السلفة": "Avans bakiyesinin tamamını öde",
+  "تم إنهاء خدمة": "Hizmet sonlandırıldı:",
+  ". صافي التسوية:": ". Net tasfiye:",
+  "قيمة السلفة": "Avans tutarı",
+  "عدد أقساط السداد": "Geri ödeme taksit sayısı",
+  "شهر بدء الخصم": "Kesinti başlangıç ayı",
+  "طريقة صرف السلفة": "Avans ödeme yöntemi",
+  "دُفعت السلفة نقداً من الصندوق الآن": "Avans şimdi kasadan nakit ödendi",
+  "يتم توزيع المبلغ على الأقساط بالتساوي، ويضاف فرق الكسور للقسط الأخير. كل قسط يظهر تلقائياً ضمن خصومات راتب الشهر الخاص به. خيار «دُفعت نقداً من الصندوق الآن» متاح فقط مع طريقة الصرف النقدي.": "Tutar taksitlere eşit olarak bölünür, kuruş farkı son taksite eklenir. Her taksit, ait olduğu ayın maaş kesintileri arasında otomatik görünür. «Şimdi kasadan nakit ödendi» seçeneği yalnızca nakit ödeme yönteminde kullanılabilir.",
+  "تاريخ الغياب": "Devamsızlık tarihi",
+  "ملاحظة": "Not",
+  "تاريخ اليوم": "Günün tarihi",
+  "عدد ساعات العمل في هذا اليوم": "Bu gün çalışılan saat sayısı",
+  "يُحتسب الراتب = مجموع الساعات × أجر الساعة.": "Maaş = toplam saat × saatlik ücret olarak hesaplanır.",
+  "تاريخ بدء استحقاق الراتب هذا الشهر": "Bu ay maaş hak ediş başlangıç tarihi",
+  "يُحتسب الراتب من هذا التاريخ وحتى نهاية الفترة المستحقة.": "Maaş bu tarihten vadesi gelen dönemin sonuna kadar hesaplanır.",
+  "عدد ساعات الإضافي": "Mesai saat sayısı",
+  "تم إنشاء السلفة على": "Avans oluşturuldu, taksit sayısı:",
+  "قسط.": "taksit.",
+  "تم ترحيل استحقاق": "Tahakkuk aktarıldı:",
+  "عامل بقائمة الدخل": "çalışan, gelir tablosuna",
+  "جارٍ تحميل حالة المستندات…": "Belge durumu yükleniyor…",
+  "إصدار / تسجيل مالي": "Mali belge düzenle / kaydet",
+  "إلغاء مالي": "Mali iptal",
+  "تعذر تحميل تفاصيل الفاتورة:": "Fatura ayrıntıları yüklenemedi:",
+  "مورد": "tedarikçi",
+  "عميل": "müşteri",
+  "عن الفترة السابقة": "önceki döneme göre",
+  "(الافتراضية)": "(varsayılan)",
+  "(غير متوفرة حالياً)": "(şu an kullanılamıyor)",
+  "✓ آخر نسخة احتياطية تلقائية:": "✓ Son otomatik yedek:",
+  "(يُحتفظ بآخر": "(son",
+  "اتصال": "Bağlantı",
+  "· قدرات:": "· Yetenekler:",
+  "لم تُطبع تذكرة المطبخ": "Mutfak fişi yazdırılamadı",
+  "لم تُطبع الفاتورة": "Fatura yazdırılamadı"
+});
+Object.assign(STATIC_TRANSLATIONS.en, {
+  "يوم": "day",
+  "تفاصيل": "Details",
+  "عامل": "employee",
+  "اختصارات لوحة المفاتيح": "Keyboard shortcuts",
+  "التركيز على البحث / الباركود": "Focus search / barcode",
+  "هذه المساعدة": "This help",
+  "سبب إعادة فتح الفترة": "Reason for reopening the period",
+  "الأساسي (حتى الآن)": "Base (so far)",
+  "الدين المرحّل": "Carried-over debt",
+  "المدفوع": "Paid",
+  "المتبقي": "Remaining",
+  "قسط ·": "installments ·",
+  "شهرياً · بدء الخصم": "monthly · deduction starts",
+  "المستحق حتى هذا الشهر:": "Due up to this month:",
+  "· المسدد:": "· Repaid:",
+  "· المتبقي:": "· Remaining:",
+  "· المتبقي": "· Remaining",
+  "المستحق:": "Due:",
+  "· المدفوع:": "· Paid:",
+  "الرصيد المتبقي:": "Remaining balance:",
+  "أدخل مبلغ التسديد المباشر:": "Enter the direct repayment amount:",
+  "تسديد كامل رصيد السلفة": "Repay the full advance balance",
+  "تم إنهاء خدمة": "Employment ended:",
+  ". صافي التسوية:": ". Net settlement:",
+  "قيمة السلفة": "Advance amount",
+  "عدد أقساط السداد": "Number of repayment installments",
+  "شهر بدء الخصم": "Deduction start month",
+  "طريقة صرف السلفة": "Advance payout method",
+  "دُفعت السلفة نقداً من الصندوق الآن": "Advance paid in cash from the drawer now",
+  "يتم توزيع المبلغ على الأقساط بالتساوي، ويضاف فرق الكسور للقسط الأخير. كل قسط يظهر تلقائياً ضمن خصومات راتب الشهر الخاص به. خيار «دُفعت نقداً من الصندوق الآن» متاح فقط مع طريقة الصرف النقدي.": "The amount is split equally across the installments and any rounding difference is added to the last one. Each installment automatically appears in that month's payroll deductions. The \"paid in cash from the drawer now\" option is only available with the cash payout method.",
+  "تاريخ الغياب": "Absence date",
+  "ملاحظة": "Note",
+  "تاريخ اليوم": "Day date",
+  "عدد ساعات العمل في هذا اليوم": "Hours worked on this day",
+  "يُحتسب الراتب = مجموع الساعات × أجر الساعة.": "Salary = total hours × hourly rate.",
+  "تاريخ بدء استحقاق الراتب هذا الشهر": "Salary accrual start date this month",
+  "يُحتسب الراتب من هذا التاريخ وحتى نهاية الفترة المستحقة.": "Salary is calculated from this date to the end of the due period.",
+  "عدد ساعات الإضافي": "Overtime hours",
+  "تم إنشاء السلفة على": "Advance created over",
+  "قسط.": "installments.",
+  "تم ترحيل استحقاق": "Accrual posted for",
+  "عامل بقائمة الدخل": "employees to the income statement",
+  "جارٍ تحميل حالة المستندات…": "Loading document status…",
+  "إصدار / تسجيل مالي": "Issue / register fiscal document",
+  "إلغاء مالي": "Fiscal cancellation",
+  "تعذر تحميل تفاصيل الفاتورة:": "Could not load invoice details:",
+  "مورد": "supplier",
+  "عميل": "customer",
+  "عن الفترة السابقة": "vs previous period",
+  "(الافتراضية)": "(default)",
+  "(غير متوفرة حالياً)": "(currently unavailable)",
+  "✓ آخر نسخة احتياطية تلقائية:": "✓ Last automatic backup:",
+  "(يُحتفظ بآخر": "(keeping the last",
+  "اتصال": "Connection",
+  "· قدرات:": "· Capabilities:",
+  "لم تُطبع تذكرة المطبخ": "Kitchen ticket was not printed",
+  "لم تُطبع الفاتورة": "Invoice was not printed"
+});
+Object.assign(STATIC_TRANSLATIONS.tr, {
+  'فاتورة': 'Fatura',
+  'هذا المعرّف': 'bu kimlik',
+  'يوماً': 'gün',
+});
+Object.assign(STATIC_TRANSLATIONS.en, {
+  'فاتورة': 'Invoice',
+  'هذا المعرّف': 'this ID',
+  'يوماً': 'days',
+});
+Object.assign(STATIC_TRANSLATIONS.tr, {
+  'تفعيل {name} مجدداً؟': '{name} yeniden etkinleştirilsin mi?',
+  'تعطيل {name}؟ لن يظهر في احتساب الرواتب القادمة إلا إذا فُعِّل مجدداً.': '{name} devre dışı bırakılsın mı? Yeniden etkinleştirilmedikçe sonraki maaş hesaplamalarında görünmeyecek.',
+  'حذف {name} نهائياً؟ لا يمكن التراجع عن هذا. (لن ينجح الحذف إن كان له أي سجل راتب سابق — استخدم "تعطيل" في تلك الحالة)': '{name} kalıcı olarak silinsin mi? Bu işlem geri alınamaz. (Önceden maaş kaydı varsa silme başarısız olur — bu durumda "Devre dışı bırak" seçeneğini kullanın)',
+});
+Object.assign(STATIC_TRANSLATIONS.en, {
+  'تفعيل {name} مجدداً؟': 'Re-activate {name}?',
+  'تعطيل {name}؟ لن يظهر في احتساب الرواتب القادمة إلا إذا فُعِّل مجدداً.': 'Disable {name}? They will not appear in upcoming payroll unless re-activated.',
+  'حذف {name} نهائياً؟ لا يمكن التراجع عن هذا. (لن ينجح الحذف إن كان له أي سجل راتب سابق — استخدم "تعطيل" في تلك الحالة)': 'Permanently delete {name}? This cannot be undone. (Deletion fails if there is any previous payroll record — use "Disable" in that case)',
+});

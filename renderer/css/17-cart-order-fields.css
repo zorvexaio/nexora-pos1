@@ -10,10 +10,11 @@
 .payment-sheet .payment-sheet-col-order { display: flex; flex-direction: column; gap: 8px; }
 .payment-sheet .customer-field { position: relative; }
 .payment-sheet .customer-results {
-  position: absolute; top: calc(100% + 4px); inset-inline: 0; z-index: 20;
-  background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--radius);
-  box-shadow: var(--shadow-lg); max-height: 200px; overflow-y: auto; padding: 6px;
+  /* تظهر نتائج البحث ضمن التدفق العادي (تدفع حقول التوصيل للأسفل) بدل أن تغطيها */
+  position: static; margin-top: 6px; background: var(--surface); border: 1px solid var(--line-strong);
+  border-radius: var(--radius); max-height: 160px; overflow-y: auto; padding: 6px; box-shadow: none;
 }
+.payment-sheet .customer-results.hidden { display: none; }
 .payment-sheet .loyalty-redeem-row { display: flex; gap: 6px; }
 .payment-sheet .loyalty-redeem-row input { flex: 1; }
 .payment-sheet .input-error { border-color: #b91c1c !important; }
@@ -29,3 +30,6 @@
 .product-card .name { font-size: 12px !important; line-height: 1.25 !important; }
 .price-badge { font-size: 11.5px !important; padding: 2px 5px !important; }
 .product-card .stock { font-size: 9.5px !important; }
+
+/* نقاط الولاء معطّلة من الإعدادات */
+body.loyalty-off .loyalty-only { display: none !important; }

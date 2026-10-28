@@ -57,7 +57,7 @@
 
       <table class="products-table">
         <thead>
-            <tr><th>الاسم</th><th>الهاتف</th><th>نقاط الولاء</th><th>الرصيد المستحق (دين)</th><th>رصيد المتجر</th><th></th></tr>
+            <tr><th>الاسم</th><th>الهاتف</th><th class="loyalty-only">نقاط الولاء</th><th>الرصيد المستحق (دين)</th><th>رصيد المتجر</th><th></th></tr>
         </thead>
         <tbody id="customersTableBody"></tbody>
       </table>
@@ -83,7 +83,7 @@
             <label>رقم الهاتف</label>
             <input id="fieldPhone" type="text" />
           </div>
-          <div class="form-field full">
+          <div class="form-field full loyalty-only">
             <label>نقاط الولاء</label>
             <input id="fieldPoints" type="text" inputmode="numeric" min="0" value="0" />
           </div>

@@ -391,10 +391,10 @@ function resetLoyaltyState() {
 }
 function updateLoyaltyHint() {
   if (!loyaltyQuote) { loyaltyRedeemHint.textContent = ''; return; }
-  loyaltyRedeemHint.textContent = `الرصيد المتاح: ${loyaltyQuote.availablePoints} نقطة — أقصى استبدال: ${loyaltyQuote.maxRedeemablePoints} نقطة (خصم ${loyaltyQuote.maxRedeemableValue.toFixed(orgMinorUnit)})`;
+  loyaltyRedeemHint.textContent = tf('tableOrder.loyaltyHint', { available: loyaltyQuote.availablePoints, max: loyaltyQuote.maxRedeemablePoints, value: loyaltyQuote.maxRedeemableValue.toFixed(orgMinorUnit) });
 }
 async function refreshLoyaltyQuote() {
-  if (!selectedCustomerId) { resetLoyaltyState(); return; }
+  if (!selectedCustomerId || !window.loyaltyEnabled) { resetLoyaltyState(); return; }
   try {
     loyaltyQuote = await window.api.loyalty.redemptionQuote(selectedCustomerId, currentTotal);
   } catch (err) {
@@ -446,7 +446,7 @@ customerSearchInput.addEventListener('input', debounce(async () => {
 function renderCustomerResults(results) {
   customerResults.innerHTML = results.length === 0
     ? `<div class="customer-result-empty">${t('pos.noCustomerResults')}</div>`
-    : results.map((c) => `<div class="customer-result" data-id="${c.id}">${escapeHtml(c.name || t('common.noName'))} — ${escapeHtml(c.phone || '')} <span class="points-tag">${c.loyalty_points} ${t('common.points')}</span></div>`).join('');
+    : results.map((c) => `<div class="customer-result" data-id="${c.id}">${escapeHtml(c.name || t('common.noName'))} — ${escapeHtml(c.phone || '')} <span class="points-tag loyalty-only">${c.loyalty_points} ${t('common.points')}</span></div>`).join('');
   customerResults.querySelectorAll('.customer-result').forEach((el) => {
     el.addEventListener('click', () => {
       const c = results.find((r) => r.id === parseInt(el.dataset.id, 10));
@@ -458,7 +458,7 @@ function renderCustomerResults(results) {
 
 async function selectCustomer(c) {
   selectedCustomerId = c.id;
-  selectedCustomerLabel.textContent = `${c.name || t('common.noName')} — ${c.loyalty_points} ${t('common.points')}`;
+  selectedCustomerLabel.textContent = `${c.name || t('common.noName')}${loyaltyPointsSuffix(c.loyalty_points)}`;
   selectedCustomerBox.classList.remove('hidden');
   customerSearchInput.value = '';
   customerResults.classList.add('hidden');

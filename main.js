@@ -2027,6 +2027,11 @@ ipcMain.handle('loyalty:settings', (_event, payload) => {
 });
 // عرض أقصى نقاط قابلة للاستبدال قبل الدفع: متاحة لأي كاشير (نفس صلاحية إنشاء الفاتورة
 // نفسها) — عرض فقط، لا تُغيّر أي بيانات، والتحقق الحقيقي يعاد بالكامل داخل db.createSale.
+// هل برنامج الولاء مفعّل؟ متاح لأي كاشير لإخفاء النقاط من الواجهة عند التعطيل
+ipcMain.handle('loyalty:enabled', () => {
+  requireAccountReady();
+  return db.isLoyaltyEnabled();
+});
 ipcMain.handle('loyalty:redemptionQuote', (_event, { customerId, payable } = {}) => {
   requireAccountReady();
   return db.getLoyaltyRedemptionQuoteMajor(customerId, payable);

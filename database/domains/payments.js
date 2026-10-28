@@ -338,7 +338,7 @@ const modifyCompletedSaleItemsTx = h.db.transaction((payload = {}) => {
   const earnUnit=Number(h.getLoyaltySettings().earnPerCurrencyUnit||10);
   const oldAward=Math.floor(Number(sale.grand_total||0)/earnUnit);
   const newAward=sale.customer_id?Math.floor(grandTotal/earnUnit):0;
-  const pointsDelta=newAward-oldAward;
+  const pointsDelta=h.getLoyaltySettings().enabled?(newAward-oldAward):0;
   if(sale.customer_id && pointsDelta!==0){
     h.db.prepare('UPDATE customers SET loyalty_points=MAX(0,loyalty_points+?),updated_at=datetime(\'now\'),synced=0 WHERE id=? AND branch_id=?').run(pointsDelta,sale.customer_id,branch.id);
   }

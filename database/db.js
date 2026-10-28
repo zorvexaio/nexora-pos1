@@ -1731,6 +1731,7 @@ function repayPayrollAdvance(...args) { return _domains.payroll.repayPayrollAdva
 function settlePayrollAdvance(...args) { return _domains.payroll.settlePayrollAdvance(...args); }
 function recordPayrollSalaryAdvanceRecovery(...args) { return _domains.payroll.recordPayrollSalaryAdvanceRecovery(...args); }
 function getLoyaltySettings(...args) { return _domains.payroll.getLoyaltySettings(...args); }
+function isLoyaltyEnabled(...args) { return _domains.payroll.isLoyaltyEnabled(...args); }
 function saveLoyaltySettings(...args) { return _domains.payroll.saveLoyaltySettings(...args); }
 function getLoyaltyRedemptionQuote(...args) { return _domains.payroll.getLoyaltyRedemptionQuote(...args); }
 function getLoyaltyRedemptionQuoteMajor(...args) { return _domains.payroll.getLoyaltyRedemptionQuoteMajor(...args); }
@@ -1976,6 +1977,7 @@ module.exports = {
   getOffersCategoryImage,
   setOffersCategoryImage,
   getLoyaltySettings,
+  isLoyaltyEnabled,
   saveLoyaltySettings,
   getLoyaltyRedemptionQuote,
   getLoyaltyRedemptionQuoteMajor,

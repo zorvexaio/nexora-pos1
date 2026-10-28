@@ -28,6 +28,7 @@ const fieldQuickCashierEnabled = document.getElementById('fieldQuickCashierEnabl
 const fieldOffersCategoryEnabled = document.getElementById('fieldOffersCategoryEnabled');
 const fieldTaxDefaultRate = document.getElementById('fieldTaxDefaultRate');
 const loyaltyForm = document.getElementById('loyaltyForm');
+const fieldLoyaltyEnabled = document.getElementById('fieldLoyaltyEnabled');
 const fieldLoyaltyEarnRate = document.getElementById('fieldLoyaltyEarnRate');
 const fieldLoyaltyRedeemRate = document.getElementById('fieldLoyaltyRedeemRate');
 const deliveryPricingForm = document.getElementById('deliveryPricingForm');
@@ -153,8 +154,10 @@ async function init() {
   fieldMaxDiscountPercent.value = await window.api.discount.maxCashierPercent();
   fieldTaxDefaultRate.value = (await window.api.tax.defaultRate()).defaultTaxRate;
   const loyaltySettings = await window.api.loyalty.settings();
+  fieldLoyaltyEnabled.checked = loyaltySettings.enabled !== false;
   fieldLoyaltyEarnRate.value = loyaltySettings.earnPerCurrencyUnit;
   fieldLoyaltyRedeemRate.value = loyaltySettings.redeemPointsPerCurrencyUnit;
+  syncLoyaltyFieldsState();
   fieldWeightedPrefix.value = await window.api.weighing.getPrefix();
   const deliveryPricing = await window.api.delivery.getPricing();
   fieldDeliveryDefaultFee.value = deliveryPricing.defaultFee;
@@ -174,6 +177,7 @@ async function init() {
   discountForm.addEventListener('submit', saveDiscountLimit);
   taxDefaultForm.addEventListener('submit', saveTaxDefaultRate);
   loyaltyForm.addEventListener('submit', saveLoyaltySettings);
+  fieldLoyaltyEnabled.addEventListener('change', syncLoyaltyFieldsState);
   deliveryPricingForm.addEventListener('submit', saveDeliveryPricing);
   weighingForm.addEventListener('submit', saveWeighingPrefix);
   createBackupBtn.addEventListener('click', createBackup);
@@ -612,6 +616,14 @@ async function saveTaxDefaultRate(e) {
   }
 }
 
+function syncLoyaltyFieldsState() {
+  const on = fieldLoyaltyEnabled.checked;
+  [fieldLoyaltyEarnRate, fieldLoyaltyRedeemRate].forEach((input) => {
+    input.disabled = !on;
+    input.required = on;
+  });
+}
+
 async function saveLoyaltySettings(e) {
   e.preventDefault();
   const btn = document.getElementById('saveLoyaltyBtn');
@@ -620,6 +632,7 @@ async function saveLoyaltySettings(e) {
   try {
     const r = await window.api.loyalty.settings({
       save: true,
+      enabled: fieldLoyaltyEnabled.checked,
       earnPerCurrencyUnit: parseLocaleNumber(fieldLoyaltyEarnRate.value) || 0,
       redeemPointsPerCurrencyUnit: parseLocaleNumber(fieldLoyaltyRedeemRate.value) || 0,
     });

@@ -100,7 +100,7 @@
 - Added stable UUID/sync migration for legacy inventory and supplier ledgers.
 - Added a sync mutex to prevent overlapping background/manual sync operations and cursor races.
 - Branch-safe reconstruction of synced foreign keys; user identity is mapped by username without synchronizing password/PIN material.
-- Electron 44.2.0, encrypted SQLite 13.0.3, electron-updater 6.8.9, electron-builder 26.15.7.
+- Electron 44.10.0, encrypted SQLite 13.0.3, electron-updater 6.8.9, electron-builder 26.15.7.
 
 Nexora POS v0.15.0 — Stability hardened
 

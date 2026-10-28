@@ -14,7 +14,7 @@ const pkg = JSON.parse(read('package.json'));
 ok(pkg.version === read('VERSION').trim(), 'package.json and VERSION are out of sync.');
 ok(read('docs/VERSION.txt').trim() === `Nexora POS v${pkg.version}`, 'docs/VERSION.txt is out of sync.');
 ok(pkg.dependencies?.['better-sqlite3-multiple-ciphers'] === '13.0.3', 'Encrypted SQLite dependency is not pinned to the validated 13.0.3 line.');
-ok(pkg.devDependencies?.electron === '44.2.0', 'Electron version differs from the validated 44.2.0 release target.');
+ok(pkg.devDependencies?.electron === '44.10.0', 'Electron version differs from the validated 44.10.0 release target.');
 ok(pkg.devDependencies?.['electron-builder'] === '26.15.7', 'electron-builder version differs from the validated 26.15.7 line.');
 
 const main = read('main.js');

@@ -20,7 +20,7 @@ const checks = [
   ['client filters branch-owned remote rows', /own\(changes\.sales(?:\|\|\[\])?,\s*['\"]sales['\"]\)/m.test(db) && /own\(changes\.customers(?:\|\|\[\])?,\s*['\"]customers['\"]\)/m.test(db) && /own\(changes\.suppliers(?:\|\|\[\])?,\s*['\"]suppliers['\"]\)/m.test(db)],
   ['sync client only sends branch-local state envelope', /branch: payload\.branch/m.test(syncClient)],
   ['monthly payroll UI exists', /monthly salary|monthlySalary|salary/i.test(payroll)],
-  ['current stable Electron line', pkg.devDependencies?.electron === '44.2.0'],
+  ['current stable Electron line', pkg.devDependencies?.electron === '44.10.0'],
   ['current stable encrypted sqlite line', pkg.dependencies?.['better-sqlite3-multiple-ciphers'] === '13.0.3'],
   ['current stable updater line', pkg.dependencies?.['electron-updater'] === '6.8.9'],
   ['current stable builder line', pkg.devDependencies?.['electron-builder'] === '26.15.7'],

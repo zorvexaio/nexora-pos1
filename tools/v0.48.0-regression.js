@@ -34,7 +34,7 @@ assert.throws(() => accounting.validateJournalLines([
 
 const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
 assert.ok(/^(?:0\.(?:48|49|50|51|52)\.)/.test(pkg.version));
-assert.strictEqual(pkg.devDependencies.electron, '44.2.0');
+assert.strictEqual(pkg.devDependencies.electron, '44.10.0');
 const db = readDatabaseSources(root);
 {
   // كان يطابق قائمة ثابتة (10..15) فيفشل تلقائياً مع أي ترحيلة لاحقة (فشل فعلياً منذ v16).

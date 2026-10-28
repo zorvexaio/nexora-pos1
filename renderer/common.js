@@ -1023,3 +1023,20 @@ document.addEventListener('keydown', (e) => {
     showKeyboardHelp();
   }
 });
+
+// نقاط الولاء اختيارية: عند تعطيلها من الإعدادات نخفي أي عنصر عليه الصنف loyalty-only
+// (عبر الصنف loyalty-off على body) ونعرّف window.loyaltyEnabled لبقية الشاشات.
+window.loyaltyEnabled = true;
+window.loyaltyReady = (async () => {
+  try {
+    if (window.api && window.api.loyalty && window.api.loyalty.enabled) {
+      window.loyaltyEnabled = (await window.api.loyalty.enabled()) !== false;
+    }
+  } catch (_) { /* قبل تسجيل الدخول نُبقي القيمة الافتراضية */ }
+  const apply = () => document.body && document.body.classList.toggle('loyalty-off', !window.loyaltyEnabled);
+  if (document.body) apply(); else document.addEventListener('DOMContentLoaded', apply);
+  return window.loyaltyEnabled;
+})();
+function loyaltyPointsSuffix(points) {
+  return window.loyaltyEnabled ? ` — ${points || 0} ${t('common.points')}` : '';
+}

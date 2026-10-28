@@ -64,6 +64,7 @@ contextBridge.exposeInMainWorld('api', {
   },
   loyalty: {
     settings: (payload) => ipcRenderer.invoke('loyalty:settings', payload),
+    enabled: () => ipcRenderer.invoke('loyalty:enabled'),
     redemptionQuote: (customerId, payable) => ipcRenderer.invoke('loyalty:redemptionQuote', { customerId, payable }),
   },
   suppliers: {

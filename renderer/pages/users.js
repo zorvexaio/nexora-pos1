@@ -250,7 +250,7 @@ async function savePin() {
 }
 
 async function clearPin(user) {
-  if (!(await confirmDialog(`${t('users.clearPinFor','مسح رقم PIN الخاص بـ')} "${user.full_name}"؟ ${t('users.clearPinWarning','لن يعود يقدر يدخل بالـ PIN بعدها.')}`, { tone: 'danger', confirmLabel: t('common.delete','حذف') }))) return;
+  if (!(await confirmDialog(`${t('users.clearPinFor','مسح رقم PIN الخاص بـ')} "${user.full_name}"${t('common.qm', '؟')} ${t('users.clearPinWarning','لن يعود يقدر يدخل بالـ PIN بعدها.')}`, { tone: 'danger', confirmLabel: t('common.delete','حذف') }))) return;
   await window.api.users.clearPin(user.id);
   await loadUsers();
 }

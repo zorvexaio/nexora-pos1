@@ -58,7 +58,7 @@ const disallowedRootArtifacts = fs.readdirSync(root).filter((name) =>
 );
 if (disallowedRootArtifacts.length) fail(`test/build artifacts must not ship: ${disallowedRootArtifacts.join(', ')}`);
 if (pkg.dependencies['better-sqlite3-multiple-ciphers'] !== '13.0.3') fail('unexpected SQLite native dependency version');
-if (pkg.devDependencies.electron !== '44.2.0') fail('unexpected Electron version');
+if (pkg.devDependencies.electron !== '44.10.0') fail('unexpected Electron version');
 if (requireWindowsSigning) {
   const signingConfigured = Boolean(process.env.CSC_LINK || process.env.WIN_CSC_LINK || process.env.CSC_KEY_PASSWORD);
   if (!signingConfigured) fail('Windows release signing is not configured. Set CSC_LINK/WIN_CSC_LINK and CSC_KEY_PASSWORD for a commercial installer.');
@@ -68,6 +68,23 @@ ok(`version ${pkg.version}`);
 ok('license public key is real and parseable');
 ok('Windows/macOS/Linux icon assets are present');
 ok('native dependency versions are pinned');
+// منع تكرار عطل التغليف: override عام لـ brace-expansion يُجبر minimatch الحديث (الذي يستخدمه electron-builder
+// ويحتاج brace-expansion@5) على نسخة قديمة فينهار البناء بالخطأ "brace_expansion_1.expand is not a function".
+if (pkg.overrides && Object.prototype.hasOwnProperty.call(pkg.overrides, 'brace-expansion')) {
+  fail('package.json overrides must not pin brace-expansion globally: it breaks electron-builder packaging (minimatch@10 needs brace-expansion@5)');
+}
+try {
+  const builderDir = path.dirname(require.resolve('app-builder-lib/package.json', { paths: [root] }));
+  const { Minimatch } = require(require.resolve('minimatch', { paths: [builderDir] }));
+  if (new Minimatch('{a,b}/**/*.js').set.length !== 2) fail('minimatch brace expansion returned an unexpected result');
+  ok('electron-builder glob engine (minimatch + brace-expansion) loads and expands braces');
+} catch (error) {
+  if (error && error.code === 'MODULE_NOT_FOUND') {
+    console.log('RELEASE PREFLIGHT SKIP: electron-builder is not installed, glob engine check skipped');
+  } else {
+    fail(`electron-builder glob engine is broken: ${error && error.message}`);
+  }
+}
 const htmlFiles = [];
 function walkHtml(dir) {
   for (const name of fs.readdirSync(dir)) {

@@ -586,18 +586,29 @@ function getLoyaltySettings(){
   const earnRate=Number(h.getSetting('loyalty_earn_per_currency_unit','10'));
   const redeemRate=Number(h.getSetting('loyalty_points_per_currency_unit','10'));
   return{
+    enabled:h.getSetting('loyalty_enabled','1')!=='0',
     earnPerCurrencyUnit:Number.isFinite(earnRate)&&earnRate>0?earnRate:10,
     redeemPointsPerCurrencyUnit:Number.isFinite(redeemRate)&&redeemRate>0?redeemRate:10,
     currencyMinorUnit:unit,
   };
 }
-function saveLoyaltySettings({earnPerCurrencyUnit,redeemPointsPerCurrencyUnit}={}){
+function isLoyaltyEnabled(){
+  return h.getSetting('loyalty_enabled','1')!=='0';
+}
+function saveLoyaltySettings({earnPerCurrencyUnit,redeemPointsPerCurrencyUnit,enabled}={}){
+  // تعطيل البرنامج لا يحتاج معدّلات صالحة: نحفظ الحالة فقط ونُبقي المعدّلات القديمة كما هي
+  if(enabled===false||enabled===0||enabled==='0'){
+    h.setSetting('loyalty_enabled','0');
+    const cur=getLoyaltySettings();
+    return{success:true,enabled:false,earnPerCurrencyUnit:cur.earnPerCurrencyUnit,redeemPointsPerCurrencyUnit:cur.redeemPointsPerCurrencyUnit};
+  }
   const e=Number(earnPerCurrencyUnit),r=Number(redeemPointsPerCurrencyUnit);
   if(!Number.isFinite(e)||e<=0||e>100000) throw new Error('معدّل منح نقاط الولاء غير صالح.');
   if(!Number.isFinite(r)||r<=0||r>100000) throw new Error('معدّل استبدال نقاط الولاء غير صالح.');
   h.setSetting('loyalty_earn_per_currency_unit',String(e));
   h.setSetting('loyalty_points_per_currency_unit',String(r));
-  return{success:true,earnPerCurrencyUnit:e,redeemPointsPerCurrencyUnit:r};
+  h.setSetting('loyalty_enabled','1');
+  return{success:true,enabled:true,earnPerCurrencyUnit:e,redeemPointsPerCurrencyUnit:r};
 }
 
 // أقصى عدد نقاط يمكن للعميل استبدالها فعلياً بفاتورة قيمتها المستحقة (قبل الاستبدال)
@@ -608,7 +619,7 @@ function getLoyaltyRedemptionQuote(customerId, payableMinor){
   const branch=h.getCurrentBranch();
   const settings=getLoyaltySettings();
   const payable=Math.max(0,Number(payableMinor)||0);
-  if(!customerId) return{availablePoints:0,redeemPointsPerCurrencyUnit:settings.redeemPointsPerCurrencyUnit,maxRedeemablePoints:0,maxRedeemableValueMinor:0};
+  if(!settings.enabled||!customerId) return{availablePoints:0,redeemPointsPerCurrencyUnit:settings.redeemPointsPerCurrencyUnit,maxRedeemablePoints:0,maxRedeemableValueMinor:0};
   const customer=h.db.prepare('SELECT loyalty_points FROM customers WHERE id=? AND branch_id=?').get(Number(customerId),branch.id);
   if(!customer) throw new Error('العميل غير موجود.');
   const availablePoints=Math.max(0,Math.floor(Number(customer.loyalty_points||0)));
@@ -634,7 +645,7 @@ function getLoyaltyRedemptionQuoteMajor(customerId, payableMajor){
 // فعلياً — لا نثق أبداً برقم جاهز قادم من الواجهة، نعيد التحقق الكامل هنا دائماً.
 function resolveLoyaltyRedemption(customerId, requestedPoints, payableMinor){
   const requested=Math.max(0,Math.floor(Number(requestedPoints)||0));
-  if(requested<=0) return{points:0,valueMinor:0};
+  if(requested<=0||!isLoyaltyEnabled()) return{points:0,valueMinor:0};
   if(!customerId) throw new Error('استبدال نقاط الولاء يتطلب اختيار عميل بالفاتورة.');
   const quote=getLoyaltyRedemptionQuote(customerId,payableMinor);
   if(requested>quote.availablePoints) throw new Error(`رصيد نقاط العميل غير كافٍ. المتاح حالياً: ${quote.availablePoints} نقطة.`);
@@ -945,6 +956,7 @@ function getPayrollV2Employee(monthId,employeeId){ const m=payrollMonth(monthId)
     settlePayrollAdvance,
     recordPayrollSalaryAdvanceRecovery,
     getLoyaltySettings,
+    isLoyaltyEnabled,
     saveLoyaltySettings,
     getLoyaltyRedemptionQuote,
     getLoyaltyRedemptionQuoteMajor,

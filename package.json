@@ -1,6 +1,6 @@
 {
   "name": "nexora-pos",
-  "version": "0.52.43",
+  "version": "0.52.45",
   "description": "Nexora POS - Hardened global-ready offline-first POS platform",
   "main": "main.js",
   "author": "Zorvexa / Nexora POS",
@@ -99,7 +99,7 @@
   },
   "devDependencies": {
     "@electron/rebuild": "4.2.0",
-    "electron": "44.2.0",
+    "electron": "44.10.0",
     "electron-builder": "26.15.7"
   },
   "build": {
@@ -157,13 +157,17 @@
       "icon": "build/icon.png",
       "category": "Office"
     },
-    "artifactName": "Nexora-POS-Setup-${version}.${ext}"
+    "artifactName": "Nexora-POS-Setup-${version}.${ext}",
+    "npmRebuild": false,
+    "asarUnpack": [
+      "**/node_modules/better-sqlite3-multiple-ciphers/prebuilds/**",
+      "**/node_modules/better-sqlite3-multiple-ciphers/**/*.node"
+    ]
   },
   "engines": {
     "node": ">=22.12.0"
   },
   "overrides": {
-    "brace-expansion": "^2.1.7",
     "fast-uri": "^3.1.8",
     "http-cache-semantics": "^4.2.1"
   }
