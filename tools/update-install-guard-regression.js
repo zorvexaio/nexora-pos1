@@ -26,7 +26,7 @@ assert.match(handler, /if\s*\(!downloadedUpdateInfo\)\s*throw new Error/, 'insta
 const guardIndex = handler.indexOf('if (!downloadedUpdateInfo)');
 // نبحث عن الاستدعاء الفعلي autoUpdater.quitAndInstall() تحديداً لا عن أي ذكر لكلمة
 // quitAndInstall (قد تُذكر داخل تعليق توضيحي قبل الحارس نفسه).
-const quitIndex = handler.indexOf('autoUpdater.quitAndInstall()');
+const quitIndex = handler.indexOf('autoUpdater.quitAndInstall(');
 assert.ok(guardIndex !== -1 && quitIndex !== -1 && guardIndex < quitIndex, 'The downloaded-update guard must run before quitAndInstall() is called.');
 
 console.log('UPDATE INSTALL GUARD REGRESSION: PASS (installNow requires a real completed download before quitAndInstall)');

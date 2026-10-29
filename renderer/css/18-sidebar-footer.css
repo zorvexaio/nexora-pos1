@@ -1,0 +1,72 @@
+/* Nexora POS — 18: ذيل الشريط الجانبي (المستخدم، الفرع، اللغة، السمة، كلمة المرور، الخروج).
+   يُرتَّب عبر arrangeSidebarFooter() في common.js: بطاقة واحدة مرتبة بدل صفوف متفرقة. */
+.topbar-right { gap: 0; padding-top: 12px; }
+.sf-card {
+  display: flex; flex-direction: column; gap: 10px; padding: 10px;
+  border: 1px solid var(--line); border-radius: 14px; background: var(--surface);
+}
+.sf-user { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.sf-avatar {
+  width: 38px; height: 38px; flex: none; border-radius: 50%; display: grid; place-items: center;
+  font-weight: 800; font-size: 15px; color: #fff;
+  background: linear-gradient(135deg, var(--primary), var(--brand-indigo, #5b5bd6));
+}
+.sf-avatar:empty { display: none; }
+.sf-meta { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1; }
+.sf-name { min-width: 0; font-weight: 800; font-size: 13.5px; color: var(--text); }
+.sf-name #currentUserName { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sf-sub .role-badge { display: inline-block; padding: 2px 8px; font-size: 10.5px; }
+.sf-sub:empty { display: none; }
+
+.sf-branch:has(.branch-name:empty) { display: none; }
+.sf-branch .branch-name {
+  display: flex; align-items: center; gap: 7px; width: 100%; padding: 6px 10px; border-radius: 9px;
+  font-size: 12px; font-weight: 600; color: var(--text-soft); background: var(--surface-strong);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.sf-branch .branch-name::before {
+  content: ''; flex: none; width: 13px; height: 13px; background: currentColor; opacity: .65;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 21s7-6.2 7-11a7 7 0 1 0-14 0c0 4.8 7 11 7 11z'/%3E%3Ccircle cx='12' cy='10' r='2.5'/%3E%3C/svg%3E") center / contain no-repeat;
+          mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 21s7-6.2 7-11a7 7 0 1 0-14 0c0 4.8 7 11 7 11z'/%3E%3Ccircle cx='12' cy='10' r='2.5'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+
+.sf-actions { display: flex; align-items: center; gap: 6px; }
+.sf-actions .lang-switcher {
+  order: 1; flex: 1; min-width: 0; width: auto; height: 34px; padding: 0 30px; border-radius: 9px;
+  font-size: 12.5px; font-weight: 700; color: var(--text); cursor: pointer;
+  -webkit-appearance: none; appearance: none; border: 1px solid var(--line-strong); background-color: var(--surface);
+  background-repeat: no-repeat;
+  background-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='9'/%3E%3Cpath d='M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18'/%3E%3C/svg%3E"),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-size: 15px 15px, 12px 12px;
+  background-position: left 10px center, right 9px center;
+}
+html[dir="rtl"] .sf-actions .lang-switcher { background-position: right 10px center, left 9px center; }
+.sf-actions .lang-switcher:hover { border-color: var(--primary-border); }
+.sf-actions .sf-icon-btn, .sf-actions .theme-toggle {
+  flex: none; width: 34px; height: 34px; padding: 0; display: grid; place-items: center; cursor: pointer;
+  border-radius: 9px; border: 1px solid var(--line-strong); background: var(--surface); color: var(--text-soft); font-size: 0;
+  transition: background .12s ease, border-color .12s ease, color .12s ease;
+}
+.sf-actions .theme-toggle { order: 2; }
+.sf-actions .sf-icon-btn:not(.theme-toggle) { order: 3; }
+.sf-actions .sf-icon-btn:hover, .sf-actions .theme-toggle:hover {
+  background: var(--surface-strong); border-color: var(--primary-border); color: var(--primary); transform: none;
+}
+.sf-actions .sf-icon-btn:focus-visible, .sf-actions .lang-switcher:focus-visible, .sf-logout .btn:focus-visible {
+  outline: 2px solid var(--primary); outline-offset: 2px;
+}
+
+.sf-logout .btn, .sf-logout #logoutBtn {
+  width: 100%; height: 36px; display: flex; align-items: center; justify-content: center; gap: 8px;
+  border-radius: 10px; font-weight: 700; font-size: 13px; color: var(--danger);
+  background: transparent; border: 1px solid var(--line-strong); box-shadow: none;
+}
+.sf-logout #logoutBtn::before {
+  content: ''; flex: none; width: 16px; height: 16px; background: currentColor;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9'/%3E%3C/svg%3E") center / contain no-repeat;
+          mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+html[dir="rtl"] .sf-logout #logoutBtn::before { transform: scaleX(-1); }
+.sf-logout #logoutBtn:hover { background: color-mix(in srgb, var(--danger) 10%, transparent); border-color: var(--danger); }

@@ -64,6 +64,25 @@ autoUpdater.autoDownload = false;
 // استرجاع موثّقة من بيانات العميل قبل أن يستبدل NSIS ملفات التطبيق.
 autoUpdater.autoInstallOnAppQuit = false;
 
+// سجل التحديث: ملف updater.log داخل مجلد بيانات التطبيق، يكتبه electron-updater وكودنا معاً،
+// ليسهّل تشخيص أي فشل في التنزيل أو التثبيت (نصّ الخطأ الكامل والمسار والإصدارات).
+function updaterLogPath() { return path.join(app.getPath('userData'), 'logs', 'updater.log'); }
+function updaterLog(level, ...parts) {
+  try {
+    const file = updaterLogPath();
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    try { if (fs.statSync(file).size > 1_000_000) fs.renameSync(file, `${file}.old`); } catch (_) { /* لا ملف سابق */ }
+    const text = parts.map((p) => (p instanceof Error ? (p.stack || p.message) : (typeof p === 'string' ? p : JSON.stringify(p)))).join(' ');
+    fs.appendFileSync(file, `${new Date().toISOString()} [${level}] ${text}\n`, 'utf8');
+  } catch (_) { /* السجل اختياري ولا يجوز أن يوقف التحديث */ }
+}
+autoUpdater.logger = {
+  info: (...a) => updaterLog('info', ...a),
+  warn: (...a) => updaterLog('warn', ...a),
+  error: (...a) => updaterLog('error', ...a),
+  debug: (...a) => updaterLog('debug', ...a),
+};
+
 // يرسل حالة التحديث لنافذة الإعدادات (إن كانت مفتوحة) حتى تحدّث الواجهة
 function sendUpdateStatus(status, payload) {
   const win = BrowserWindow.getAllWindows().find((w) => !w.isDestroyed());
@@ -81,7 +100,11 @@ autoUpdater.on('update-available', (info) => { downloadedUpdateInfo = null; send
 autoUpdater.on('update-not-available', () => { downloadedUpdateInfo = null; sendUpdateStatus('not-available'); });
 autoUpdater.on('download-progress', (p) => sendUpdateStatus('downloading', { percent: Math.round(p.percent) }));
 autoUpdater.on('update-downloaded', (info) => { downloadedUpdateInfo = info; sendUpdateStatus('downloaded', { version: info.version }); });
-autoUpdater.on('error', (err) => { downloadedUpdateInfo = null; sendUpdateStatus('error', { message: err == null ? mt('خطأ غير معروف', 'Unknown error', 'Bilinmeyen hata') : err.message }); });
+autoUpdater.on('error', (err) => {
+  downloadedUpdateInfo = null;
+  updaterLog('error', 'update error:', err == null ? 'unknown' : err);
+  sendUpdateStatus('error', { message: err == null ? mt('خطأ غير معروف', 'Unknown error', 'Bilinmeyen hata') : err.message, logPath: updaterLogPath() });
+});
 
 // لا تُفتح قاعدة البيانات قبل app.whenReady(): مفتاح SQLCipher محفوظ في مخزن
 // نظام التشغيل الآمن (safeStorage) ولا يصبح جاهزاً بصورة موثوقة قبل ذلك.
@@ -1004,7 +1027,14 @@ ipcMain.handle('update:installNow', () => {
   // أُطلق بالفعل) — قبل هذا التغيير كان يكفي أن يكون المستخدم أدمن فقط، بصرف النظر عن
   // وجود تنزيل حقيقي من عدمه، وسلوك quitAndInstall بلا تحديث مُنزَّل غير موثوق.
   if (!downloadedUpdateInfo) throw new Error(mt('لا يوجد تحديث مُنزَّل جاهز للتثبيت. نزّل التحديث أولاً.', 'No downloaded update is ready to install yet. Download the update first.', 'Yüklemeye hazır indirilmiş bir güncelleme yok. Önce güncellemeyi indirin.'));
-  const snapshot = db.createUpgradeSnapshot(`app-update-from-v${app.getVersion()}`);
+  // لقطة الأمان قبل التحديث: إن فشلت نُظهر السبب بوضوح بدل أن يبدو أن «زر التثبيت لا يفعل شيئاً»
+  let snapshot;
+  try {
+    snapshot = db.createUpgradeSnapshot(`app-update-from-v${app.getVersion()}`);
+  } catch (err) {
+    updaterLog('error', 'pre-update snapshot failed:', err);
+    throw new Error(mt('تعذّر أخذ نسخة الأمان قبل التحديث: ', 'Could not create the pre-update safety snapshot: ', 'Güncelleme öncesi güvenlik yedeği alınamadı: ') + err.message);
+  }
   db.logAudit({
     userId: currentUser?.id,
     action: 'application_update_install_started',
@@ -1012,7 +1042,22 @@ ipcMain.handle('update:installNow', () => {
     entityId: app.getVersion(),
     details: { snapshotPath: snapshot.path },
   });
-  autoUpdater.quitAndInstall();
+  updaterLog('info', 'install requested', { from: app.getVersion(), to: downloadedUpdateInfo.version, snapshot: snapshot.path });
+  // نترك الرد يصل إلى الواجهة أولاً، ثم نُنهي كل ما قد يُبقي التطبيق حيّاً (شاشة الزبون، خوادم الشبكة،
+  // معالج إغلاق النوافذ) قبل تشغيل مثبّت NSIS؛ وإلا يجد المثبّت التطبيق ما زال يعمل ويعرض خطأ «لا يمكن إغلاقه».
+  setImmediate(() => {
+    try {
+      try { closeCustomerDisplayWindow(); } catch (_) { /* اختيارية */ }
+      try { stopLanMain(); stopLanTerminalDiscovery(); } catch (_) { /* اختيارية */ }
+      app.removeAllListeners('window-all-closed');
+      for (const win of BrowserWindow.getAllWindows()) { try { win.removeAllListeners('close'); win.destroy(); } catch (_) { /* تُغلق مع الخروج */ } }
+      // false: مثبّت بنافذة ظاهرة كي تظهر أي رسالة خطأ للمستخدم، true: إعادة تشغيل التطبيق بعد انتهاء التثبيت
+      autoUpdater.quitAndInstall(false, true);
+    } catch (err) {
+      updaterLog('error', 'quitAndInstall failed:', err);
+      sendUpdateStatus('error', { message: err.message, logPath: updaterLogPath() });
+    }
+  });
   return { ok: true, snapshotPath: snapshot.path };
 });
 ipcMain.handle('update:currentVersion', () => app.getVersion());

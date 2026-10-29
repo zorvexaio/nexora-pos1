@@ -1,12 +1,12 @@
 {
-  "generatedAt": "2026-10-28T20:11:00.606Z",
-  "version": "0.52.45",
+  "generatedAt": "2026-10-29T09:44:55.516Z",
+  "version": "0.52.46",
   "mode": "source",
   "checks": [
     {
       "id": "source-version",
       "status": "PASS",
-      "detail": "package version=0.52.45",
+      "detail": "package version=0.52.46",
       "blocking": true
     },
     {

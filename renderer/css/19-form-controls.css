@@ -1,0 +1,21 @@
+/* Nexora POS — 19: مربعات الاختيار والراديو بحجم صغير موحّد في كامل التطبيق.
+   السبب: القاعدة العامة `.form-field input` تعطي كل حقل width:100% و height:42px فتتضخم مربعات الاختيار.
+   نستثني أزرار طرق الدفع (.method-option) لأن حقولها الراديو شفافة ومقصود أن تغطي زرّها بالكامل. */
+input[type="checkbox"]:not(.method-option input),
+input[type="radio"]:not(.method-option input) {
+  -webkit-appearance: auto; appearance: auto;
+  flex: none; width: 16px !important; height: 16px !important; min-width: 0; min-height: 0 !important;
+  padding: 0 !important; margin: 0; box-shadow: none; border-radius: 4px;
+  accent-color: var(--primary); cursor: pointer; vertical-align: middle;
+}
+input[type="radio"]:not(.method-option input) { border-radius: 50%; }
+input[type="checkbox"]:not(.method-option input):focus-visible,
+input[type="radio"]:not(.method-option input):focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+/* صف مربع الاختيار + نصه: محاذاة مرتبة ومسافة ثابتة، والنص قابل للنقر */
+.form-field.checkbox { align-items: center; gap: 8px; margin-bottom: 8px; }
+.form-field.checkbox > label { margin: 0; cursor: pointer; font-size: 13.5px; font-weight: 600; color: var(--text); }
+.form-field.checkbox > .field-hint { flex-basis: 100%; margin-inline-start: 24px; }
+.form-field.checkbox { flex-wrap: wrap; }
+
+/* نتيجة البحث المحدّدة بالأسهم (↓/↑) في شاشة الكاشير */
+.product-card.kbd-active { outline: 3px solid var(--primary); outline-offset: 1px; box-shadow: 0 0 0 5px var(--primary-light); transform: translateY(-1px); }

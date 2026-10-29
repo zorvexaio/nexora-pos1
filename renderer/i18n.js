@@ -5590,3 +5590,13 @@ Object.assign(STATIC_TRANSLATIONS.en, {
   'تعطيل {name}؟ لن يظهر في احتساب الرواتب القادمة إلا إذا فُعِّل مجدداً.': 'Disable {name}? They will not appear in upcoming payroll unless re-activated.',
   'حذف {name} نهائياً؟ لا يمكن التراجع عن هذا. (لن ينجح الحذف إن كان له أي سجل راتب سابق — استخدم "تعطيل" في تلك الحالة)': 'Permanently delete {name}? This cannot be undone. (Deletion fails if there is any previous payroll record — use "Disable" in that case)',
 });
+Object.assign(STATIC_TRANSLATIONS.tr, {
+  'جارٍ تجهيز التثبيت وإغلاق البرنامج...': 'Kurulum hazırlanıyor ve program kapatılıyor...',
+  'تعذّر التثبيت: ': 'Kurulum yapılamadı: ',
+  'سجل التحديث:': 'Güncelleme günlüğü:',
+});
+Object.assign(STATIC_TRANSLATIONS.en, {
+  'جارٍ تجهيز التثبيت وإغلاق البرنامج...': 'Preparing the installation and closing the app...',
+  'تعذّر التثبيت: ': 'Installation failed: ',
+  'سجل التحديث:': 'Update log:',
+});

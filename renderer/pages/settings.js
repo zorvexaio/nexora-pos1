@@ -217,7 +217,18 @@ async function init() {
   fieldAutoCheckUpdates.addEventListener('change', saveAutoCheckUpdates);
   checkUpdateBtn.addEventListener('click', checkForUpdate);
   downloadUpdateBtn.addEventListener('click', downloadUpdate);
-  installUpdateBtn.addEventListener('click', () => window.api.updates.installNow());
+  installUpdateBtn.addEventListener('click', async () => {
+    installUpdateBtn.disabled = true;
+    updateStatus.textContent = ts('جارٍ تجهيز التثبيت وإغلاق البرنامج...');
+    try {
+      const result = await window.api.updates.installNow();
+      if (result && result.ok === false) throw new Error(result.message || '');
+    } catch (err) {
+      installUpdateBtn.disabled = false;
+      const msg = String((err && err.message) || err).replace(/^Error invoking remote method '[^']+': (Error: )?/, '');
+      updateStatus.textContent = ts('تعذّر التثبيت: ') + msg;
+    }
+  });
   window.api.updates.onStatus(handleUpdateStatus);
 
   lanRoleTabs.querySelectorAll('.login-mode-tab').forEach((btn) => {
@@ -289,7 +300,7 @@ function handleUpdateStatus(data) {
     case 'error':
       checkUpdateBtn.disabled = false;
       downloadUpdateBtn.disabled = false;
-      updateStatus.textContent = ts('خطأ: ') + data.message;
+      updateStatus.textContent = ts('خطأ: ') + data.message + (data.logPath ? `\n${ts('سجل التحديث:')} ${data.logPath}` : '');
       break;
   }
 }

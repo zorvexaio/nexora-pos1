@@ -433,6 +433,7 @@ function setupTopbar(user) {
 
   if (nameEl) nameEl.textContent = user.full_name;
   if (roleEl) roleEl.textContent = roleLabels()[user.role] || user.role;
+  arrangeSidebarFooter(user);
   if (logoutBtn) {
     logoutBtn.addEventListener('click', async () => {
       if (await confirmDialog(t('common.confirmLogout'))) {
@@ -467,8 +468,51 @@ function setupTopbar(user) {
 // زر "تغيير كلمة المرور" يُضاف مرة واحدة بجانب زر الخروج في كل الصفحات (بدون
 // الحاجة لتعديل كل ملف HTML)، ويعمل لأي مستخدم مسجّل دخوله في أي وقت — وليس
 // فقط عند الإجبار الأولي بعد أول تسجيل دخول.
+const SF_SVG = (inner) => `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${inner}</svg>`;
+const SF_ICON = {
+  moon: SF_SVG('<path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/>'),
+  sun: SF_SVG('<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>'),
+  key: SF_SVG('<circle cx="7.5" cy="15.5" r="4.5"/><path d="M10.7 12.3 21 2M16 7l3 3M14 9l2 2"/>'),
+};
+
+// ذيل الشريط الجانبي: بطاقة مستخدم (أفاتار + اسم + دور) + الفرع + صف أدوات (اللغة/السمة/كلمة المرور) + خروج.
+// تُنقل العناصر الموجودة نفسها (بنفس المعرّفات والمستمعين) فلا يتأثر أي كود آخر. آمنة للاستدعاء المتكرر.
+function arrangeSidebarFooter(user) {
+  const host = document.querySelector('.topbar-right');
+  if (!host) return null;
+  let card = host.querySelector('.sf-card');
+  if (!card) {
+    card = document.createElement('div');
+    card.className = 'sf-card';
+    card.innerHTML = '<div class="sf-user"><span class="sf-avatar" aria-hidden="true"></span>'
+      + '<div class="sf-meta"><div class="sf-name" data-slot="name"></div><div class="sf-sub" data-slot="role"></div></div></div>'
+      + '<div class="sf-branch" data-slot="branch"></div>'
+      + '<div class="sf-actions" data-slot="actions"></div>'
+      + '<div class="sf-logout" data-slot="logout"></div>';
+    host.prepend(card);
+  }
+  const slot = (name) => card.querySelector(`[data-slot="${name}"]`);
+  const move = (el, name) => { const s = slot(name); if (el && s && el.parentNode !== s) s.appendChild(el); };
+  move(document.getElementById('currentUserName'), 'name');
+  move(document.getElementById('currentUserRoleBadge'), 'role');
+  move(document.getElementById('branchName'), 'branch');
+  move(host.querySelector('#langSwitcher, .lang-switcher'), 'actions');
+  move(document.getElementById('themeToggle'), 'actions');
+  move(document.getElementById('changePasswordBtn'), 'actions');
+  move(document.getElementById('logoutBtn'), 'logout');
+  host.querySelectorAll('.sidebar-tools, .user-info').forEach((el) => { if (!el.children.length) el.remove(); });
+  const fullName = user && user.full_name ? String(user.full_name).trim() : (document.getElementById('currentUserName')?.textContent || '').trim();
+  const avatar = card.querySelector('.sf-avatar');
+  if (avatar && fullName) {
+    // نتجاوز أداة التعريف «ال» حتى لا يصبح الحرف الأول «ا» لكل الأسماء
+    const base = /^ال\S{2,}/.test(fullName) ? fullName.slice(2) : fullName;
+    avatar.textContent = Array.from(base)[0].toUpperCase();
+  }
+  return slot('actions');
+}
+
 function setupChangePasswordButton(user) {
-  const host = document.querySelector('.user-info');
+  const host = arrangeSidebarFooter(user) || document.querySelector('.user-info');
   if (!host || document.getElementById('changePasswordBtn')) return;
 
   const forced = !!(user && user.must_change_password);
@@ -476,10 +520,11 @@ function setupChangePasswordButton(user) {
   const button = document.createElement('button');
   button.type = 'button';
   button.id = 'changePasswordBtn';
-  button.className = 'btn btn-secondary btn-sm';
-  button.textContent = '🔑';
+  button.className = 'sf-icon-btn';
+  button.innerHTML = SF_ICON.key;
   button.title = t('common.changePassword');
-  host.insertBefore(button, document.getElementById('logoutBtn'));
+  button.setAttribute('aria-label', t('common.changePassword'));
+  host.appendChild(button);
 
   const modal = document.createElement('div');
   modal.className = 'modal-overlay hidden';
@@ -558,22 +603,17 @@ async function setupThemeToggle() {
   try { theme = await window.api.theme.get(); } catch (_) { /* لا توقف الصفحة إن فشل التخزين */ }
   document.body.dataset.theme = theme;
   const button = document.createElement('button');
-  button.type = 'button'; button.id = 'themeToggle'; button.className = 'theme-toggle';
-  const render = () => { button.textContent = theme === 'dark' ? '☀️' : '🌙'; button.title = theme === 'dark' ? t('common.lightMode') : t('common.darkMode'); };
+  button.type = 'button'; button.id = 'themeToggle'; button.className = 'theme-toggle sf-icon-btn';
+  const render = () => {
+    button.innerHTML = theme === 'dark' ? SF_ICON.sun : SF_ICON.moon;
+    button.title = theme === 'dark' ? t('common.lightMode') : t('common.darkMode');
+    button.setAttribute('aria-label', button.title);
+  };
   render();
   button.addEventListener('click', async () => { theme = theme === 'dark' ? 'light' : 'dark'; document.body.dataset.theme = theme; render(); await window.api.theme.set(theme); });
-  // صف أدوات مضغوط: وضع الليل + اللغة جنب بعض بدل عمود طويل
-  let tools = host.querySelector('.sidebar-tools');
-  if (!tools) {
-    tools = document.createElement('div');
-    tools.className = 'sidebar-tools';
-    const lang = host.querySelector('#langSwitcher, .lang-switcher');
-    host.prepend(tools);
-    tools.appendChild(button);
-    if (lang) tools.appendChild(lang);
-  } else {
-    tools.prepend(button);
-  }
+  // صف أدوات مضغوط داخل بطاقة المستخدم: اللغة + السمة + كلمة المرور
+  const actions = arrangeSidebarFooter();
+  (actions || host).appendChild(button);
 }
 
 // يُخفي روابط شريط التنقّل التي لا تناسب دور المستخدم الحالي

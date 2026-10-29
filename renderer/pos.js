@@ -221,8 +221,10 @@ async function init() {
   initCategoryTabs();
   restoreDraftIfAny();
 
+  // 325ms مثبّتة عمداً (اختبار v0.15 لمنع تجمّد الواجهة على الأجهزة الضعيفة)؛ الماسح الضوئي يُرسل Enter فيُعالَج فوراً
   searchInput.addEventListener('input', debounce(() => loadProducts(searchInput.value), 325));
   searchInput.addEventListener('input', hideBarcodeError);
+  searchInput.addEventListener('input', () => setSearchActive(-1));
   searchInput.addEventListener('keydown', handleSearchKeydown);
   checkoutBtn.addEventListener('click', checkout);
   document.addEventListener('keydown', (event) => {
@@ -637,10 +639,48 @@ function playBarcodeErrorBeep() {
   }
 }
 
+let searchActiveIndex = -1; // البطاقة المحدّدة بالأسهم في نتائج البحث (-1 = لا شيء)
 let barcodeLookupBusy = false;
+// التنقل بلوحة المفاتيح داخل نتائج البحث: ↓/↑ يحدّدان بطاقة، وEnter يضيف المحدّدة (بلا لمس الماوس).
+function searchCards() { return Array.from(productsGrid.querySelectorAll('.product-card:not(.bundle-card)')); }
+function setSearchActive(index) {
+  const cards = searchCards();
+  cards.forEach((c) => c.classList.remove('kbd-active'));
+  searchActiveIndex = index >= 0 && index < cards.length ? index : -1;
+  if (searchActiveIndex >= 0) {
+    const card = cards[searchActiveIndex];
+    card.classList.add('kbd-active');
+    card.scrollIntoView({ block: 'nearest' });
+  }
+}
+async function addActiveSearchResult() {
+  const card = searchCards()[searchActiveIndex];
+  const product = card && products.find((p) => p.id === Number(card.dataset.productId));
+  if (!product) return false;
+  if (product.variant_count > 0) openVariantPicker(product); else addToCart(product);
+  searchInput.value = '';
+  setSearchActive(-1);
+  await loadProducts();
+  return true;
+}
+// بعض تخطيطات لوحة المفاتيح العربية تُخرج الأرقام الهندية (٠١٢) من الماسح الضوئي؛ نحوّلها قبل مطابقة الباركود
+function toAsciiDigits(text) { return normalizeDigits(text); }
+
 async function handleSearchKeydown(e) {
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    const count = searchCards().length;
+    if (!count) return;
+    e.preventDefault();
+    setSearchActive(e.key === 'ArrowDown' ? Math.min(searchActiveIndex + 1, count - 1) : searchActiveIndex - 1);
+    return;
+  }
   if (e.key !== 'Enter' || barcodeLookupBusy) return;
-  const code = searchInput.value.trim();
+  if (searchActiveIndex >= 0) {
+    e.preventDefault();
+    barcodeLookupBusy = true;
+    try { if (await addActiveSearchResult()) return; } finally { barcodeLookupBusy = false; }
+  }
+  const code = toAsciiDigits(searchInput.value.trim());
   if (!code) return;
   e.preventDefault();
   hideBarcodeError();
@@ -705,6 +745,7 @@ async function handleSearchKeydown(e) {
 
 function renderProducts() {
   productsGrid.replaceChildren();
+  searchActiveIndex = -1;
   productsGrid.removeAttribute('aria-busy');
   const term = searchInput.value.trim();
   // تبويب "العروض" (وليس أي تبويب آخر) هو المكان الوحيد اللي تظهر فيه بطاقات الحزم —

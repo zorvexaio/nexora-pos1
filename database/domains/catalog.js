@@ -1,5 +1,7 @@
 'use strict';
 /** Auto-extracted domain module — refactor batch 3–5. Do not call until h.db is initialized. */
+const { normalizeSearchText, searchTokens, escapeLike, toAsciiDigits } = require('../../lib/search-normalize');
+
 module.exports = function createDomain(h) {
   const money = h.money;
   const accounting = h.accounting;
@@ -240,10 +242,43 @@ function listProducts(filters = {}) {
     WHERE p.is_active = 1`;
   const params = [branch.id, branch.id];
 
+  // بحث ذكي: تطبيع عربي/تركي (الهمزات والتاء المربوطة والتشكيل والأرقام الهندية، و ç ş ğ ı İ)، وكل كلمة من
+  // الاستعلام يجب أن تظهر في الاسم بأي ترتيب، مع الباركود/الرمز/PLU الدقيق، وجزء من الباركود (بدايته أو آخر 4+ خانات).
+  const normQuery = search ? normalizeSearchText(search) : '';
+  const code = toAsciiDigits(search); // للباركود/الرمز/PLU فقط
+  // أكواد PLU تُخزَّن بصفر بادئ حتى 5 خانات (04455)؛ نقبل كتابة 4455 أيضاً
+  const pluCode = /^\d{1,5}$/.test(code) ? code.padStart(5, '0') : code;
+  let rankSql = '';
+  let rankParams = [];
   if (search) {
-    // Exact identifiers first (barcode/SKU), then bounded name search.
-    sql += ` AND (p.barcode = ? OR p.sku = ? OR p.name LIKE ?)`;
-    params.push(search, search, `%${search}%`);
+    if (!h.db.__nxSearchFn) {
+      h.db.function('nx_norm', { deterministic: true }, (value) => normalizeSearchText(value));
+      h.db.__nxSearchFn = true;
+    }
+    const tokens = searchTokens(search);
+    const conds = ['p.barcode = ?', 'p.sku = ?', 'p.plu_code = ?', "p.name LIKE ? ESCAPE '\\'", "p.sku LIKE ? ESCAPE '\\'"];
+    params.push(code, code, pluCode, `%${escapeLike(search)}%`, `${escapeLike(code)}%`);
+    if (tokens.length) {
+      conds.push('(' + tokens.map(() => "nx_norm(p.name) LIKE ? ESCAPE '\\'").join(' AND ') + ')');
+      params.push(...tokens.map((t) => `%${escapeLike(t)}%`));
+    }
+    if (/^[0-9A-Za-z]{4,}$/.test(code)) {
+      conds.push("p.barcode LIKE ? ESCAPE '\\'", "p.barcode LIKE ? ESCAPE '\\'");
+      params.push(`${escapeLike(code)}%`, `%${escapeLike(code)}`);
+    }
+    sql += ` AND (${conds.join(' OR ')})`;
+    if (normQuery) {
+      // الترتيب: باركود/رمز دقيق ← اسم مطابق تماماً ← يبدأ بالاستعلام ← كلمة تبدأ به ← جزء من الباركود ← الباقي
+      rankSql = `CASE
+        WHEN p.barcode = ? THEN 0
+        WHEN p.sku = ? OR p.plu_code = ? THEN 1
+        WHEN nx_norm(p.name) = ? THEN 2
+        WHEN nx_norm(p.name) LIKE ? ESCAPE '\\' THEN 3
+        WHEN nx_norm(p.name) LIKE ? ESCAPE '\\' THEN 4
+        WHEN p.barcode LIKE ? ESCAPE '\\' THEN 5
+        ELSE 6 END, length(p.name), p.name`;
+      rankParams = [code, code, pluCode, normQuery, `${escapeLike(normQuery)}%`, `% ${escapeLike(normQuery)}%`, `${escapeLike(code)}%`];
+    }
   } else if (filters.topLevelOnly) {
     // بدون بحث: نُخفي متغيرات الأزياء (مقاس/لون) من الشبكة الرئيسية، وتظهر فقط عبر نافذة اختيار المتغير
     sql += ` AND p.parent_product_id IS NULL`;
@@ -257,8 +292,9 @@ function listProducts(filters = {}) {
     // بالشاشة بدل ظهور كل منتجات المحل مكدّسة فوق بعضها).
     sql += ` AND p.quick_cashier_visible = 1`;
   }
-  sql += ' ORDER BY CASE WHEN p.barcode = ? THEN 0 WHEN p.sku = ? THEN 1 ELSE 2 END, p.name LIMIT ?';
-  params.push(search, search, limit);
+  sql += ` ORDER BY ${rankSql || 'CASE WHEN p.barcode = ? THEN 0 WHEN p.sku = ? THEN 1 ELSE 2 END, p.name'} LIMIT ?`;
+  if (rankSql) params.push(...rankParams, limit);
+  else params.push(code, code, limit);
   return h.db.prepare(sql).all(...params);
 }
 
